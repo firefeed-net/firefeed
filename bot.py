@@ -3,7 +3,7 @@ import re
 import html
 from telegram import Bot
 from telegram.error import TelegramError
-from config import BOT_TOKEN, CHANNEL_ID
+from config import BOT_TOKEN, CHANNEL_ID, FIRE_EMOJI
 from parser import fetch_news
 from database import init_db, is_news_new, mark_as_published
 
@@ -25,18 +25,16 @@ async def post_to_channel(bot, news_item):
     try:
         # Очищаем описание от HTML
         clean_description = clean_html(news_item['description'])
-
-        if len(clean_description) > 3000:
-            clean_description = clean_description[:3000] + "..."
+        hashtags = f"\n#{news_item['category']}_news #{news_item['source']}"
         
-        # Форматируем сообщение
+        # Форматируем сообщение с категорией
         message = (
-            f"🔥 <b>{html.escape(news_item['title'])}</b>\n\n"
+            f"{FIRE_EMOJI} <b>{html.escape(news_item['title'])}</b>\n"
             f"{clean_description}\n\n"
             f"⚡ <a href='{news_item['link']}'>Читать полностью</a>"
+            f"\n\n{hashtags}"
         )
         
-        # Отправляем с HTML-разметкой
         await bot.send_message(
             chat_id=CHANNEL_ID,
             text=message,
@@ -44,7 +42,7 @@ async def post_to_channel(bot, news_item):
             disable_web_page_preview=False
         )
         mark_as_published(news_item['id'])
-        print(f"✅ Опубликовано: {news_item['title'][:50]}...")
+        print(f"✅ [{news_item['category']}] Опубликовано: {news_item['title'][:50]}...")
     except TelegramError as e:
         print(f"❌ Ошибка отправки: {e}")
 
@@ -68,7 +66,7 @@ async def monitor_news():
             for news in news_list:
                 if is_news_new(news['id']):
                     await post_to_channel(bot, news)
-                    await asyncio.sleep(1)  # Пауза между отправками
+                    await asyncio.sleep(45)  # Пауза между отправками
         except Exception as e:
             print(f"⚠️ Критическая ошибка: {e}")
         
