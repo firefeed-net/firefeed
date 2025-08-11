@@ -6,7 +6,7 @@ from telegram.error import TelegramError, BadRequest
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes, MessageHandler, filters
 from config import BOT_TOKEN, CHANNEL_ID, FIRE_EMOJI, CATEGORIES
 from parser import fetch_news
-from database import init_db, is_news_new, mark_as_published, get_user_preferences, save_user_preferences, get_all_users, get_user_language, set_user_language
+from database import init_db, is_news_new, mark_as_published, get_user_settings, save_user_settings, get_user_preferences, save_user_preferences, get_all_users, get_user_language, set_user_language
 from translator import translate_text  # Импортируем функцию перевода
 from functools import lru_cache
 
@@ -42,12 +42,14 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def settings_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         user_id = update.effective_user.id
-        # Загружаем текущие настройки из базы
-        current_subs = get_user_preferences(user_id) or []
+        
+        # Используем новую функцию для получения всех настроек
+        settings = get_user_settings(user_id)
         
         # Сохраняем состояние в временном хранилище
         USER_STATES[user_id] = {
-            "current_subs": current_subs.copy(),
+            "current_subs": settings["subscriptions"].copy(),
+            "language": settings["language"],
             "message_id": None
         }
         
@@ -65,9 +67,13 @@ async def settings_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def show_settings_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, user_id: int):
     """Показывает меню настроек с текущим состоянием"""
     try:
-        state = USER_STATES.get(user_id, {"current_subs": []})
+
+        state = USER_STATES.get(user_id)
+        if not state:
+            return
+            
         current_subs = state["current_subs"]
-        current_lang = get_user_language(user_id)
+        current_lang = state["language"]  # Берем язык из состояния
         
         # Создаем клавиатуру настроек
         keyboard = []
@@ -113,19 +119,18 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = query.from_user.id
     
     try:
-        # Получаем или инициализируем состояние пользователя
         if user_id not in USER_STATES:
             USER_STATES[user_id] = {
                 "current_subs": get_user_preferences(user_id) or [],
-                "message_id": query.message.message_id
+                "language": get_user_language(user_id)  # Добавляем язык в состояние
             }
             
         state = USER_STATES[user_id]
-        current_subs = state["current_subs"]
         
         # Обработка переключения категорий
         if query.data.startswith("toggle_"):
             category = query.data.split("_")[1]
+            current_subs = state['current_subs'];
             
             # Переключаем состояние категории
             if category in current_subs:
@@ -141,8 +146,12 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
         # Обработка сохранения настроек
         elif query.data == "save_settings":
-            # Сохраняем в базу данных
-            save_user_preferences(user_id, current_subs)
+            # Сохраняем ВСЕ настройки: подписки и язык
+            save_user_settings(
+                user_id,
+                state["current_subs"],
+                state["language"]  # Используем язык из состояния
+            )
             
             # Удаляем временное состояние
             if user_id in USER_STATES:
@@ -153,7 +162,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Обработка выбора языка
         elif query.data.startswith("lang_"):
             lang = query.data.split("_")[1]
-            set_user_language(user_id, lang)
+            state["language"] = lang  # Обновляем язык в состоянии
             await show_settings_menu(update, context, user_id)
         
         # Обработка смены языка

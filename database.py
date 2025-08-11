@@ -1,5 +1,6 @@
 import sqlite3
 import json
+from functools import lru_cache
 
 USER_CACHE = {}
 CACHE_EXPIRY = 300  # 5 минут
@@ -43,27 +44,47 @@ def mark_as_published(news_id: str):
     conn.commit()
     conn.close()
 
-def get_user_preferences(user_id):
-    """Получаем настройки пользователя"""
+def get_user_settings(user_id):
+    """Возвращает все настройки пользователя"""
     conn = sqlite3.connect('news.db')
     cursor = conn.cursor()
-    cursor.execute("SELECT subscriptions FROM user_preferences WHERE user_id=?", (user_id,))
+    cursor.execute("SELECT subscriptions, language FROM user_preferences WHERE user_id=?", (user_id,))
     result = cursor.fetchone()
     conn.close()
     
-    if result and result[0]:
-        return json.loads(result[0])
-    return []
+    if result:
+        return {
+            "subscriptions": json.loads(result[0]),
+            "language": result[1]
+        }
+    return {
+        "subscriptions": [],
+        "language": "en"
+    }
+
+def save_user_settings(user_id, subscriptions, language):
+    """Сохраняет все настройки пользователя"""
+    conn = sqlite3.connect('news.db')
+    cursor = conn.cursor()
+    
+    cursor.execute('''
+        INSERT OR REPLACE INTO user_preferences 
+        (user_id, subscriptions, language) 
+        VALUES (?, ?, ?)
+    ''', (user_id, json.dumps(subscriptions), language))
+    
+    conn.commit()
+    conn.close()
 
 def save_user_preferences(user_id, categories):
     conn = sqlite3.connect('news.db')
     cursor = conn.cursor()
-    subscriptions = json.dumps(categories)
     
     cursor.execute('''
-        INSERT OR REPLACE INTO user_preferences (user_id, subscriptions)
-        VALUES (?, ?)
-    ''', (user_id, subscriptions))
+        INSERT OR REPLACE INTO user_preferences 
+        (user_id, subscriptions, language) 
+        VALUES (?, ?, ?)
+    ''', (user_id, json.dumps(subscriptions), language))
     
     conn.commit()
     conn.close()
@@ -88,13 +109,18 @@ def get_cached_preferences(user_id):
     }
     return prefs
 
+@lru_cache(maxsize=100)
+def get_user_settings_cached(user_id):
+    """Кешированная версия получения настроек"""
+    return get_user_settings(user_id)
+
+def get_user_preferences(user_id):
+    """Возвращает только подписки пользователя"""
+    return get_user_settings_cached(user_id)["subscriptions"]
+
 def get_user_language(user_id):
-    conn = sqlite3.connect('news.db')
-    cursor = conn.cursor()
-    cursor.execute("SELECT language FROM user_preferences WHERE user_id=?", (user_id,))
-    result = cursor.fetchone()
-    conn.close()
-    return result[0] if result else 'en'  # Возвращаем 'en' по умолчанию
+    """Возвращает только язык пользователя"""
+    return get_user_settings_cached(user_id)["language"]
 
 def set_user_language(user_id, lang_code):
     conn = sqlite3.connect('news.db')
