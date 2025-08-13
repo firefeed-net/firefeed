@@ -9,6 +9,7 @@ from parser import fetch_news
 from database import init_db, is_news_new, mark_as_published, get_user_settings, save_user_settings, get_user_preferences, save_user_preferences, get_all_users, get_user_language, set_user_language
 from translator import translate_text  # Импортируем функцию перевода
 from functools import lru_cache
+import time
 
 LANG_NAMES = {
     "en": "English 🇬🇧",
@@ -239,6 +240,7 @@ async def monitor_news_task(context: ContextTypes.DEFAULT_TYPE):
         news_list = await fetch_news()
         for news in news_list:
             if is_news_new(news['id']):
+                time.sleep(28)
                 await post_to_channel(context.bot, news)
     except Exception as e:
         print(f"⚠️ Ошибка мониторинга: {e}")
@@ -259,11 +261,12 @@ async def send_news_to_user(user_id, news_item):
             lang_note = ""
         
         # Очищаем HTML
+        clean_title = clean_html(title)
         clean_description = clean_html(description)
         
         # Форматируем сообщение
         message = (
-            f"🔥 *{title}*\n"
+            f"🔥 *{clean_title}*\n"
             f"_Источник: {news_item['source']}_\n"
             f"_Категория: {news_item['category']}_\n\n"
             f"{clean_description}{lang_note}\n\n"
@@ -283,15 +286,16 @@ async def send_news_to_user(user_id, news_item):
 async def post_to_channel(bot, news_item):
     try:
         # Очищаем описание от HTML
+        clean_title = clean_html(news_item['title'])
         clean_description = clean_html(news_item['description'])
         hashtags = f"\n#{news_item['category']}_news #{news_item['source']}"
         
         # Форматируем сообщение с категорией (БЕЗ ПЕРЕВОДА)
         message = (
-            f"{FIRE_EMOJI} <b>{html.escape(news_item['title'])}</b>\n"
+            f"{FIRE_EMOJI} <b>{clean_title}</b>\n"
             f"{clean_description}\n\n"
             f"⚡ <a href='{news_item['link']}'>Читать полностью</a>"
-            f"\n\n{hashtags}"
+            f"\n{hashtags}\n"
         )
         
         await bot.send_message(
