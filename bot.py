@@ -238,10 +238,18 @@ async def monitor_news_task(context: ContextTypes.DEFAULT_TYPE):
     try:
         print("🔎 Проверка новостей...")
         news_list = await fetch_news()
-        for news in news_list:
-            if is_news_new(news['id']):
-                time.sleep(28)
+        new_news = [news for news in news_list if is_news_new(news['id'])]
+        
+        # Отправляем всё без задержек, если новостей <= 3
+        if len(new_news) <= 3:
+            for news in new_news:
                 await post_to_channel(context.bot, news)
+        else:
+            # Для большого количества - отправляем пачкой без задержек
+            # ИЛИ увеличиваем интервал между постами
+            for news in new_news:
+                await post_to_channel(context.bot, news)
+                await asyncio.sleep(10)
     except Exception as e:
         print(f"⚠️ Ошибка мониторинга: {e}")
 
@@ -289,12 +297,25 @@ async def post_to_channel(bot, news_item):
         clean_title = clean_html(news_item['title'])
         clean_description = clean_html(news_item['description'])
         hashtags = f"\n#{news_item['category']}_news #{news_item['source']}"
+
+        # Получаем язык пользователя
+        user_lang = "ru"
         
-        # Форматируем сообщение с категорией (БЕЗ ПЕРЕВОДА)
+        # Переводим если нужно
+        if user_lang != news_item['lang']:
+            title = translate_text(clean_title, user_lang)
+            description = translate_text(clean_description, user_lang)
+            lang_note = f"\n\n🌐 (Переведено с {news_item['lang'].upper()})"
+        else:
+            title = clean_title
+            description = clean_description
+            lang_note = ""
+        
+        # Форматируем сообщение с категорией (en)
         message = (
-            f"{FIRE_EMOJI} <b>{clean_title}</b>\n"
-            f"{clean_description}\n\n"
-            f"⚡ <a href='{news_item['link']}'>Читать полностью</a>"
+            f"{FIRE_EMOJI} <b>{title}</b>\n"
+            f"{description}\n\n"
+            f"⚡ <a href='{news_item['link']}'>Read more</a>"
             f"\n{hashtags}\n"
         )
         
@@ -305,7 +326,7 @@ async def post_to_channel(bot, news_item):
             disable_web_page_preview=False
         )
         mark_as_published(news_item['id'])
-        print(f"✅ [{news_item['lang']}/{news_item['category']}] Опубликовано: {news_item['title'][:50]}...")
+        print(f"✅ [{news_item['lang']}/{news_item['category']}] Published: {title[:50]}...")
     except TelegramError as e:
         print(f"❌ Ошибка отправки: {e}")
 
@@ -332,8 +353,8 @@ def main():
     job_queue = application.job_queue
     job_queue.run_repeating(
         callback=monitor_news_task, 
-        interval=60,  # проверка каждые 60 секунд
-        first=1  # запустить через 1 секунду после старта
+        interval=30,  # проверка каждые 60 секунд
+        first=1,  # запустить через 1 секунду после старта
     )
     
     print("🟢 Бот запущен. Ожидаем команды и мониторим новости...")
