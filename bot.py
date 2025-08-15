@@ -32,6 +32,13 @@ READ_MORE_LABELS = {
     "fr": "En savoir plus"
 }
 
+SELECT_CATEGORIES_LABELS = {
+    "en": "Choose the categories you are interested in",
+    "ru": "Выберите категории, которые вам интересны",
+    "de": "Wählen Sie die Kategorien aus, die Sie interessieren",
+    "fr": "Choisissez les catégories qui vous intéressent"
+}
+
 USER_STATES = {}
 
 @lru_cache(maxsize=1000)
@@ -88,7 +95,7 @@ async def show_settings_menu(update: Update, context: ContextTypes.DEFAULT_TYPE,
             return
             
         current_subs = state["current_subs"]
-        current_lang = state["language"]  # Берем язык из состояния
+        current_lang = state["language"]
         
         # Создаем клавиатуру настроек
         keyboard = []
@@ -111,7 +118,7 @@ async def show_settings_menu(update: Update, context: ContextTypes.DEFAULT_TYPE,
             await context.bot.edit_message_text(
                 chat_id=user_id,
                 message_id=state["message_id"],
-                text="⚙️ Выберите интересующие вас категории:",
+                text=f"⚙️ {SELECT_CATEGORIES_LABELS[state["language"]]}:",
                 reply_markup=reply_markup
             )
         else:
@@ -325,12 +332,16 @@ async def post_to_channel(bot, news_item):
         title = clean_title
         description = clean_description
         
-        # Форматируем сообщение с категорией (en)
-        message = (
-            f"{FIRE_EMOJI} <b>{title}</b>\n\n"
-            f"{clean_description}\n\n"
-            f"{hashtags}"
-        )
+        # Проверяем наличие и содержание description у новости
+        has_description = description and description.strip()
+
+        message = f"{FIRE_EMOJI} <b>{title}</b>"
+
+        if has_description:
+            message += f"\n\n{description}"
+
+        # Всегда добавляем хештеги, но с разным отступом в зависимости от наличия описания
+        message += f"\n\n{hashtags}" if has_description else f"\n{hashtags}"
         
         await bot.send_message(
             chat_id=CHANNEL_ID,
@@ -370,7 +381,7 @@ def main():
     job_queue.run_repeating(
         callback=monitor_news_task, 
         interval=30,
-        first=1,  # запустить через 1 секунду после старта
+        first=1  # запустить через 1 секунду после старта
     )
     
     print("🟢 Бот запущен. Ожидаем команды и мониторим новости...")
