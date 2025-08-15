@@ -6,16 +6,30 @@ from telegram.error import TelegramError, BadRequest
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes, MessageHandler, filters
 from config import BOT_TOKEN, CHANNEL_ID, FIRE_EMOJI, CATEGORIES
 from parser import fetch_news
-from database import init_db, is_news_new, mark_as_published, get_user_settings, save_user_settings, get_user_preferences, save_user_preferences, get_all_users, get_user_language, set_user_language
-from translator import translate_text  # Импортируем функцию перевода
+from database import init_db, is_news_new, mark_as_published, get_user_settings, save_user_settings, get_subscribers_for_category, get_user_preferences, save_user_preferences, get_all_users, get_user_language, set_user_language
+from translator import translate_text
 from functools import lru_cache
-import time
+from tenacity import retry, stop_after_attempt, wait_exponential
 
 LANG_NAMES = {
     "en": "English 🇬🇧",
     "ru": "Русский 🇷🇺",
     "de": "Deutsch 🇩🇪",
     "fr": "Français 🇫🇷"
+}
+
+TRANSLATED_FROM_LABELS = {
+    "en": "Translated from",
+    "ru": "Переведено с",
+    "de": "Übersetzt aus",
+    "fr": "Traduit de"
+}
+
+READ_MORE_LABELS = {
+    "en": "Read more",
+    "ru": "Подробнее",
+    "de": "Mehr lesen",
+    "fr": "En savoir plus"
 }
 
 USER_STATES = {}
@@ -236,94 +250,93 @@ def clean_html(raw_html):
 async def monitor_news_task(context: ContextTypes.DEFAULT_TYPE):
     """Периодическая задача для мониторинга новостей"""
     try:
-        print("🔎 Проверка новостей...")
         news_list = await fetch_news()
         new_news = [news for news in news_list if is_news_new(news['id'])]
         
         # Отправляем всё без задержек, если новостей <= 3
         if len(new_news) <= 3:
             for news in new_news:
-                await post_to_channel(context.bot, news)
+                asyncio.create_task(post_to_channel(context.bot, news))
+                asyncio.create_task(send_personal_news(context.bot, news))
         else:
             # Для большого количества - отправляем пачкой без задержек
             # ИЛИ увеличиваем интервал между постами
             for news in new_news:
-                await post_to_channel(context.bot, news)
-                await asyncio.sleep(10)
+                asyncio.create_task(post_to_channel(context.bot, news))
+                asyncio.create_task(send_personal_news(context.bot, news))
+                await asyncio.sleep(8)
     except Exception as e:
         print(f"⚠️ Ошибка мониторинга: {e}")
 
-async def send_news_to_user(user_id, news_item):
-    try:
-        # Получаем язык пользователя
-        user_lang = get_user_language(user_id)
-        
-        # Переводим если нужно
-        if user_lang != news_item['lang']:
-            title = translate_text(news_item['title'], user_lang)
-            description = translate_text(news_item['description'], user_lang)
-            lang_note = f"\n\n🌐 (Переведено с {news_item['lang'].upper()})"
-        else:
-            title = news_item['title']
-            description = news_item['description']
-            lang_note = ""
-        
-        # Очищаем HTML
-        clean_title = clean_html(title)
-        clean_description = clean_html(description)
-        
-        # Форматируем сообщение
-        message = (
-            f"🔥 *{clean_title}*\n"
-            f"_Источник: {news_item['source']}_\n"
-            f"_Категория: {news_item['category']}_\n\n"
-            f"{clean_description}{lang_note}\n\n"
-            f"[Читать полностью]({news_item['link']})"
-        )
-        
-        await context.bot.send_message(
-            chat_id=user_id,
-            text=message,
-            parse_mode='MarkdownV2',
-            disable_web_page_preview=False
-        )
-        print(f"📩 Отправлено пользователю {user_id}: {title[:50]}...")
-    except Exception as e:
-        print(f"❌ Ошибка отправки пользователю {user_id}: {e}")
+@retry(stop=stop_after_attempt(5), 
+       wait=wait_exponential(multiplier=1, min=2, max=30))
+async def send_personal_news(bot, news_item):
+    # Получаем всех подписчиков для этой категории новостей
+    subscribers = get_subscribers_for_category(news_item['category'])
+    
+    for user in subscribers:
+        try:
+            # Переводим если нужно
+            if user['language_code'] != news_item['lang']:
+                title = translate_text(news_item['title'], user['language_code'])
+                description = translate_text(news_item['description'], user['language_code'])
+                lang_note = f"\n\n🌐 {TRANSLATED_FROM_LABELS[user['language_code']]} {news_item['lang'].upper()}"
+            else:
+                title = news_item['title']
+                description = news_item['description']
+                lang_note = ""
+            
+            # Очищаем HTML
+            clean_title = clean_html(title)
+            clean_description = clean_html(description)
+            
+            # Форматируем сообщение
+            message = (
+                f"🔥 <b>{clean_title}</b>\n\n"
+                f"{clean_description}\n\n"
+                f"FROM: {news_item['source']}\n"
+                f"CATEGORY: {news_item['category']}{lang_note}\n\n"
+                f"⚡ <a href='{news_item['link']}'>{READ_MORE_LABELS[user['language_code']]}</a>"
+            )
 
+            # Отправляем персональное сообщение
+            await bot.send_message(
+                chat_id=user['id'],
+                text=message,
+                parse_mode="HTML",
+                disable_web_page_preview=True
+            )
+            
+            # Небольшая задержка чтобы не превысить лимиты Telegram
+            await asyncio.sleep(0.1)
+            
+        except Exception as e:
+            print(f"Error sending news to user {user['id']}: {e}")
+
+@retry(stop=stop_after_attempt(5), 
+       wait=wait_exponential(multiplier=1, min=2, max=30))
 async def post_to_channel(bot, news_item):
     try:
         # Очищаем описание от HTML
         clean_title = clean_html(news_item['title'])
         clean_description = clean_html(news_item['description'])
-        hashtags = f"\n#{news_item['category']}_news #{news_item['source']}"
+        hashtags = f"\n#firefeed_{news_item['category']} #firefeed_{news_item['source']}"
 
-        # Получаем язык пользователя
-        user_lang = "ru"
-        
-        # Переводим если нужно
-        if user_lang != news_item['lang']:
-            title = translate_text(clean_title, user_lang)
-            description = translate_text(clean_description, user_lang)
-            lang_note = f"\n\n🌐 (Переведено с {news_item['lang'].upper()})"
-        else:
-            title = clean_title
-            description = clean_description
-            lang_note = ""
+        title = clean_title
+        description = clean_description
         
         # Форматируем сообщение с категорией (en)
         message = (
-            f"{FIRE_EMOJI} <b>{title}</b>\n"
-            f"{description}\n\n"
-            f"⚡ <a href='{news_item['link']}'>Read more</a>"
-            f"\n{hashtags}\n"
+            f"{FIRE_EMOJI} <b>{title}</b>\n\n"
+            f"{clean_description}\n\n"
+            f"{hashtags}"
         )
         
         await bot.send_message(
             chat_id=CHANNEL_ID,
             text=message,
             parse_mode='HTML',
-            disable_web_page_preview=False
+            disable_web_page_preview=True
         )
         mark_as_published(news_item['id'])
         print(f"✅ [{news_item['lang']}/{news_item['category']}] Published: {title[:50]}...")
@@ -334,26 +347,29 @@ async def debug(update: Update, context: ContextTypes.DEFAULT_TYPE):
     print(f"⚡ Получено сообщение: {update.message.text}")
     await update.message.reply_text("Бот активен!")
 
+async def error_handler(update, context):
+    if isinstance(context.error, NetworkError):
+        print(f"Сетевая ошибка: {context.error}")
+    else:
+        print(f"Другая ошибка: {context.error}")
+
 def main():
     """Точка входа с использованием JobQueue"""
     application = Application.builder().token(BOT_TOKEN).build()
-    
-    # Инициализация БД с миграцией
-    from database import init_db, migrate_db
     init_db()
-    migrate_db()  # <-- Важная строка!
     
     # Регистрируем обработчики команд
     application.add_handler(CommandHandler("start", start_command))
     application.add_handler(CommandHandler("settings", settings_command))
     application.add_handler(CallbackQueryHandler(button_handler))
     application.add_handler(MessageHandler(filters.ALL, debug))
+    application.add_error_handler(error_handler)
     
     # Регистрируем периодическую задачу
     job_queue = application.job_queue
     job_queue.run_repeating(
         callback=monitor_news_task, 
-        interval=30,  # проверка каждые 60 секунд
+        interval=30,
         first=1,  # запустить через 1 секунду после старта
     )
     

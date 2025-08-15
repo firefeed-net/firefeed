@@ -132,27 +132,39 @@ def set_user_language(user_id, lang_code):
     conn.commit()
     conn.close()
 
+import json
+import sqlite3
 
-def migrate_db():
-    """Добавляем новые колонки в существующую базу"""
+def get_subscribers_for_category(category):
     conn = sqlite3.connect('news.db')
     cursor = conn.cursor()
     
-    try:
-        # Проверяем существование колонки 'language'
-        cursor.execute("PRAGMA table_info(user_preferences)")
-        columns = [col[1] for col in cursor.fetchall()]
+    # Получаем всех пользователей
+    cursor.execute('''
+        SELECT user_id, subscriptions, language 
+        FROM user_preferences
+    ''')
+    
+    subscribers = []
+    for row in cursor.fetchall():
+        user_id, subscriptions_json, language = row
         
-        if 'language' not in columns:
-            cursor.execute("ALTER TABLE user_preferences ADD COLUMN language TEXT DEFAULT 'en'")
-            print("✅ Добавлена колонка 'language'")
+        try:
+            # Преобразуем JSON-строку в Python-объект
+            subscriptions_list = json.loads(subscriptions_json)
             
-        # Можно добавить проверку для других колонок
-        # if 'new_column' not in columns: ...
-        cursor.execute("UPDATE user_preferences SET language = 'en' WHERE language IS NULL")
-            
-        conn.commit()
-    except sqlite3.Error as e:
-        print(f"⚠️ Ошибка миграции: {e}")
-    finally:
-        conn.close()
+            # Проверяем подписки пользователя
+            if 'all' in subscriptions_list or category in subscriptions_list:
+                user = {
+                    'id': user_id,
+                    'language_code': language if language else 'en'
+                }
+                subscribers.append(user)
+                
+        except json.JSONDecodeError:
+            # Обработка невалидного JSON
+            print(f"Invalid JSON for user {user_id}: {subscriptions_json}")
+            continue
+    
+    conn.close()
+    return subscribers

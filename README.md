@@ -9,6 +9,13 @@ pip install deep_translator
 
 ## Запуск
 
+### Запуск через команды
+
 python -m venv venv
 source venv/bin/activate
 python bot.py
+
+### Запуск через bash-скрипт
+
+chmod +x ./run_bot.sh
+./run_bot.sh
