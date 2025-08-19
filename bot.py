@@ -1,4 +1,6 @@
 import os
+import signal
+import sys
 import asyncio
 import re
 import html
@@ -9,12 +11,13 @@ from telegram.error import (
     TelegramError
 )
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes, MessageHandler, filters
-from config import BOT_TOKEN, CHANNEL_ID, FIRE_EMOJI, CATEGORIES
+from config import BOT_TOKEN, CHANNEL_ID, FIRE_EMOJI
 from parser import fetch_news
 from database import init_db, is_news_new, mark_as_published, get_user_settings, save_user_settings, get_subscribers_for_category, get_user_preferences, get_user_language, set_user_language
 from translator import translate_text
 from functools import lru_cache
 from tenacity import retry, stop_after_attempt, wait_exponential
+from rss_manager import RSSManager
 
 LANG_NAMES = {
     "en": "English 🇬🇧",
@@ -94,7 +97,6 @@ async def settings_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def show_settings_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, user_id: int):
     """Показывает меню настроек с текущим состоянием"""
     try:
-
         state = USER_STATES.get(user_id)
         if not state:
             return
@@ -229,10 +231,11 @@ async def update_settings_menu(query, current_subs):
     try:
         user_id = query.from_user.id
         current_lang = get_user_language(user_id)
+        rss_manager = RSSManager()
         
         # Создаем клавиатуру настроек
         keyboard = []
-        for category in CATEGORIES.keys():
+        for category in rss_manager.get_all_active_feeds().keys():
             is_selected = category in current_subs
             text = f"{'✅ ' if is_selected else '🔲 '}{category.capitalize()}"
             keyboard.append([InlineKeyboardButton(text, callback_data=f"toggle_{category}")])
@@ -269,26 +272,54 @@ def clean_html(raw_html):
     # Удаляем лишние пробелы
     return re.sub(r'\s+', ' ', clean_text).strip()
 
-async def monitor_news_task(context: ContextTypes.DEFAULT_TYPE):
-    """Периодическая задача для мониторинга новостей"""
+async def monitor_news_task(context):
+    """Периодическая задача мониторинга новостей"""
+    rss_manager = RSSManager()
+    
     try:
-        news_list = await fetch_news()
-        new_news = [news for news in news_list if is_news_new(news['id'])]
+        # Подключаемся к базе
+        if not rss_manager.get_db_connection():
+            print("❌ Не удалось подключиться к базе данных RSS")
+            return
         
-        # Отправляем всё без задержек, если новостей <= 3
-        if len(new_news) <= 3:
-            for news in new_news:
-                asyncio.create_task(post_to_channel(context.bot, news))
-                asyncio.create_task(send_personal_news(context.bot, news))
-        else:
-            # Для большого количества - отправляем пачкой без задержек
-            # ИЛИ увеличиваем интервал между постами
-            for news in new_news:
-                asyncio.create_task(post_to_channel(context.bot, news))
-                asyncio.create_task(send_personal_news(context.bot, news))
-                await asyncio.sleep(5)
+        # Получаем все RSS-ленты
+        categories = rss_manager.get_all_active_feeds()
+        
+        for category, sources in categories.items():
+            for source in sources:
+                    try:
+                        news_list = await fetch_news()
+                        
+                        for news in news_list:
+                            # Проверяем уникальность
+                            if is_news_new(
+                                news['title'], 
+                                news['description'], 
+                                news['link'],
+                                news['published'],  # Ваш struct_time
+                                24  # 24 часа проверки
+                            ):
+
+                                asyncio.create_task(post_to_channel(context.bot, news))
+                                asyncio.create_task(send_personal_news(context.bot, news))
+                                    
+                                # Сохраняем информацию о публикации
+                                mark_as_published(
+                                    news['title'],
+                                    news['description'],
+                                    news['link'],
+                                    news['published']
+                                )
+                                
+                                await asyncio.sleep(15)
+
+                                
+                    except Exception as e:
+                        print(f"Ошибка обработки источника: {e}")
+                        continue
+                        
     except Exception as e:
-        print(f"⚠️ Ошибка мониторинга: {e}")
+        print(f"Ошибка в задаче мониторинга: {e}")
 
 @retry(stop=stop_after_attempt(5), 
        wait=wait_exponential(multiplier=1, min=2, max=30))
@@ -374,7 +405,12 @@ async def post_to_channel(bot, news_item):
             parse_mode='HTML',
             disable_web_page_preview=True
         )
-        mark_as_published(news_item['id'])
+        mark_as_published(
+            news_item['title'],
+            news_item['description'], 
+            news_item['link'],
+            news_item['published']
+        )
         print(f"✅ [{news_item['lang']}/{news_item['category']}] Published: {title[:50]}...")
     except TelegramError as e:
         print(f"❌ Ошибка отправки: {e}")
@@ -417,15 +453,33 @@ def main():
         first=1
     )
 
+    # Функция для корректного завершения
+    def signal_handler(sig, frame):
+        print("\n🛑 Получен сигнал завершения, закрываем соединения...")
+        rss_manager.close_connection()
+        sys.exit(0)
+
+    # Регистрируем обработчики сигналов
+    signal.signal(signal.SIGINT, signal_handler)  # Ctrl+C
+    signal.signal(signal.SIGTERM, signal_handler) # Сигнал завершения
+
     print("🟢 Бот запущен в режиме Webhook")
     
-    # Запускаем webhook
-    application.run_webhook(
-        listen='127.0.0.1',
-        port=5000,
-        url_path='webhook',
-        webhook_url='https://firefeed.net/webhook'
-    )
+    try:
+        # Запускаем webhook
+        application.run_webhook(
+            listen='127.0.0.1',
+            port=5000,
+            url_path='webhook',
+            webhook_url='https://firefeed.net/webhook'
+        )
+    except KeyboardInterrupt:
+        print("\n🛑 Прервано пользователем, закрываем соединения...")
+        rss_manager.close_connection()
+    except Exception as e:
+        print(f"❌ Ошибка: {e}, закрываем соединения...")
+        rss_manager.close_connection()
+        raise
 
 if __name__ == "__main__":
     main()

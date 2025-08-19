@@ -9,3 +9,4 @@ torch==2.8.0
 transformers==4.55.2
 sentencepiece==0.2.1
 sacremoses==0.1.1
+python-dateutil==2.9.0.post0

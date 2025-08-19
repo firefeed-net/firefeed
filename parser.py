@@ -3,7 +3,10 @@ import asyncio
 import re
 import pytz
 from datetime import datetime
-from config import CATEGORIES
+from rss_manager import RSSManager
+from dateutil import parser
+
+rss_manager = RSSManager()
 
 MAX_ENTRIES_PER_FEED = 10
 MAX_TOTAL_NEWS = 100
@@ -13,7 +16,7 @@ async def fetch_news():
     all_news = []
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"}
 
-    for category, sources in CATEGORIES.items():
+    for category, sources in rss_manager.get_all_active_feeds().items():
         for source in sources:
             try:
                 feed = feedparser.parse(source['url'], request_headers=headers)
@@ -43,9 +46,9 @@ async def fetch_news():
                 seen_keys.add(unique_key)
                 
                 # Обработка даты с fallback
-                pub_date = getattr(entry, 'published_parsed', None)
+                pub_date = getattr(entry, 'published', None)
                 if pub_date:
-                    published = datetime(*pub_date[:6], tzinfo=pytz.utc)
+                    published = parser.parse(pub_date).replace(tzinfo=pytz.utc)
                 else:
                     published = datetime.now(pytz.utc)  # Используем текущее время
                 

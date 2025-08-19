@@ -1,26 +1,21 @@
 import mysql.connector
 import json
-from functools import lru_cache
 import time
-
-DB_CONFIG = {
-    'host': "localhost",
-    'user': "firefeed_db_usr",
-    'password': "AixLUaCqe68v9oO8",
-    'database': "firefeed_db",
-    'charset': "utf8mb4"
-}
+import hashlib
+from functools import lru_cache
+from config import DB_CONFIG
+from urllib.parse import urlparse
 
 USER_CACHE = {}
 CACHE_EXPIRY = 300  # 5 минут
 
-def get_connection():
+def get_db_connection():
     """Создает и возвращает соединение с MySQL"""
     return mysql.connector.connect(**DB_CONFIG)
 
 def init_db():
     """Инициализация структуры базы данных"""
-    conn = get_connection()
+    conn = get_db_connection()
     cursor = conn.cursor()
     
     # Таблица для опубликованных новостей (id изменен на VARCHAR)
@@ -43,32 +38,79 @@ def init_db():
     conn.commit()
     conn.close()
 
-def is_news_new(news_id: str) -> bool:
-    """Проверяет новость более эффективно"""
-    conn = get_connection()
-    cursor = conn.cursor()
+def is_news_new(title, content, url, publish_date, check_period_hours=24):
+    """
+    Проверяет уникальность новости
+    """
+    # Генерируем хеши
+    title_hash = hashlib.sha256(title.encode('utf-8')).hexdigest()
+    content_hash = hashlib.sha256(content[:500].encode('utf-8')).hexdigest()  # Первые 500 символов
     
-    # Используем EXISTS для оптимальной проверки
-    cursor.execute("SELECT NOT EXISTS(SELECT 1 FROM published_news WHERE id = %s)", (news_id,))
-    is_new = cursor.fetchone()[0]  # Вернет 1 если новости нет, 0 если есть
+    connection = get_db_connection()
+    if connection is None:
+        return True
     
-    conn.close()
-    return bool(is_new)
+    try:
+        cursor = connection.cursor()
+        
+        # Проверяем по хешам за указанный период
+        query = """
+        SELECT COUNT(*) FROM published_news 
+        WHERE (title_hash = %s OR content_hash = %s)
+        AND published_at >= DATE_SUB(NOW(), INTERVAL %s HOUR)
+        """
+        cursor.execute(query, (title_hash, content_hash, check_period_hours))
+        count = cursor.fetchone()[0]
+        
+        return count == 0
+        
+    except Exception as e:
+        print(f"Ошибка проверки уникальности: {e}")
+        return True
+    finally:
+        cursor.close()
+        connection.close()
 
-def mark_as_published(news_id: str):
-    """Помечает новость как опубликованную с использованием INSERT IGNORE"""
-    conn = get_connection()
-    cursor = conn.cursor()
+def generate_news_id(url, publish_date):
+    """Генерация ID в вашем формате"""
+    return f"{url}_time.struct_time({publish_date})"
+
+def mark_as_published(title, content, url, publish_date):
+    """
+    Сохраняет информацию о опубликованной новости
+    """
+    title_hash = hashlib.sha256(title.encode('utf-8')).hexdigest()
+    content_hash = hashlib.sha256(content[:500].encode('utf-8')).hexdigest()
+    news_id = generate_news_id(url, publish_date)
     
-    # Используем INSERT IGNORE для пропуска дубликатов
-    cursor.execute("INSERT IGNORE INTO published_news (id) VALUES (%s)", (news_id,))
+    connection = get_db_connection()
+    if connection is None:
+        return False
     
-    conn.commit()
-    conn.close()
+    try:
+        cursor = connection.cursor()
+        
+        # Вставляем запись
+        query = """
+        INSERT INTO published_news (id, title_hash, content_hash, source_url, published_at)
+        VALUES (%s, %s, %s, %s, NOW())
+        ON DUPLICATE KEY UPDATE published_at = NOW()
+        """
+        cursor.execute(query, (news_id, title_hash, content_hash, url))
+        connection.commit()
+        return True
+        
+    except Exception as e:
+        print(f"Ошибка сохранения публикации: {e}")
+        connection.rollback()
+        return False
+    finally:
+        cursor.close()
+        connection.close()
 
 def get_user_settings(user_id):
     """Возвращает все настройки пользователя"""
-    conn = get_connection()
+    conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute("SELECT subscriptions, language FROM user_preferences WHERE user_id = %s", (user_id,))
     result = cursor.fetchone()
@@ -86,7 +128,7 @@ def get_user_settings(user_id):
 
 def save_user_settings(user_id, subscriptions, language):
     """Сохраняет все настройки пользователя"""
-    conn = get_connection()
+    conn = get_db_connection()
     cursor = conn.cursor()
     
     # Используем ON DUPLICATE KEY UPDATE вместо INSERT OR REPLACE
@@ -103,7 +145,7 @@ def save_user_settings(user_id, subscriptions, language):
 
 def get_all_users():
     """Получаем список всех пользователей"""
-    conn = get_connection()
+    conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute("SELECT user_id FROM user_preferences")
     user_ids = [row[0] for row in cursor.fetchall()]
@@ -137,7 +179,7 @@ def get_user_language(user_id):
 
 def set_user_language(user_id, lang_code):
     """Устанавливает язык пользователя"""
-    conn = get_connection()
+    conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute('''
         INSERT INTO user_preferences (user_id, language)
@@ -149,7 +191,7 @@ def set_user_language(user_id, lang_code):
 
 def get_subscribers_for_category(category):
     """Получает подписчиков для определенной категории"""
-    conn = get_connection()
+    conn = get_db_connection()
     cursor = conn.cursor()
     
     cursor.execute('''
