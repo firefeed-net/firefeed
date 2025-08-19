@@ -47,8 +47,8 @@ SELECT_CATEGORIES_LABELS = {
 USER_STATES = {}
 
 @lru_cache(maxsize=1000)
-def cached_translate(text, target_lang, source_lang='auto'):
-    return translate_text(text, target_lang, source_lang)
+def cached_translate(text, source_lang, target_lang):
+    return translate_text(text, source_lang, target_lang)
 
 # Добавляем обработчики команд
 def setup_handlers(application):
@@ -304,8 +304,8 @@ async def send_personal_news(bot, news_item):
 
             # Переводим если нужно
             if user['language_code'] != news_item['lang']:
-                title = translate_text(clean_title, user['language_code'])
-                description = translate_text(clean_description, user['language_code'])
+                title = translate_text(clean_title, news_item['lang'], user['language_code'])
+                description = translate_text(clean_description, news_item['lang'], user['language_code'])
                 lang_note = f"\n\n🌐 {TRANSLATED_FROM_LABELS[user['language_code']]} {news_item['lang'].upper()}"
             else:
                 title = news_item['title']
@@ -341,20 +341,21 @@ async def post_to_channel(bot, news_item):
     try:
         DEFAULT_CHANNEL_LANGUAGE = 'ru'
 
+        # Очищаем HTML
+        clean_title = clean_html(news_item['title'])
+        clean_description = clean_html(news_item['description'])
+
         # Переводим если нужно
-        if news_item['lang'] != '':
-            title = translate_text(clean_title, DEFAULT_CHANNEL_LANGUAGE)
-            description = translate_text(clean_description, DEFAULT_CHANNEL_LANGUAGE)
+        if news_item['lang'] != DEFAULT_CHANNEL_LANGUAGE:
+            title = translate_text(clean_title, news_item['lang'], DEFAULT_CHANNEL_LANGUAGE)
+            description = translate_text(clean_description, news_item['lang'], DEFAULT_CHANNEL_LANGUAGE)
             lang_note = f"\n\n🌐 {TRANSLATED_FROM_LABELS[DEFAULT_CHANNEL_LANGUAGE]} {news_item['lang'].upper()}"
         else:
             title = news_item['title']
             description = news_item['description']
             lang_note = ""
 
-        hashtags = f"\n#firefeed_{news_item['category']} #firefeed_{news_item['source']}"
-
-        title = clean_title
-        description = clean_description
+        hashtags = f"\n#{translate_text(news_item['category'], 'en', DEFAULT_CHANNEL_LANGUAGE)} #{news_item['source']}"
         
         # Проверяем наличие и содержание description у новости
         has_description = description and description.strip()
@@ -365,7 +366,7 @@ async def post_to_channel(bot, news_item):
             message += f"\n\n{description}"
 
         # Всегда добавляем хештеги, но с разным отступом в зависимости от наличия описания
-        message += f"\n\n{hashtags}" if has_description else f"\n{hashtags}"
+        message += f"{lang_note}\n{hashtags}" if has_description else f"{lang_note}\n{hashtags}"
         
         await bot.send_message(
             chat_id=CHANNEL_ID,

@@ -5,3 +5,7 @@ deep-translator==1.11.4
 tenacity==9.1.2
 mysql-connector-python==9.4.0
 pytz==2025.2
+torch==2.8.0
+transformers==4.55.2
+sentencepiece==0.2.1
+sacremoses==0.1.1
