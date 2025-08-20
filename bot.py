@@ -282,44 +282,42 @@ async def monitor_news_task(context):
             print("❌ Не удалось подключиться к базе данных RSS")
             return
         
-        # Получаем все RSS-ленты
-        categories = rss_manager.get_all_active_feeds()
+        # Получаем ВСЕ новости один раз
+        news_list = await fetch_news()
         
-        for category, sources in categories.items():
-            for source in sources:
-                    try:
-                        news_list = await fetch_news()
+        # Обрабатываем все новости
+        for news in news_list:
+            try:
+                # Проверяем уникальность
+                if is_news_new(
+                    news['title'], 
+                    news['description'], 
+                    news['link'],
+                    news['published'],
+                    24
+                ):
+                    # Отправляем в канал и пользователям
+                    asyncio.create_task(post_to_channel(context.bot, news))
+                    asyncio.create_task(send_personal_news(context.bot, news))
                         
-                        for news in news_list:
-                            # Проверяем уникальность
-                            if is_news_new(
-                                news['title'], 
-                                news['description'], 
-                                news['link'],
-                                news['published'],  # Ваш struct_time
-                                24  # 24 часа проверки
-                            ):
-
-                                asyncio.create_task(post_to_channel(context.bot, news))
-                                asyncio.create_task(send_personal_news(context.bot, news))
-                                    
-                                # Сохраняем информацию о публикации
-                                mark_as_published(
-                                    news['title'],
-                                    news['description'],
-                                    news['link'],
-                                    news['published']
-                                )
-                                
-                                await asyncio.sleep(15)
-
-                                
-                    except Exception as e:
-                        print(f"Ошибка обработки источника: {e}")
-                        continue
+                    # Сохраняем информацию о публикации
+                    mark_as_published(
+                        news['title'],
+                        news['description'],
+                        news['link'],
+                        news['published']
+                    )
+                    
+                    await asyncio.sleep(15)
+                    
+            except Exception as e:
+                print(f"Ошибка обработки новости {news.get('link', 'unknown')}: {e}")
+                continue
                         
     except Exception as e:
         print(f"Ошибка в задаче мониторинга: {e}")
+    finally:
+        rss_manager.close()
 
 @retry(stop=stop_after_attempt(5), 
        wait=wait_exponential(multiplier=1, min=2, max=30))
