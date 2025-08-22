@@ -21,6 +21,8 @@ chmod +x ./run_bot.sh
 
 ### Запуск через systemd-юнит
 
+Пример файла сервиса:
+
 ```
 [Unit]
 Description=FireFeed Telegram Bot Service
@@ -46,4 +48,15 @@ KillSignal=SIGINT
 
 [Install]
 WantedBy=multi-user.target
+```
+
+Пример конфигурации nginx для работы через webhook:
+
+```
+    location /webhook {
+        proxy_pass http://127.0.0.1:5000/webhook;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }
 ```
