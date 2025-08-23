@@ -494,12 +494,26 @@ class RSSManager:
             print(f"[DB] [mark_as_published] Выполнен запрос к 'published_news_data'. (ID: {short_id})")
 
             # 4. ВСТАВЛЯЕМ или ОБНОВЛЯЕМ переводы в news_translations
-            # ... (ваш код для вставки переводов) ...
+            for lang_code, trans_data in translations_dict.items():
+                # Проверка на поддерживаемые языки и наличие данных
+                if lang_code in ['ru', 'en', 'de', 'fr'] and isinstance(trans_data, dict):
+                    trans_title = trans_data.get('title', title) # fallback на оригинал
+                    trans_content = trans_data.get('description', content) # fallback на оригинал
+                    
+                    query_translation = """
+                    INSERT INTO news_translations (news_id, language, translated_title, translated_content, created_at, updated_at)
+                    VALUES (%s, %s, %s, %s, NOW(), NOW())
+                    ON DUPLICATE KEY UPDATE
+                        translated_title = VALUES(translated_title),
+                        translated_content = VALUES(translated_content),
+                        updated_at = NOW()
+                    """
+                    cursor.execute(query_translation, (news_id, lang_code, trans_title, trans_content))
+            
+            connection.commit()
+            print(f"[DB] [SUCCESS] Новость и переводы сохранены: {short_id}")
             print(f"[DB] [mark_as_published] Обработка переводов завершена. (ID: {short_id})")
             
-            # --- Финальный коммит (на случай, если предыдущий был отдельным) ---
-            # connection.commit() # Уже сделан выше
-            print(f"[DB] [SUCCESS] Новость и переводы сохранены: {short_id}")
             return True
             
         except mysql.connector.Error as err:
@@ -525,7 +539,6 @@ class RSSManager:
         }
 
         try:
-            # --- ИЗМЕНЕНИЕ ЗДЕСЬ ---
             # Получаем список активных фидов (список словарей)
             active_feeds = self.get_all_active_feeds()
             print(f"[RSS] Найдено {len(active_feeds)} активных RSS-лент.")

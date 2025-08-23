@@ -16,7 +16,6 @@ from starlette.responses import StreamingResponse
 import traceback
 
 # --- Middleware для принудительной установки UTF-8 ---
-# (Без изменений)
 class ForceUTF8ResponseMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
         try:
@@ -58,7 +57,6 @@ app.add_middleware(ForceUTF8ResponseMiddleware)
 # app.add_middleware(CORSMiddleware, ...)
 
 # --- Вспомогательная функция для обработки дат ---
-# (Без изменений)
 def format_datetime(dt_obj):
     """Форматирует объект datetime в строку ISO."""
     return dt_obj.isoformat() if dt_obj else None
@@ -86,7 +84,6 @@ async def get_news(
 
         cursor = connection.cursor(dictionary=True)
         try:
-            # --- ОБНОВЛЕНИЕ ЗАПРОСА ---
             # JOIN с rss_feeds, categories и sources для получения имен категории и источника
             query = """
             SELECT 
@@ -126,23 +123,19 @@ async def get_news(
             LEFT JOIN news_translations nt_display ON nd.news_id = nt_display.news_id AND nt_display.language = %s
             WHERE 1=1
             """
-            # --- КОНЕЦ ОБНОВЛЕНИЯ ЗАПРОСА ---
             params = [display_language]
             where_params = []
 
             if original_language:
                 query += " AND nd.original_language = %s"
                 where_params.append(original_language)
-            # --- ИЗМЕНЕНИЕ УСЛОВИЯ ФИЛЬТРАЦИИ ---
             # Фильтруем по имени категории, а не по значению в published_news_data
             if category:
                 query += " AND c.name = %s" # Фильтр по имени категории из таблицы categories
                 where_params.append(category)
-            # --- НОВОЕ УСЛОВИЕ ФИЛЬТРАЦИИ ---
             if source:
                 query += " AND s.name = %s" # Фильтр по имени источника из таблицы sources
                 where_params.append(source)
-            # --- КОНЕЦ ИЗМЕНЕНИЙ ---
             query += " ORDER BY pn.published_at DESC LIMIT %s"
             where_params.append(limit)
             
@@ -153,7 +146,6 @@ async def get_news(
 
             news_list = []
             for row in results:
-                 # --- ОБНОВЛЕНИЕ ФОРМИРОВАНИЯ ОТВЕТА ---
                  # Используем category_name и source_name из результата запроса
                  item_data = {
                      "news_id": row['news_id'],
@@ -175,7 +167,6 @@ async def get_news(
                      "title_fr": row['title_fr'],
                      "content_fr": row['content_fr'],
                  }
-                 # --- КОНЕЦ ОБНОВЛЕНИЯ ---
                  news_list.append(models.NewsItem(**item_data))
                  
             return news_list
@@ -197,7 +188,6 @@ async def get_news_by_id(news_id: str):
 
         cursor = connection.cursor(dictionary=True)
         try:
-            # --- ОБНОВЛЕНИЕ ЗАПРОСА ---
             # Аналогично, добавляем JOIN с rss_feeds, categories, sources
             query = """
             SELECT 
@@ -225,14 +215,12 @@ async def get_news_by_id(news_id: str):
             LEFT JOIN news_translations nt_fr ON nd.news_id = nt_fr.news_id AND nt_fr.language = 'fr'
             WHERE nd.news_id = %s
             """
-            # --- КОНЕЦ ОБНОВЛЕНИЯ ЗАПРОСА ---
             cursor.execute(query, (news_id,))
             result = cursor.fetchone()
 
             if result is None:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Новость не найдена")
 
-            # --- ОБНОВЛЕНИЕ ФОРМИРОВАНИЯ ОТВЕТА ---
             item_data = {
                 "news_id": result['news_id'],
                 "original_title": result['original_title'],
@@ -254,7 +242,7 @@ async def get_news_by_id(news_id: str):
                 "title_en": result['title_en'] or result['original_title'],
                 "content_en": result['content_en'] or result['original_content'],
             }
-            # --- КОНЕЦ ОБНОВЛЕНИЯ ---
+
             return models.NewsItem(**item_data)
 
         except HTTPException:

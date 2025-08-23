@@ -1,9 +1,7 @@
-# api/models.py
 from pydantic import BaseModel
 from typing import Optional, List
 
 # Модель для представления одного перевода
-# (Без изменений, если не требуется отображать источник/категорию для перевода отдельно)
 class Translation(BaseModel):
     language: str
     title: str
