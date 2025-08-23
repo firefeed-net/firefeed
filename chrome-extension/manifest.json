@@ -1,0 +1,19 @@
+{
+    "manifest_version": 3,
+    "name": "FireFeed News Reader",
+    "version": "1.0",
+    "description": "Читайте новости из ваших RSS-лент прямо в браузере.",
+    "action": {
+      "default_popup": "popup.html",
+      "default_title": "FireFeed News"
+    },
+    "permissions": [
+      "storage"
+    ],
+    "host_permissions": [
+      "https://firefeed.net/api/*"
+    ],
+    "background": {
+      "service_worker": "background.js"
+    }
+  }

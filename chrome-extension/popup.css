@@ -1,0 +1,192 @@
+/* --- Общие струкутры --- */
+/* Закругляем углы popup */
+body {
+    width: 500px;
+    min-height: 400px;
+    margin: 0;
+    padding: 10px;
+    font-family: Arial, sans-serif;
+  }
+  
+  /* --- Светлая тема (по умолчанию) --- */
+  body {
+    background-color: #f5f5f5; /* Светло-серый фон страницы */
+    color: #333;              /* Темный цвет текста */
+  }
+  
+  /* Стили элементов новостей для СВЕТЛОЙ темы */
+  .news-item {
+    background-color: #ffffff; /* Белый фон элемента новости */
+    border: 1px solid #eee;   /* Светлая граница */
+    border-radius: 5px;
+    padding: 12px;
+    margin-bottom: 15px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    transition: box-shadow 0.2s ease;
+  }
+  
+  .news-item:hover {
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.15);
+  }
+  
+  .news-title {
+    margin: 0 0 8px 0;
+    font-size: 1em;
+    font-weight: bold;
+    color: #222; /* Очень темный цвет заголовка */
+  }
+  
+  .news-content {
+    margin: 0 0 8px 0;
+    font-size: 0.9em;
+    color: #555; /* Серый цвет содержимого */
+    line-height: 1.4;
+  }
+  
+  .news-meta {
+    font-size: 0.8em;
+    color: #888; /* Приглушенный серый для мета-информации */
+    display: flex;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 5px;
+  }
+  
+  .news-source {
+    font-weight: bold;
+    color: #333; /* Темный цвет для источника */
+  }
+  
+  .news-date {
+    white-space: nowrap;
+  }
+  
+  .news-link {
+    color: #1a0dab; /* Стандартный синий цвет ссылок */
+    text-decoration: none;
+    font-size: 0.85em;
+  }
+  
+  .news-link:hover {
+    text-decoration: underline;
+  }
+  
+  /* Стили для выпадающих списков для СВЕТЛОЙ темы */
+  .filters select {
+    padding: 4px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    background-color: #ffffff; /* Белый фон */
+    color: #333;              /* Темный текст */
+  }
+  
+  
+  /* --- Темная тема --- */
+  @media (prefers-color-scheme: dark) {
+    body {
+      background-color: #1e1e1e; /* Очень темно-серый фон страницы */
+      color: #eee;              /* Светлый цвет текста */
+      border: 1px solid #333;   /* Темная граница вокруг popup */
+    }
+  
+    .header {
+      border-bottom: 1px solid #333;
+    }
+  
+    /* Стили элементов новостей для ТЕМНОЙ темы */
+    .news-item {
+      background-color: #2d2d2d; /* Темно-серый фон элемента новости */
+      border: 1px solid #444;   /* Темная граница */
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+    }
+  
+    .news-item:hover {
+      box-shadow: 0 2px 5px rgba(0, 0, 0, 0.7);
+    }
+  
+    .news-title {
+      color: #ffffff; /* Белый цвет заголовка */
+    }
+  
+    .news-content {
+      color: #cccccc; /* Светло-серый цвет содержимого */
+    }
+  
+    .news-meta {
+      color: #aaaaaa; /* Приглушенный светло-серый для мета-информации */
+    }
+  
+    .news-source {
+      color: #dddddd; /* Более светлый серый для источника */
+    }
+  
+    .news-link {
+      color: #6ea8fe; /* Светло-голубой цвет ссылок */
+    }
+  
+    .news-link:hover {
+      color: #9ec5fe; /* Еще светлее при наведении */
+      text-decoration: underline;
+    }
+  
+    /* Стили для выпадающих списков для ТЕМНОЙ темы */
+    .filters select {
+      background-color: #3a3a3a; /* Серый фон */
+      color: #ffffff;           /* Белый текст */
+      border: 1px solid #555;   /* Темная граница */
+    }
+  
+    /* Стили для сообщений в темной теме */
+    .loading, .error {
+      background-color: rgba(255, 255, 255, 0.1);
+      border-radius: 5px;
+      padding: 10px;
+    }
+  
+    .error {
+      color: #ff6b6b;
+      font-weight: bold;
+      background-color: rgba(255, 107, 107, 0.1);
+    }
+  }
+  
+  
+  /* --- Остальные общие стили (не зависят от темы) --- */
+  
+  .header {
+    margin-bottom: 15px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid #ddd; /* Будет переопределен в темной теме */
+  }
+  
+  .header h1 {
+    margin: 0 0 10px 0;
+    font-size: 1.2em;
+  }
+  
+  .filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+  }
+  
+  .filters label {
+    font-weight: bold;
+    font-size: 0.9em;
+  }
+  
+  
+  .loading, .error {
+    text-align: center;
+    padding: 20px;
+    font-style: italic;
+    /* background-color и color определяются в светлой/темной теме */
+  }
+  
+  
+  .news-container {
+    max-height: 500px;
+    overflow-y: auto;
+  }
+  

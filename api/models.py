@@ -1,7 +1,9 @@
+# api/models.py
 from pydantic import BaseModel
 from typing import Optional, List
 
 # Модель для представления одного перевода
+# (Без изменений, если не требуется отображать источник/категорию для перевода отдельно)
 class Translation(BaseModel):
     language: str
     title: str
@@ -14,6 +16,9 @@ class NewsItem(BaseModel):
     original_content: str
     original_language: str
     category: Optional[str] = None
+    # --- ДОБАВЛЕНО ---
+    source: Optional[str] = None # Имя источника новости
+    # -----------------
     title_ru: Optional[str] = None
     content_ru: Optional[str] = None
     title_en: Optional[str] = None
@@ -29,8 +34,12 @@ class NewsItem(BaseModel):
         from_attributes = True # Для совместимости с ORM (если будете использовать)
 
 # Модели для списков
+
+# --- ИЗМЕНЕНО ---
+# Поле 'category' заменено на 'name' для соответствия данным из таблицы 'categories'
 class CategoryItem(BaseModel):
-    category: str
+    name: str # Имя категории из таблицы categories
+# ----------------
 
 class LanguageItem(BaseModel):
     language: str

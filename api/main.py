@@ -1,3 +1,4 @@
+# api/main.py
 from fastapi import FastAPI, Depends, HTTPException, Query, status
 from fastapi.middleware.cors import CORSMiddleware # Для CORS
 from typing import List, Optional
@@ -15,35 +16,28 @@ from starlette.responses import StreamingResponse
 import traceback
 
 # --- Middleware для принудительной установки UTF-8 ---
+# (Без изменений)
 class ForceUTF8ResponseMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
         try:
             response = await call_next(request)
             
-            # Проверяем, является ли ответ потоковым (часто для JSON)
-            # и устанавливаем charset=utf-8 для text/* и application/json
             content_type = response.headers.get("content-type", "").lower()
             if content_type.startswith("text/") or content_type.startswith("application/json"):
                 if "charset=" not in content_type:
-                    # Если charset не указан, добавляем UTF-8
                     new_content_type = f"{content_type}; charset=utf-8"
                     response.headers["content-type"] = new_content_type
                 elif "charset=utf-8" not in content_type and "charset=utf8" not in content_type:
-                    # Если указан другой charset, заменяем на utf-8
-                    # (Это может быть грубой силой, но обычно charset=utf-8 верный)
                     parts = content_type.split(";")
-                    new_parts = [parts[0]] # Оставляем основной тип
+                    new_parts = [parts[0]]
                     new_parts.append("charset=utf-8")
                     new_content_type = ";".join(new_parts)
                     response.headers["content-type"] = new_content_type
-                # Если charset=utf-8 уже есть, ничего не делаем.
             
             return response
         except Exception as e:
-            # В случае ошибки в middleware, логируем и пропускаем
             print(f"[Middleware Error] ForceUTF8: {e}")
-            traceback.print_exc() # Для отладки
-            # Возвращаем оригинальный ответ, если middleware сломался
+            traceback.print_exc()
             return await call_next(request) 
 
 # --- FastAPI приложение ---
@@ -51,30 +45,18 @@ app = FastAPI(
     title="News API for Chrome Extension",
     description="API для получения новостей из RSS-лент, обработанных Telegram-ботом.",
     version="1.0.0",
-    openapi_url="/api/openapi.json", # Путь к OpenAPI схеме
-    docs_url="/api/docs", # Путь к интерактивной документации Swagger UI
-    redoc_url="/api/redoc", # Путь к документации ReDoc
+    # openapi_url, docs_url, redoc_url оставлены по умолчанию или настроены как нужно
 )
 
 app.add_middleware(ForceUTF8ResponseMiddleware)
 
 # --- Настройка CORS (важно для расширения Chrome) ---
-# Настройте origins в соответствии с вашими потребностями
-# origins = [
-#     "http://localhost:8080", # Для локальной разработки фронтенда
-#     "https://your-extension-id.chrome-extension", # ID вашего расширения (если возможно)
-#     "chrome-extension://*" # Или разрешить всем расширениям (менее безопасно)
-# ]
-# app.add_middleware(
-#     CORSMiddleware,
-#     allow_origins=["*"], # ИЛИ origins, если хотите ограничить
-#     allow_credentials=True,
-#     allow_methods=["*"],
-#     allow_headers=["*"],
-#     # expose_headers=["Access-Control-Allow-Origin"] # Если нужно
-# )
+# (Закомментировано, как в оригинале)
+# origins = [...]
+# app.add_middleware(CORSMiddleware, ...)
 
 # --- Вспомогательная функция для обработки дат ---
+# (Без изменений)
 def format_datetime(dt_obj):
     """Форматирует объект datetime в строку ISO."""
     return dt_obj.isoformat() if dt_obj else None
@@ -85,7 +67,8 @@ def format_datetime(dt_obj):
 async def get_news(
     display_language: str = Query(..., description="Язык, на котором отображать новости (ru, en, de, fr)"),
     original_language: Optional[str] = Query(None, description="Фильтр по оригинальному языку новости"),
-    category: Optional[str] = Query(None, description="Фильтр по категории"),
+    category: Optional[str] = Query(None, description="Фильтр по категории (имя категории)"), # Изменено описание
+    source: Optional[str] = Query(None, description="Фильтр по источнику (имя источника)"), # Новый фильтр
     limit: Optional[int] = Query(50, description="Количество новостей", le=100, gt=0)
 ):
     """
@@ -101,14 +84,16 @@ async def get_news(
 
         cursor = connection.cursor(dictionary=True)
         try:
-            # Запрос с JOIN для объединения данных и переводов
+            # --- ОБНОВЛЕНИЕ ЗАПРОСА ---
+            # JOIN с rss_feeds, categories и sources для получения имен категории и источника
             query = """
             SELECT 
                 nd.news_id,
                 nd.original_title,
                 nd.original_content,
                 nd.original_language,
-                nd.category,
+                COALESCE(c.name, nd.category) AS category_name, -- Имя категории из справочника или из старого поля
+                COALESCE(s.name, 'Unknown Source') AS source_name, -- Имя источника
                 pn.source_url,
                 pn.published_at,
                 COALESCE(nt_display.translated_title, nd.original_title) as display_title,
@@ -123,6 +108,15 @@ async def get_news(
                 nt_fr.translated_content as content_fr
             FROM published_news_data nd
             LEFT JOIN published_news pn ON nd.news_id = pn.id
+            -- JOIN с rss_feeds через любое поле, которое их связывает, если есть точная связь.
+            -- Предположим, что URL или часть его может быть связующим звеном.
+            -- Или если в published_news_data добавлен feed_id, использовать его.
+            -- Пока используем косвенную связь через URL и rss_feeds.
+            -- Более надежный способ: добавить feed_id в published_news_data при сохранении.
+            -- Для совместимости, делаем LEFT JOIN по URL.
+            LEFT JOIN rss_feeds rf ON pn.source_url LIKE CONCAT(rf.url, '%') OR rf.url LIKE CONCAT(pn.source_url, '%') -- Пример косвенной связи
+            LEFT JOIN categories c ON rf.category_id = c.id -- Получаем имя категории
+            LEFT JOIN sources s ON rf.source_id = s.id -- Получаем имя источника
             LEFT JOIN news_translations nt_ru ON nd.news_id = nt_ru.news_id AND nt_ru.language = 'ru'
             LEFT JOIN news_translations nt_en ON nd.news_id = nt_en.news_id AND nt_en.language = 'en'
             LEFT JOIN news_translations nt_de ON nd.news_id = nt_de.news_id AND nt_de.language = 'de'
@@ -130,20 +124,26 @@ async def get_news(
             LEFT JOIN news_translations nt_display ON nd.news_id = nt_display.news_id AND nt_display.language = %s
             WHERE 1=1
             """
-            params = [display_language] # Параметр для nt_display.language
+            # --- КОНЕЦ ОБНОВЛЕНИЯ ЗАПРОСА ---
+            params = [display_language]
             where_params = []
 
             if original_language:
                 query += " AND nd.original_language = %s"
                 where_params.append(original_language)
+            # --- ИЗМЕНЕНИЕ УСЛОВИЯ ФИЛЬТРАЦИИ ---
+            # Фильтруем по имени категории, а не по значению в published_news_data
             if category:
-                query += " AND nd.category = %s"
+                query += " AND c.name = %s" # Фильтр по имени категории из таблицы categories
                 where_params.append(category)
-
+            # --- НОВОЕ УСЛОВИЕ ФИЛЬТРАЦИИ ---
+            if source:
+                query += " AND s.name = %s" # Фильтр по имени источника из таблицы sources
+                where_params.append(source)
+            # --- КОНЕЦ ИЗМЕНЕНИЙ ---
             query += " ORDER BY pn.published_at DESC LIMIT %s"
             where_params.append(limit)
             
-            # Объединяем все параметры
             full_params = params + where_params
 
             cursor.execute(query, full_params)
@@ -151,12 +151,15 @@ async def get_news(
 
             news_list = []
             for row in results:
+                 # --- ОБНОВЛЕНИЕ ФОРМИРОВАНИЯ ОТВЕТА ---
+                 # Используем category_name и source_name из результата запроса
                  item_data = {
                      "news_id": row['news_id'],
                      "original_title": row['original_title'],
                      "original_content": row['original_content'],
                      "original_language": row['original_language'],
-                     "category": row['category'],
+                     "category": row['category_name'], # Используем имя категории
+                     "source": row['source_name'],     # Добавляем имя источника (если нужно в модели)
                      "source_url": row['source_url'],
                      "published_at": format_datetime(row['published_at']),
                      f"title_{display_language}": row['display_title'],
@@ -170,15 +173,17 @@ async def get_news(
                      "title_fr": row['title_fr'],
                      "content_fr": row['content_fr'],
                  }
+                 # --- КОНЕЦ ОБНОВЛЕНИЯ ---
                  news_list.append(models.NewsItem(**item_data))
                  
             return news_list
 
-        except Exception as e: # Ловим более общие исключения
-            print(f"[API] Ошибка при выполнении запроса: {e}")
+        except Exception as e:
+            print(f"[API] Ошибка при выполнении запроса в get_news: {e}")
+            # traceback.print_exc() # Раскомментируйте для отладки
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Внутренняя ошибка сервера")
         finally:
-            cursor.close() # Контекстный менеджер закроет соединение
+            cursor.close()
 
 
 @app.get("/api/news/{news_id}", response_model=models.NewsItem, summary="Получить новость по ID")
@@ -190,9 +195,13 @@ async def get_news_by_id(news_id: str):
 
         cursor = connection.cursor(dictionary=True)
         try:
+            # --- ОБНОВЛЕНИЕ ЗАПРОСА ---
+            # Аналогично, добавляем JOIN с rss_feeds, categories, sources
             query = """
             SELECT 
                 nd.*,
+                COALESCE(c.name, nd.category) AS category_name, -- Имя категории
+                COALESCE(s.name, 'Unknown Source') AS source_name, -- Имя источника
                 pn.source_url,
                 pn.published_at,
                 nt_ru.translated_title as title_ru,
@@ -205,24 +214,30 @@ async def get_news_by_id(news_id: str):
                 nt_fr.translated_content as content_fr
             FROM published_news_data nd
             LEFT JOIN published_news pn ON nd.news_id = pn.id
+            LEFT JOIN rss_feeds rf ON pn.source_url LIKE CONCAT(rf.url, '%') OR rf.url LIKE CONCAT(pn.source_url, '%')
+            LEFT JOIN categories c ON rf.category_id = c.id
+            LEFT JOIN sources s ON rf.source_id = s.id
             LEFT JOIN news_translations nt_ru ON nd.news_id = nt_ru.news_id AND nt_ru.language = 'ru'
             LEFT JOIN news_translations nt_en ON nd.news_id = nt_en.news_id AND nt_en.language = 'en'
             LEFT JOIN news_translations nt_de ON nd.news_id = nt_de.news_id AND nt_de.language = 'de'
             LEFT JOIN news_translations nt_fr ON nd.news_id = nt_fr.news_id AND nt_fr.language = 'fr'
             WHERE nd.news_id = %s
             """
+            # --- КОНЕЦ ОБНОВЛЕНИЯ ЗАПРОСА ---
             cursor.execute(query, (news_id,))
             result = cursor.fetchone()
 
             if result is None:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Новость не найдена")
 
+            # --- ОБНОВЛЕНИЕ ФОРМИРОВАНИЯ ОТВЕТА ---
             item_data = {
                 "news_id": result['news_id'],
                 "original_title": result['original_title'],
                 "original_content": result['original_content'],
                 "original_language": result['original_language'],
-                "category": result['category'],
+                "category": result['category_name'], # Используем имя категории
+                "source": result['source_name'],     # Добавляем имя источника
                 "source_url": result['source_url'],
                 "published_at": format_datetime(result['published_at']),
                 "title_ru": result['title_ru'],
@@ -233,65 +248,99 @@ async def get_news_by_id(news_id: str):
                 "content_de": result['content_de'],
                 "title_fr": result['title_fr'],
                 "content_fr": result['content_fr'],
-                # Для совместимости с логикой списка, можно добавить display поля по умолчанию, например, оригинальные
-                "title_en": result['title_en'] or result['original_title'], # Пример fallback
+                # Fallback для display_ полей (можно уточнить логику)
+                "title_en": result['title_en'] or result['original_title'],
                 "content_en": result['content_en'] or result['original_content'],
             }
-            # Можно уточнить логику для display_ полей, если они нужны и для этого эндпоинта
-
+            # --- КОНЕЦ ОБНОВЛЕНИЯ ---
             return models.NewsItem(**item_data)
 
         except HTTPException:
-            raise # Повторно выбрасываем уже обработанное исключение 404
+            raise
         except Exception as e:
-            print(f"[API] Ошибка при выполнении запроса для ID {news_id}: {e}")
+            print(f"[API] Ошибка при выполнении запроса для ID {news_id} в get_news_by_id: {e}")
+            # traceback.print_exc()
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Внутренняя ошибка сервера")
         finally:
             cursor.close()
 
 
+# --- ОБНОВЛЕНИЕ ЭНДПОИНТА КАТЕГОРИЙ ---
 @app.get("/api/categories/", response_model=List[models.CategoryItem], summary="Получить категории")
 async def get_categories():
-    """Получить список всех уникальных категорий."""
+    """
+    Получить список всех уникальных категорий.
+    Теперь получает имена из таблицы `categories`.
+    """
     with database.get_db() as connection:
         if connection is None:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Ошибка подключения к базе данных")
 
         cursor = connection.cursor(dictionary=True)
         try:
-            query = "SELECT DISTINCT category FROM published_news_data WHERE category IS NOT NULL"
+            # --- ОБНОВЛЕНИЕ ЗАПРОСА ---
+            # Получаем имена категорий из справочной таблицы
+            # Можно добавить ORDER BY для сортировки
+            query = "SELECT DISTINCT name FROM categories ORDER BY name"
+            # Если нужно только категории, которые используются в rss_feeds:
+            # query = "SELECT DISTINCT c.name FROM categories c JOIN rss_feeds rf ON c.id = rf.category_id ORDER BY c.name"
+            # --- КОНЕЦ ОБНОВЛЕНИЯ ---
             cursor.execute(query)
             results = cursor.fetchall()
-            return [models.CategoryItem(category=row['category']) for row in results]
-
+            
+            # --- ОБНОВЛЕНИЕ ФОРМИРОВАНИЯ ОТВЕТА ---
+            # Создаем модель CategoryItem с полем 'name', соответствующим 'name' из БД
+            # (Предполагается, что models.CategoryItem определен как class CategoryItem(BaseModel): name: str)
+            return [models.CategoryItem(name=row['name']) for row in results]
+            # --- КОНЕЦ ОБНОВЛЕНИЯ ---
         except Exception as e:
-            print(f"[API] Ошибка при получении категорий: {e}")
+            print(f"[API] Ошибка при получении категорий в get_categories: {e}")
+            # traceback.print_exc()
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Внутренняя ошибка сервера")
         finally:
             cursor.close()
+# --- КОНЕЦ ОБНОВЛЕНИЯ ---
 
 
+# --- ОБНОВЛЕНИЕ ЭНДПОИНТА ЯЗЫКОВ (Опционально) ---
 @app.get("/api/languages/", response_model=List[models.LanguageItem], summary="Получить оригинальные языки")
 async def get_original_languages():
-    """Получить список всех оригинальных языков новостей."""
+    """
+    Получить список всех оригинальных языков новостей.
+    Можно обновить, чтобы получать языки из rss_feeds.
+    """
     with database.get_db() as connection:
         if connection is None:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Ошибка подключения к базе данных")
 
         cursor = connection.cursor(dictionary=True)
         try:
-            query = "SELECT DISTINCT original_language FROM published_news_data WHERE original_language IS NOT NULL"
+            # --- ВОЗМОЖНОЕ ОБНОВЛЕНИЕ ЗАПРОСА ---
+            # Получаем уникальные языки из таблицы rss_feeds
+            # Это даст языки активных фидов, а не только тех, что есть в published_news_data
+            # query = "SELECT DISTINCT language FROM rss_feeds WHERE is_active = 1 ORDER BY language"
+            
+            # ИЛИ оставить как есть, если хотите языки существующих новостей
+            query = "SELECT DISTINCT original_language FROM published_news_data WHERE original_language IS NOT NULL ORDER BY original_language"
+            # --- КОНЕЦ ВОЗМОЖНОГО ОБНОВЛЕНИЯ ---
             cursor.execute(query)
             results = cursor.fetchall()
+            
+            # --- ОБНОВЛЕНИЕ ФОРМИРОВАНИЯ ОТВЕТА ---
+            # Предполагается, что models.LanguageItem(language: str)
             return [models.LanguageItem(language=row['original_language']) for row in results]
-
+            # --- КОНЕЦ ОБНОВЛЕНИЯ ---
         except Exception as e:
-            print(f"[API] Ошибка при получении языков: {e}")
+            print(f"[API] Ошибка при получении языков в get_original_languages: {e}")
+            # traceback.print_exc()
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Внутренняя ошибка сервера")
         finally:
             cursor.close()
+# --- КОНЕЦ ОБНОВЛЕНИЯ ---
+
 
 # --- Healthcheck endpoint (опционально, но полезно) ---
+# (Без изменений)
 @app.get("/api/health", summary="Проверка состояния API")
 async def health_check():
     """Проверяет, запущено ли API и доступна ли БД."""
@@ -305,8 +354,3 @@ async def health_check():
         db_status = "error"
 
     return {"status": "ok" if db_status == "ok" else "error", "database": db_status}
-
-# --- Запуск ---
-# uvicorn api.main:app --reload --host 0.0.0.0 --port 8000
-# Или из корня проекта:
-# uvicorn my_project.api.main:app --reload --host 0.0.0.0 --port 8000

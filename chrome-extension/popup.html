@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Firefeed News</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body> <!-- Стили скругления применяем непосредственно к body -->
+  <div class="header">
+    <h1>Firefeed News</h1>
+    <div class="filters">
+      <label for="language-select">Язык:</label>
+      <select id="language-select">
+        <option value="ru">Русский</option>
+        <option value="en">English</option>
+        <option value="de">Deutsch</option>
+        <option value="fr">Français</option>
+      </select>
+
+      <label for="category-select">Категория:</label>
+      <select id="category-select">
+        <option value="">Все категории</option>
+        <!-- Опции будут заполнены динамически JS -->
+      </select>
+    </div>
+  </div>
+
+  <div class="loading" id="loading">Загрузка новостей...</div>
+  <div class="error" id="error" style="display: none;"></div>
+
+  <div class="news-container" id="news-container">
+    <!-- Новости будут вставлены сюда JS -->
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
