@@ -26,20 +26,54 @@ class RSSManager:
             return None
 
     def get_all_feeds(self):
-        """Получить все RSS-ленты"""
+        """
+        Получает список активных RSS-лент с информацией об источнике и категории.
+        """
         connection = self.get_db_connection()
-        if connection is None:
+        if not connection:
+            print("[DB] Ошибка подключения к БД в get_all_eeds")
             return []
-        
+
+        feeds = []
         cursor = connection.cursor(dictionary=True)
         try:
-            cursor.execute("SELECT * FROM rss_feeds")
-            return cursor.fetchall()
-        except Error as e:
-            print(f"Ошибка при получении данных: {e}")
-            return []
+            # JOIN для получения связанных данных
+            query = """
+                SELECT 
+                    f.id AS feed_id,
+                    f.url AS feed_url,
+                    f.name AS feed_name,
+                    f.language AS feed_lang,
+                    s.name AS source_name,
+                    s.id AS source_id,
+                    c.name AS category_name,
+                    c.display_name AS category_display_name
+                FROM rss_feeds f
+                JOIN sources s ON f.source_id = s.id
+                LEFT JOIN categories c ON f.category_id = c.id -- LEFT JOIN, т.к. category_id может быть NULL
+            """
+            cursor.execute(query)
+            results = cursor.fetchall()
+            
+            for row in results:
+                feeds.append({
+                    'id': row['feed_id'],
+                    'url': row['feed_url'].strip(), # Убедимся, что нет лишних пробелов
+                    'name': row['feed_name'],
+                    'lang': row['feed_lang'],
+                    'source': row['source_name'], # Имя источника
+                    'source_id': row['source_id'],
+                    'category': row['category_name'] if row['category_name'] else 'uncategorized', # Имя категории или дефолт
+                    'category_display': row['category_display_name'] # Отображаемое имя категории
+                })
+            
+        except mysql.connector.Error as err:
+            print(f"[DB] Ошибка в get_all_active_feeds: {err}")
         finally:
             cursor.close()
+            connection.close()
+            
+        return feeds
     
     def get_all_active_feeds(self):
         """
@@ -92,135 +126,203 @@ class RSSManager:
             
         return feeds
     
-    def get_feeds_by_category(self, category):
-        """Получить RSS-ленты по категории"""
+    def get_feeds_by_category(self, category_name):
+        """Получить активные RSS-ленты по имени категории."""
         connection = self.get_db_connection()
         if connection is None:
             return []
         
         cursor = connection.cursor(dictionary=True)
         try:
-            query = "SELECT * FROM rss_feeds WHERE category = %s AND is_active = TRUE"
-            cursor.execute(query, (category,))
+            # Используем JOIN для поиска по имени категории
+            query = """
+                SELECT rf.*, c.name as category_name, s.name as source_name
+                FROM rss_feeds rf
+                JOIN categories c ON rf.category_id = c.id
+                JOIN sources s ON rf.source_id = s.id
+                WHERE c.name = %s AND rf.is_active = TRUE
+            """
+            cursor.execute(query, (category_name,))
             return cursor.fetchall()
-        except Error as e:
-            print(f"Ошибка при получении данных: {e}")
+        except mysql.connector.Error as e: # Уточняем тип исключения
+            print(f"Ошибка при получении фидов по категории '{category_name}': {e}")
             return []
         finally:
             cursor.close()
-    
+
     def get_feeds_by_lang(self, lang):
-        """Получить RSS-ленты по языку"""
+        """Получить активные RSS-ленты по языку."""
         connection = self.get_db_connection()
         if connection is None:
             return []
         
         cursor = connection.cursor(dictionary=True)
         try:
-            query = "SELECT * FROM rss_feeds WHERE lang = %s AND is_active = TRUE"
+            # Поле 'language' остается в rss_feeds
+            query = "SELECT rf.*, c.name as category_name, s.name as source_name FROM rss_feeds rf JOIN categories c ON rf.category_id = c.id JOIN sources s ON rf.source_id = s.id WHERE rf.language = %s AND rf.is_active = TRUE"
             cursor.execute(query, (lang,))
             return cursor.fetchall()
-        except Error as e:
-            print(f"Ошибка при получении данных: {e}")
+        except mysql.connector.Error as e:
+            print(f"Ошибка при получении фидов по языку '{lang}': {e}")
             return []
         finally:
             cursor.close()
-    
-    def get_feeds_by_source(self, source):
-        """Получить RSS-ленты по источнику"""
+
+    def get_feeds_by_source(self, source_name):
+        """Получить активные RSS-ленты по имени источника."""
         connection = self.get_db_connection()
         if connection is None:
             return []
         
         cursor = connection.cursor(dictionary=True)
         try:
-            query = "SELECT * FROM rss_feeds WHERE source = %s AND is_active = TRUE"
-            cursor.execute(query, (source,))
+            # Используем JOIN для поиска по имени источника
+            query = """
+                SELECT rf.*, c.name as category_name, s.name as source_name
+                FROM rss_feeds rf
+                JOIN categories c ON rf.category_id = c.id
+                JOIN sources s ON rf.source_id = s.id
+                WHERE s.name = %s AND rf.is_active = TRUE
+            """
+            cursor.execute(query, (source_name,))
             return cursor.fetchall()
-        except Error as e:
-            print(f"Ошибка при получении данных: {e}")
+        except mysql.connector.Error as e:
+            print(f"Ошибка при получении фидов по источнику '{source_name}': {e}")
             return []
         finally:
             cursor.close()
-    
-    def add_feed(self, category, url, lang, source):
-        """Добавить новую RSS-ленту"""
+
+    def add_feed(self, category_name, url, language, source_name):
+        """Добавить новую RSS-ленту, используя имена категории и источника."""
         connection = self.get_db_connection()
         if connection is None:
+            print("Ошибка: Невозможно подключиться к БД в add_feed.")
             return False
-        
+
         cursor = connection.cursor()
         try:
+            # 1. Получить ID категории по имени
+            cursor.execute("SELECT id FROM categories WHERE name = %s", (category_name,))
+            cat_result = cursor.fetchone()
+            if not cat_result:
+                print(f"Ошибка: Категория '{category_name}' не найдена в таблице 'categories'.")
+                return False # Или можно сначала создать категорию
+            category_id = cat_result[0]
+
+            # 2. Получить ID источника по имени
+            cursor.execute("SELECT id FROM sources WHERE name = %s", (source_name,))
+            src_result = cursor.fetchone()
+            if not src_result:
+                print(f"Ошибка: Источник '{source_name}' не найден в таблице 'sources'.")
+                return False # Или можно сначала создать источник
+            source_id = src_result[0]
+
+            # 3. Вставить новую ленту с полученными ID
+            # Предполагаем, что 'name' для ленты генерируется или передается отдельно.
+            # Здесь используем URL как временное имя или часть имени.
+            feed_name = url.split('/')[-1] or "Новая лента" # Простой способ генерации имени
             query = """
-            INSERT INTO rss_feeds (category, url, lang, source)
-            VALUES (%s, %s, %s, %s)
+                INSERT INTO rss_feeds (source_id, url, name, category_id, language, is_active)
+                VALUES (%s, %s, %s, %s, %s, %s)
             """
-            cursor.execute(query, (category, url, lang, source))
+            # is_active по умолчанию TRUE, но явно укажем
+            cursor.execute(query, (source_id, url, feed_name, category_id, language, True))
             connection.commit()
+            print(f"Лента '{url}' успешно добавлена.")
             return True
-        except Error as e:
-            print(f"Ошибка при добавлении данных: {e}")
+        except mysql.connector.Error as e:
+            print(f"Ошибка БД при добавлении фида: {e}")
             connection.rollback()
             return False
         finally:
             cursor.close()
-    
-    def update_feed(self, feed_id, category=None, url=None, lang=None, source=None, is_active=None):
-        """Обновить RSS-ленту"""
+
+    def update_feed(self, feed_id, category_name=None, url=None, language=None, source_name=None, is_active=None, feed_name=None):
+        """Обновить RSS-ленту, используя имена категории и источника."""
         connection = self.get_db_connection()
         if connection is None:
             return False
-        
+
         cursor = connection.cursor()
         try:
             updates = []
             values = []
             
-            if category is not None:
-                updates.append("category = %s")
-                values.append(category)
+            # Обработка изменения категории по имени
+            if category_name is not None:
+                cursor.execute("SELECT id FROM categories WHERE name = %s", (category_name,))
+                cat_result = cursor.fetchone()
+                if cat_result:
+                    updates.append("category_id = %s")
+                    values.append(cat_result[0])
+                else:
+                    print(f"Предупреждение: Категория '{category_name}' не найдена. Поле category_id не обновлено.")
+            
+            # Обработка изменения источника по имени
+            if source_name is not None:
+                cursor.execute("SELECT id FROM sources WHERE name = %s", (source_name,))
+                src_result = cursor.fetchone()
+                if src_result:
+                    updates.append("source_id = %s")
+                    values.append(src_result[0])
+                else:
+                    print(f"Предупреждение: Источник '{source_name}' не найден. Поле source_id не обновлено.")
+
+            # Обработка других полей
             if url is not None:
                 updates.append("url = %s")
                 values.append(url)
-            if lang is not None:
-                updates.append("lang = %s")
-                values.append(lang)
-            if source is not None:
-                updates.append("source = %s")
-                values.append(source)
+            if language is not None:
+                updates.append("language = %s")
+                values.append(language)
             if is_active is not None:
                 updates.append("is_active = %s")
                 values.append(is_active)
-            
+            if feed_name is not None: # Если имя ленты передается отдельно
+                updates.append("name = %s")
+                values.append(feed_name)
+
             if not updates:
+                print("Нет полей для обновления.")
                 return False
                 
             values.append(feed_id)
             query = f"UPDATE rss_feeds SET {', '.join(updates)} WHERE id = %s"
             cursor.execute(query, values)
             connection.commit()
-            return True
-        except Error as e:
-            print(f"Ошибка при обновлении данных: {e}")
+            affected_rows = cursor.rowcount
+            if affected_rows > 0:
+                print(f"Лента с ID {feed_id} успешно обновлена.")
+            else:
+                print(f"Лента с ID {feed_id} не найдена или не была изменена.")
+            return affected_rows > 0
+        except mysql.connector.Error as e:
+            print(f"Ошибка БД при обновлении фида с ID {feed_id}: {e}")
             connection.rollback()
             return False
         finally:
             cursor.close()
-    
+
     def delete_feed(self, feed_id):
-        """Удалить RSS-ленту"""
+        """Удалить RSS-ленту по ID."""
         connection = self.get_db_connection()
         if connection is None:
             return False
         
         cursor = connection.cursor()
         try:
+            # Удаление по ID ленты остается прежним
             query = "DELETE FROM rss_feeds WHERE id = %s"
             cursor.execute(query, (feed_id,))
             connection.commit()
-            return True
-        except Error as e:
-            print(f"Ошибка при удалении данных: {e}")
+            affected_rows = cursor.rowcount
+            if affected_rows > 0:
+                print(f"Лента с ID {feed_id} успешно удалена.")
+            else:
+                print(f"Лента с ID {feed_id} не найдена.")
+            return affected_rows > 0
+        except mysql.connector.Error as e:
+            print(f"Ошибка БД при удалении фида с ID {feed_id}: {e}")
             connection.rollback()
             return False
         finally:
@@ -235,7 +337,15 @@ class RSSManager:
         
         cursor = connection.cursor()
         try:
-            cursor.execute("SELECT DISTINCT category FROM rss_feeds WHERE is_active = TRUE")
+            get_categories_query = """
+                SELECT DISTINCT c.name AS category
+                FROM categories c
+                JOIN rss_feeds rf ON c.id = rf.category_id
+                WHERE rf.is_active = TRUE
+                ORDER BY c.name;
+            """
+
+            cursor.execute(get_categories_query)
             return [row[0] for row in cursor.fetchall()]
         except Error as e:
             print(f"Ошибка при получении категорий: {e}")
