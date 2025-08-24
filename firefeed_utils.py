@@ -31,14 +31,15 @@ async def download_and_save_image(url, news_id, save_directory="/var/www/firefee
     :return: путь к сохраненному файлу или None
     """
     if not url or not news_id:
+        print(f"[DEBUG] Пропущено сохранение изображения: нет URL ({url}) или news_id ({news_id})")
         return None
         
     try:
-        print(f"[DEBUG] Начинаем сохранять изображение в {save_directory}")
+        print(f"[DEBUG] Начинаем сохранять изображение из {url} в {save_directory}")
         # Создаем директорию если она не существует
         os.makedirs(save_directory, exist_ok=True)
         
-        # Выполняем синхронный запрос в отдельном потоке
+        # --- Оборачиваем requests.get в run_in_executor ---
         loop = asyncio.get_event_loop()
         
         headers = {
@@ -49,17 +50,24 @@ async def download_and_save_image(url, news_id, save_directory="/var/www/firefee
             'Connection': 'keep-alive',
         }
         
+        # Передаем аргументы напрямую в run_in_executor, а не через lambda
+        # Это более предпочтительный и чистый способ
         response = await loop.run_in_executor(
             None, 
-            lambda: requests.get(url, headers=headers, timeout=30)
+            requests.get, # Передаем саму функцию
+            url,          # Аргумент 1
+            headers,      # Аргумент 2
+            30            # Аргумент 3 (timeout)
         )
-        response.raise_for_status()
+        # --- Конец обертывания ---
+        
+        response.raise_for_status() # Выбросит исключение, если статус не 2xx
         
         # Определяем расширение файла
-        content_type = response.headers.get('content-type', '')
+        content_type = response.headers.get('content-type', '').lower()
         extension = '.jpg'  # по умолчанию
         
-        if 'jpeg' in content_type or 'jpg' in content_type:
+        if 'jpeg' in content_type:
             extension = '.jpg'
         elif 'png' in content_type:
             extension = '.png'
@@ -71,8 +79,8 @@ async def download_and_save_image(url, news_id, save_directory="/var/www/firefee
             # Пытаемся определить по URL
             parsed_url = urlparse(url)
             path = parsed_url.path
-            if path.lower().endswith(('.jpg', '.jpeg', '.png', '.webp')):
-                extension = os.path.splitext(path)[1]
+            if path.lower().endswith(('.jpg', '.jpeg', '.png', '.gif', '.webp')):
+                extension = os.path.splitext(path)[1].lower()
         
         # Создаем имя файла на основе news_id (без недопустимых символов)
         safe_news_id = "".join(c for c in str(news_id) if c.isalnum() or c in ('-', '_')).rstrip()
@@ -83,16 +91,24 @@ async def download_and_save_image(url, news_id, save_directory="/var/www/firefee
         filename = f"{safe_news_id}{extension}"
         file_path = os.path.join(save_directory, filename)
         
-        # Сохраняем файл
+        # Сохраняем файл (эта часть тоже синхронная, но быстрая)
+        # Если save_directory находится на медленном диске, можно обернуть и её,
+        # но обычно этого не требуется.
         with open(file_path, 'wb') as f:
             f.write(response.content)
         
-        print(f"[LOG] Изображение сохранено: {file_path}")
+        print(f"[LOG] Изображение успешно сохранено: {file_path}")
         return file_path
         
-    except Exception as e:
-        print(f"[WARN] Ошибка при скачивании изображения {url}: {e}")
+    except requests.exceptions.RequestException as e: # Более конкретное исключение для requests
+        print(f"[WARN] Ошибка сети при скачивании изображения {url}: {e}")
         return None
+    except OSError as e: # Исключение для ошибок файловой системы
+        print(f"[WARN] Ошибка файловой системы при сохранении изображения {url} в {save_directory}: {e}")
+        return None
+    except Exception as e:
+        print(f"[WARN] Неожиданная ошибка при скачивании/сохранении изображения {url}: {e}")
+        return None # Возвращаем None в случае любой ошибки
 
 async def extract_image_from_preview(url):
     """

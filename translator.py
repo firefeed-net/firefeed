@@ -1,6 +1,6 @@
 from transformers import MarianMTModel, MarianTokenizer
-from functools import lru_cache
 from firefeed_utils import clean_html
+from functools import lru_cache
 import asyncio
 import torch
 import nltk
@@ -22,9 +22,27 @@ try:
 except LookupError:
     nltk.download('punkt_tab', download_dir=nltk_data_path)
 
+# Глобальный флаг для однократной инициализации устройства
+_device = None
+
+def _get_device():
+    """Определяет и кэширует устройство для моделей."""
+    global _device
+    if _device is None:
+        # Проверяем доступность CUDA (если вы планируете использовать GPU)
+        # if torch.cuda.is_available():
+        #     _device = "cuda"
+        # else:
+        #     _device = "cpu"
+        # Для простоты и избежания проблем с многопоточностью на GPU, используем CPU
+        _device = "cpu"
+        print(f"[TRANSLATOR] Модели будут загружаться на устройство: {_device}")
+    return _device
+
 _model_cache = {}
 _tokenizer_cache = {}
 _translation_cache = {}
+_model_load_lock = asyncio.Lock()
 
 # Языковые пары, требующие каскадного перевода через английский
 CASCADE_TRANSLATIONS = {
@@ -32,17 +50,50 @@ CASCADE_TRANSLATIONS = {
 }
 
 def get_translator_model(src_lang, tgt_lang):
+    """Получает модель и токенизатор для перевода. Потокобезопасна."""
     cache_key = f"{src_lang}-{tgt_lang}"
     if cache_key not in _model_cache:
-        try:
-            model_name = f'Helsinki-NLP/opus-mt-{src_lang}-{tgt_lang}'
-            model = MarianMTModel.from_pretrained(model_name)
-            tokenizer = MarianTokenizer.from_pretrained(model_name)
-            _model_cache[cache_key] = model
-            _tokenizer_cache[cache_key] = tokenizer
-        except Exception as e:
-            print(f"Модель {model_name} не найдена: {e}")
-            return None, None
+        # Используем блокировку, чтобы избежать одновременной загрузки одной и той же модели несколькими потоками
+        # Это важно, если run_in_executor запустит несколько translate_text одновременно
+        # для одной и той же пары языков, прежде чем модель будет закэширована.
+        # asyncio.Lock не работает внутри run_in_executor (разные потоки), 
+        # поэтому используем threading.Lock
+        import threading
+        if not hasattr(get_translator_model, '_thread_lock'):
+             get_translator_model._thread_lock = threading.Lock()
+        
+        with get_translator_model._thread_lock:
+            # Повторная проверка, может быть загружена пока ждали лок
+            if cache_key not in _model_cache:
+                try:
+                    model_name = f'Helsinki-NLP/opus-mt-{src_lang}-{tgt_lang}'
+                    print(f"[TRANSLATOR] Загрузка модели {model_name}...")
+                    
+                    # Явно указываем устройство и отключаем ленивую загрузку
+                    # Это должно предотвратить появление meta tensors
+                    model = MarianMTModel.from_pretrained(
+                        model_name,
+                        # device_map=None, # Явно отключаем автоматическое распределение
+                        # low_cpu_mem_usage=False, # Отключаем экономию памяти при загрузке
+                        # torch_dtype=None # Используем тип данных по умолчанию
+                    )
+                    tokenizer = MarianTokenizer.from_pretrained(model_name)
+                    
+                    # Явно перемещаем модель на выбранное устройство (CPU)
+                    device = _get_device()
+                    model = model.to(device)
+                    print(f"[TRANSLATOR] Модель {model_name} загружена и перемещена на {device}.")
+                    
+                    _model_cache[cache_key] = model
+                    _tokenizer_cache[cache_key] = tokenizer
+                    
+                except Exception as e:
+                    print(f"[ERROR] [TRANSLATOR] Ошибка загрузки модели {model_name}: {e}")
+                    # Можно залогировать traceback для деталей
+                    import traceback
+                    traceback.print_exc()
+                    # Возвращаем None, чтобы функция вызова могла обработать ошибку
+                    return None, None
     return _model_cache[cache_key], _tokenizer_cache[cache_key]
 
 def translate_with_context(texts, source_lang='en', target_lang='ru', context_window=2):
@@ -78,6 +129,11 @@ def translate_with_context(texts, source_lang='en', target_lang='ru', context_wi
         combined = f"{context} {current_text}" if context else current_text
         
         inputs = tokenizer(combined, return_tensors="pt", truncation=True, max_length=512)
+
+        # Перемещаем inputs на то же устройство, что и модель
+        device = next(model.parameters()).device # Получаем устройство модели
+        inputs = {k: v.to(device) for k, v in inputs.items()} # Перемещаем тензоры
+
         with torch.no_grad():
             outputs = model.generate(**inputs)
         translated_text = tokenizer.decode(outputs[0], skip_special_tokens=True)
@@ -91,7 +147,7 @@ def translate_with_context(texts, source_lang='en', target_lang='ru', context_wi
     
     return translated
 
-@lru_cache(maxsize=1000)
+# @lru_cache(maxsize=1000)
 def cached_translate_text(text, source_lang, target_lang):
     return translate_text(text, source_lang, target_lang)
 
@@ -125,6 +181,7 @@ def translate_text(text, source_lang='en', target_lang='ru', context_window=2):
 async def prepare_translations(title: str, description: str, category: str, original_lang: str) -> dict:
     """
     Подготавливает переводы заголовка, описания и категории на все целевые языки.
+    Оборачивает синхронные вызовы translate_text в run_in_executor.
 
     :param title: Оригинальный заголовок.
     :param description: Оригинальное описание.
@@ -143,7 +200,11 @@ async def prepare_translations(title: str, description: str, category: str, orig
     clean_title = clean_html(title)
     clean_description = clean_html(description)
 
-    tasks = [] # Для параллельного выполнения переводов
+    # Получаем ссылку на текущий event loop
+    loop = asyncio.get_event_loop()
+
+    # Создаем список задач для параллельного выполнения всех переводов
+    translation_tasks = []
 
     for target_lang in target_languages:
         # Копируем оригинальные данные на случай, если перевод не нужен или произойдет ошибка
@@ -154,43 +215,42 @@ async def prepare_translations(title: str, description: str, category: str, orig
         needs_translation = original_lang != target_lang
 
         if needs_translation:
-            # Создаем задачи для асинхронного перевода
-            # title_task = asyncio.create_task(translate_text_async(clean_title, original_lang, target_lang))
-            # desc_task = asyncio.create_task(translate_text_async(clean_description, original_lang, target_lang))
-            # cat_task = asyncio.create_task(translate_text_async(category, 'en', target_lang)) # Предполагаем, что категория на английском
-            # tasks.append((target_lang, title_task, desc_task, cat_task))
+            # Создаем задачи для асинхронного выполнения синхронных функций в пуле потоков
+            title_task = loop.run_in_executor(None, translate_text, clean_title, original_lang, target_lang)
+            desc_task = loop.run_in_executor(None, translate_text, clean_description, original_lang, target_lang)
+            # Переводим категорию, если она не на целевом языке (предполагаем 'en' как базовый для категорий)
+            cat_task = loop.run_in_executor(None, translate_text, category, 'en', target_lang) 
             
-            # --- Если translate_text НЕ асинхронная, делаем последовательно ---
-            try:
-                trans_title = translate_text(clean_title, original_lang, target_lang)
-                trans_description = translate_text(clean_description, original_lang, target_lang)
-                # Переводим категорию, если она не на целевом языке (предполагаем en как базовый для категорий)
-                trans_category = translate_text(category, 'en', target_lang) 
+            # Сохраняем задачи и связанный с ними язык
+            translation_tasks.append((target_lang, title_task, desc_task, cat_task))
+        else:
+            # Если перевод не нужен, просто сохраняем оригиналы
+            translations[target_lang] = {
+                'title': trans_title,
+                'description': trans_description,
+                'category': trans_category
+            }
+            print(f"[LOG] Перевод с {original_lang} на {target_lang} не требуется. Используются оригинальные данные.")
 
-            except Exception as e:
-                print(f"[ERROR] Ошибка перевода на {target_lang}: {e}. Используются оригинальные данные.")
-                # В случае ошибки перевода, используем оригинальные данные
-                
-        # Сохраняем результаты (или оригинальные данные) для этого языка
-        translations[target_lang] = {
-            'title': trans_title,
-            'description': trans_description,
-            'category': trans_category
-        }
-        
-    # --- Если бы translate_text была async, использовали бы gather ---
-    # results = await asyncio.gather(*(task[1] for task in tasks), return_exceptions=True)
-    # for i, (target_lang, _, _, _) in enumerate(tasks):
-    #     if isinstance(results[i], Exception):
-    #          print(f"[ERROR] Ошибка перевода на {target_lang}: {results[i]}. Используются оригинальные данные.")
-    #          # Используем оригинальные данные
-    #     else:
-    #         # Предполагаем, что результаты возвращаются в том же порядке
-    #         title_res, desc_res, cat_res = results[i] # Нужно адаптировать возврат из translate_text_async
-    #         translations[target_lang] = {
-    #             'title': title_res,
-    #             'description': desc_res,
-    #             'category': cat_res
-    #         }
+    # Дожидаемся завершения всех задач перевода
+    for target_lang, title_task, desc_task, cat_task in translation_tasks:
+        try:
+            # Дожидаемся результата каждой задачи
+            trans_title = await title_task
+            trans_description = await desc_task
+            trans_category = await cat_task
+
+            # Сохраняем результаты перевода
+            translations[target_lang] = {
+                'title': trans_title,
+                'description': trans_description,
+                'category': trans_category
+            }
+            print(f"[LOG] Перевод на {target_lang} успешно завершен.")
+
+        except Exception as e:
+            print(f"[ERROR] Ошибка перевода на {target_lang}: {e}. Используются оригинальные данные.")
+            # В случае ошибки перевода, используем оригинальные данные (уже установлены по умолчанию выше)
+            # translations[target_lang] уже содержит оригиналы, так как мы их не перезаписали
 
     return translations

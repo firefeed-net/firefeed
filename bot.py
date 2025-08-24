@@ -6,9 +6,9 @@ from telegram import Bot, Update, InlineKeyboardButton, InlineKeyboardMarkup, Re
 from telegram.error import NetworkError, BadRequest, TelegramError
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes, MessageHandler, filters
 from config import WEBHOOK_CONFIG, BOT_TOKEN, FIRE_EMOJI, CHANNEL_IDS, CHANNEL_CATEGORIES
+from functools import lru_cache
 from user_manager import UserManager
 from translator import translate_text, prepare_translations
-from functools import lru_cache
 from tenacity import retry, stop_after_attempt, wait_exponential
 from rss_manager import RSSManager
 from firefeed_utils import clean_html, download_and_save_image, extract_image_from_preview
@@ -161,6 +161,8 @@ USER_CURRENT_MENUS = {}
 # Храним язык пользователя в памяти для быстрого доступа
 USER_LANGUAGES = {}
 
+SEND_SEMAPHORE = asyncio.Semaphore(5)
+
 # Функция для получения сообщения на нужном языке
 def get_message(key, lang="en", **kwargs):
     """Возвращает локализованное сообщение"""
@@ -194,13 +196,13 @@ def get_main_menu_keyboard(lang="en"):
     return keyboard
 
 # Улучшенная функция установки языка пользователя
-def set_current_user_language(user_id, lang):
+async def set_current_user_language(user_id, lang):
     user_manager = UserManager()
     """Устанавливает язык пользователя в БД и в памяти"""
     print(f"[LOG] Установка языка пользователя {user_id} на {lang}")
     try:
         # Сохраняем в БД
-        user_manager.set_user_language(user_id, lang)
+        await user_manager.set_user_language(user_id, lang)
         print(f"[LOG] Язык {lang} сохранен в БД для пользователя {user_id}")
         # Сохраняем в памяти
         USER_LANGUAGES[user_id] = lang
@@ -209,7 +211,7 @@ def set_current_user_language(user_id, lang):
         print(f"[ERROR] Ошибка установки языка для {user_id}: {e}")
 
 # Улучшенная функция получения языка пользователя
-def get_current_user_language(user_id):
+async def get_current_user_language(user_id):
     user_manager = UserManager()
     """Получает актуальный язык пользователя из памяти или БД"""
     # Сначала проверяем в памяти
@@ -220,7 +222,7 @@ def get_current_user_language(user_id):
     
     # Если нет в памяти, получаем из БД
     try:
-        lang = user_manager.get_user_language(user_id)
+        lang = await user_manager.get_user_language(user_id)
         print(f"[LOG] Получен язык пользователя {user_id} из БД: {lang}")
         if lang:
             # Сохраняем в памяти для быстрого доступа
@@ -230,7 +232,7 @@ def get_current_user_language(user_id):
         print(f"[ERROR] Ошибка получения языка для {user_id}: {e}")
         return "en"
 
-@lru_cache(maxsize=1000)
+# @lru_cache(maxsize=1000)
 def cached_translate(text, source_lang, target_lang):
     return translate_text(text, source_lang, target_lang)
 
@@ -239,7 +241,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     user_id = user.id
     
-    lang = get_current_user_language(user_id)
+    lang = await get_current_user_language(user_id)
     print(f"[LOG] Язык пользователя {user_id}: {lang}")
     
     welcome_text = get_message("welcome", lang, user_name=user.first_name)
@@ -253,10 +255,10 @@ async def settings_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         user_manager = UserManager()
         user_id = update.effective_user.id
-        lang = get_current_user_language(user_id)
+        lang = await get_current_user_language(user_id)
         print(f"[LOG] Язык пользователя {user_id}: {lang}")
         
-        settings = user_manager.get_user_settings(user_id)
+        settings = await user_manager.get_user_settings(user_id)
         print(f"[LOG] Настройки пользователя {user_id}: {settings}")
         
         USER_STATES[user_id] = {
@@ -271,13 +273,12 @@ async def settings_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
     except Exception as e:
         print(f"[ERROR] Ошибка команды /settings для {update.effective_user.id}: {e}")
-        lang = get_current_user_language(update.effective_user.id)
+        lang = await get_current_user_language(update.effective_user.id)
         await update.message.reply_text(get_message("settings_error", lang))
 
 async def show_settings_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, user_id: int):
     print(f"[LOG] Отображение меню настроек для пользователя {user_id}")
     rss_manager = RSSManager()
-    connection = rss_manager.get_db_connection()
 
     try:
         state = USER_STATES.get(user_id)
@@ -291,7 +292,7 @@ async def show_settings_menu(update: Update, context: ContextTypes.DEFAULT_TYPE,
         print(f"[LOG] Текущий язык {user_id}: {current_lang}")
         
         keyboard = []
-        categories = rss_manager.get_categories()
+        categories = await rss_manager.get_categories()
         print(f"[LOG] Доступные категории: {categories}")
         for category in categories:
             is_selected = category in current_subs
@@ -311,8 +312,6 @@ async def show_settings_menu(update: Update, context: ContextTypes.DEFAULT_TYPE,
             
     except Exception as e:
         print(f"[ERROR] Ошибка в show_settings_menu для {user_id}: {e}")
-    finally:
-        rss_manager.close_connection()
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_manager = UserManager()
@@ -326,7 +325,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             print(f"[LOG] Создание нового состояния для пользователя {user_id}")
             USER_STATES[user_id] = {
                 "current_subs": user_manager.get_user_subscriptions(user_id) or [],
-                "language": get_current_user_language(user_id)
+                "language": await get_current_user_language(user_id)
             }
             print(f"[LOG] Новое состояние для {user_id}: {USER_STATES[user_id]}")
             
@@ -364,7 +363,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             print(f"[LOG] Сохранение настроек для пользователя {user_id}")
             print(f"[LOG] Сохраняемые данные: подписки={state['current_subs']}, язык={state['language']}")
             
-            user_manager.save_user_settings(
+            await user_manager.save_user_settings(
                 user_id,
                 state["current_subs"],
                 state["language"]
@@ -398,7 +397,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             print(f"[LOG] Выбранный язык: {lang}")
             
             # Используем улучшенную функцию установки языка
-            set_current_user_language(user_id, lang)
+            await set_current_user_language(user_id, lang)
             print(f"[LOG] Язык сохранен для {user_id}: {lang}")
             
             if user_id in USER_STATES:
@@ -426,7 +425,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif query.data == "change_lang":
             print(f"[LOG] Обработка запроса смены языка для {user_id}")
             # Получаем актуальный язык пользователя
-            current_lang = get_current_user_language(user_id)
+            current_lang = await get_current_user_language(user_id)
             keyboard = [
                 [InlineKeyboardButton("🇬🇧 English", callback_data="lang_en")],
                 [InlineKeyboardButton("🇷🇺 Русский", callback_data="lang_ru")],
@@ -443,7 +442,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
     except Exception as e:
         print(f"[ERROR] Ошибка обработки кнопки для {user_id}: {e}")
-        current_lang = get_current_user_language(user_id)
+        current_lang = await get_current_user_language(user_id)
         await context.bot.send_message(
             chat_id=user_id,
             text=get_message("button_error", current_lang),
@@ -467,7 +466,7 @@ async def show_settings_menu_from_callback(query, context, user_id: int):
         print(f"[LOG] Текущий язык {user_id}: {current_lang}")
         
         keyboard = []
-        categories = rss_manager.get_categories()
+        categories = await rss_manager.get_categories()
         print(f"[LOG] Доступные категории: {categories}")
         for category in categories:
             is_selected = category in current_subs
@@ -488,14 +487,12 @@ async def show_settings_menu_from_callback(query, context, user_id: int):
             
     except Exception as e:
         print(f"[ERROR] Ошибка в show_settings_menu_from_callback для {user_id}: {e}")
-    finally:
-        rss_manager.close_connection()
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     print(f"[LOG] Вызов команды /help от пользователя {update.effective_user.id}")
     user_id = update.effective_user.id
     # Используем улучшенную функцию получения языка
-    lang = get_current_user_language(user_id)
+    lang = await get_current_user_language(user_id)
     print(f"[LOG] Актуальный язык пользователя {user_id}: {lang}")
     
     help_text = get_message("help_text", lang)
@@ -509,10 +506,10 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     print(f"[LOG] Вызов команды /status от пользователя {update.effective_user.id}")
     user_id = update.effective_user.id
     # Используем улучшенную функцию получения языка
-    lang = get_current_user_language(user_id)
+    lang = await get_current_user_language(user_id)
     print(f"[LOG] Актуальный язык пользователя {user_id}: {lang}")
     
-    settings = user_manager.get_user_settings(user_id)
+    settings = await user_manager.get_user_settings(user_id)
     print(f"[LOG] Настройки пользователя {user_id}: {settings}")
     
     categories = settings["subscriptions"]
@@ -532,7 +529,7 @@ async def handle_menu_selection(update: Update, context: ContextTypes.DEFAULT_TY
     print(f"[LOG] Обработка выбора меню от пользователя {update.effective_user.id}")
     user_id = update.effective_user.id
     # Используем улучшенную функцию получения языка
-    lang = get_current_user_language(user_id)
+    lang = await get_current_user_language(user_id)
     text = update.message.text
     print(f"[LOG] Пользователь {user_id} выбрал: {text}")
     print(f"[LOG] Актуальный язык пользователя из памяти/БД: {lang}")
@@ -584,7 +581,7 @@ async def handle_menu_selection(update: Update, context: ContextTypes.DEFAULT_TY
         print(f"[LOG] Найдено совпадение на языке {matched_lang}: {matched_action}")
         
         # Обновляем язык пользователя
-        set_current_user_language(user_id, matched_lang)
+        await set_current_user_language(user_id, matched_lang)
         print(f"[LOG] Обновлен язык пользователя {user_id} на {matched_lang}")
         
         # Выполняем соответствующее действие с новым языком
@@ -603,7 +600,7 @@ async def change_language_command(update: Update, context: ContextTypes.DEFAULT_
     print(f"[LOG] Вызов команды смены языка от пользователя {update.effective_user.id}")
     user_id = update.effective_user.id
     # Используем улучшенную функцию получения языка
-    lang = get_current_user_language(user_id)
+    lang = await get_current_user_language(user_id)
     print(f"[LOG] Актуальный язык пользователя {user_id}: {lang}")
     
     keyboard = [
@@ -647,7 +644,7 @@ async def send_personal_news(bot, news_item: dict, translations_dict: dict):
         print("[WARN] Категория новости не указана. Персональная рассылка пропущена.")
         return
 
-    subscribers = user_manager.get_subscribers_for_category(category)
+    subscribers = await user_manager.get_subscribers_for_category(category)
     print(f"[LOG] Найдено {len(subscribers)} подписчиков для категории {category}")
     
     if not subscribers:
@@ -662,7 +659,8 @@ async def send_personal_news(bot, news_item: dict, translations_dict: dict):
         image_extensions = ['.jpg', '.jpeg', '.png', '.webp']
         for ext in image_extensions:
             potential_path = os.path.join("/var/www/firefeed/data/www/firefeed.net/data/images", f"{news_id}{ext}")
-            if os.path.exists(potential_path):
+            loop = asyncio.get_event_loop()
+            if await loop.run_in_executor(None, os.path.exists, potential_path):
                 local_image_path = potential_path
                 break
 
@@ -776,7 +774,8 @@ async def post_to_channel(bot, news_item: dict, translations_dict: dict):
         image_extensions = ['.jpg', '.jpeg', '.png', '.webp']
         for ext in image_extensions:
             potential_path = os.path.join("/var/www/firefeed/data/www/firefeed.net/data/images", f"{news_id}{ext}")
-            if os.path.exists(potential_path):
+            loop = asyncio.get_event_loop()
+            if await loop.run_in_executor(None, os.path.exists, potential_path):
                 local_image_path = potential_path
                 break
 
@@ -865,7 +864,7 @@ async def debug(update: Update, context: ContextTypes.DEFAULT_TYPE):
     print(f"[LOG] Получено сообщение: {update.message.text} от {update.effective_user.id}")
     user_id = update.effective_user.id
     # Используем улучшенную функцию получения языка
-    lang = get_current_user_language(user_id)
+    lang = await get_current_user_language(user_id)
     await update.message.reply_text(get_message("bot_active", lang), reply_markup=get_main_menu_keyboard(lang))
     USER_CURRENT_MENUS[user_id] = "main"
 
@@ -888,70 +887,96 @@ async def process_news_item(context, rss_manager, news):
     news_link = news.get('link')
     image_filename = None
     local_image_path = None
-
-    # 2. Готовим переводы
+    
+    # 2. Готовим переводы (эта функция уже async)
     translations = await prepare_translations(
         title=news['title'],
         description=news['description'],
-        category=news['category'], # Предполагаем, что категория на 'en' или передаем category_lang
+        category=news['category'],
         original_lang=news['lang']
     )
-    
+
     if news_link and news_id:
         image_url = await extract_image_from_preview(news_link)
         if image_url:
             local_image_path = await download_and_save_image(image_url, news_id)
             if local_image_path and os.path.exists(local_image_path):
                 image_filename = os.path.basename(local_image_path)
-    
-    # 3. Сохраняем в БД
-    success_db = rss_manager.mark_as_published(
-        title=news['title'],
-        content=news['description'],
-        url=news['link'],
-        original_language=news['lang'],
-        translations_dict=translations,
-        category_name=news['category'],
-        image_filename=image_filename
+
+    # --- Обновленный вызов mark_as_published ---
+    loop = asyncio.get_event_loop()
+    # Передаем сам объект rss_manager и все необходимые аргументы
+    success_db = await loop.run_in_executor(
+        None,
+        rss_manager.mark_as_published, # Метод для вызова
+        news['title'],                 # arg 1
+        news['description'],           # arg 2
+        news['link'],                  # arg 3
+        news['lang'],                  # arg 4
+        translations,                  # arg 5
+        news['category'],              # arg 6 (category_name)
+        image_filename                 # arg 7
     )
+    # --- Конец обновленного вызова ---
 
     if success_db:
         print("[MAIN] Данные новости успешно обработаны и сохранены в БД.")
+        # Создаем обёртки, которые используют семафор
+        async def limited_post_to_channel():
+            async with SEND_SEMAPHORE:
+                await post_to_channel(context.bot, news, translations)
+
+        async def limited_send_personal_news():
+            async with SEND_SEMAPHORE:
+                await send_personal_news(context.bot, news, translations)
+
         if news['category'] in CHANNEL_CATEGORIES:
             print(f"[LOG] Новость категории '{news['category']}' подходит для общего канала. Планируем публикацию.")
-            asyncio.create_task(post_to_channel(context.bot, news, translations))
+            # asyncio.create_task(post_to_channel(context.bot, news, translations)) # <-- Закомментировано
+            asyncio.create_task(limited_post_to_channel()) # <-- Новое
         else:
             print(f"[LOG] Новость категории '{news['category']}' НЕ подходит для общего канала. Публикация в канал пропущена.")
-
-        # Персональные новости отправляются всегда, так как пользователи могут быть подписаны на любую категорию
-        asyncio.create_task(send_personal_news(context.bot, news, translations))
+        # Персональные новости отправляются всегда
+        # asyncio.create_task(send_personal_news(context.bot, news, translations)) # <-- Закомментировано
+        asyncio.create_task(limited_send_personal_news()) # <-- Новое
     else:
         print("[MAIN] Ошибка обработки и сохранения данных в БД. Публикация в Telegram пропущена.")
-    
     return success_db
 
 async def monitor_news_task(context):
-        """Асинхронная задача мониторинга новостей"""
-        print("[LOG] Запуск задачи мониторинга новостей")
-        rss_manager = RSSManager()
-
-        try:
-            news_list = await asyncio.wait_for(rss_manager.fetch_news(), timeout=120)
-            print(f"[LOG] Получено {len(news_list)} новостей")
+    """Асинхронная задача мониторинга новостей"""
+    print("[LOG] Запуск задачи мониторинга новостей")
+    rss_manager = RSSManager()
+    try:
+        news_list = await asyncio.wait_for(rss_manager.fetch_news(), timeout=120)
+        print(f"[LOG] Получено {len(news_list)} новостей")
+        
+        # Обрабатываем новости пакетами
+        batch_size = 5 # Размер пакета
+        delay_between_batches = 10 # Задержка между пакетами в секундах
+        
+        for i in range(0, len(news_list[:20]), batch_size):
+            batch = news_list[i:i + batch_size]
+            print(f"[LOG] Обработка пакета новостей {i//batch_size + 1} (размер: {len(batch)})")
             
-            for i, news in enumerate(news_list[:20]):
-                try:
-                    await process_news_item(context, rss_manager, news)
-                    if i % 5 == 0:
-                        await asyncio.sleep(5)
-                except Exception as e:
-                    print(f"[ERROR] Ошибка обработки новости: {e}")
-                    continue
-                            
-        except asyncio.TimeoutError:
-            print("[ERROR] Таймаут получения новостей")
-        except Exception as e:
-            print(f"[ERROR] Ошибка в задаче мониторинга: {e}")
+            batch_tasks = []
+            for news in batch:
+                # Создаем задачи для обработки новостей в пакете
+                task = asyncio.create_task(process_news_item(context, rss_manager, news))
+                batch_tasks.append(task)
+            
+            # Ждем завершения всех задач в пакете
+            await asyncio.gather(*batch_tasks, return_exceptions=True)
+            
+            # Пауза между пакетами
+            if i + batch_size < len(news_list[:20]): # Не делать паузу после последнего пакета
+                 print(f"[LOG] Пауза {delay_between_batches} секунд перед следующим пакетом...")
+                 await asyncio.sleep(delay_between_batches)
+                 
+    except asyncio.TimeoutError:
+        print("[ERROR] Таймаут получения новостей")
+    except Exception as e:
+        print(f"[ERROR] Ошибка в задаче мониторинга: {e}")
 
 
 def main():
@@ -971,7 +996,7 @@ def main():
     if job_queue:
         job_queue.run_repeating(
             callback=monitor_news_task, 
-            interval=120,
+            interval=360,
             first=1,
             job_kwargs={'misfire_grace_time': 600}
         )
@@ -980,7 +1005,6 @@ def main():
     def signal_handler(sig, frame):
         print("[LOG] Получен сигнал завершения, закрываем соединения...")
         rss_manager = RSSManager()
-        rss_manager.close_connection()
         sys.exit(0)
 
     signal.signal(signal.SIGINT, signal_handler)
@@ -993,11 +1017,9 @@ def main():
     except KeyboardInterrupt:
         print("[LOG] Прервано пользователем, закрываем соединения...")
         rss_manager = RSSManager()
-        rss_manager.close_connection()
     except Exception as e:
         print(f"[ERROR] Ошибка: {e}, закрываем соединения...")
         rss_manager = RSSManager()
-        rss_manager.close_connection()
         raise
 
 if __name__ == "__main__":
