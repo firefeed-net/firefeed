@@ -1,4 +1,3 @@
-# api/main.py
 from fastapi import FastAPI, Depends, HTTPException, Query, status
 from fastapi.middleware.cors import CORSMiddleware # Для CORS
 from typing import List, Optional
@@ -91,6 +90,7 @@ async def get_news(
                 nd.original_title,
                 nd.original_content,
                 nd.original_language,
+                nd.image_filename,
                 COALESCE(c.name, nd.category) AS category_name, -- Имя категории из справочника или из старого поля
                 COALESCE(s.name, 'Unknown Source') AS source_name, -- Имя источника
                 pn.source_url,
@@ -107,10 +107,10 @@ async def get_news(
                 nt_fr.translated_content as content_fr
             FROM published_news_data nd
             LEFT JOIN published_news pn ON nd.news_id = pn.id
-            -- JOIN с rss_feeds через любое поле, которое их связывает, если есть точная связь.
+            -- JOIN с rss_feeds, categories и sources для получения имен категории и источника
             -- Предположим, что URL или часть его может быть связующим звеном.
             -- Или если в published_news_data добавлен feed_id, использовать его.
-            -- Пока используем косвенную связь через URL и rss_feeds.
+            -- Пока используем косвенную связь через URL.
             -- Более надежный способ: добавить feed_id в published_news_data при сохранении.
             -- Для совместимости, делаем LEFT JOIN по URL.
             LEFT JOIN rss_feeds rf ON pn.source_url LIKE CONCAT(rf.url, '%') OR rf.url LIKE CONCAT(pn.source_url, '%') -- Пример косвенной связи
@@ -152,6 +152,7 @@ async def get_news(
                      "original_title": row['original_title'],
                      "original_content": row['original_content'],
                      "original_language": row['original_language'],
+                     "image_filename": row['image_filename'],
                      "category": row['category_name'], # Используем имя категории
                      "source": row['source_name'],     # Добавляем имя источника (если нужно в модели)
                      "source_url": row['source_url'],
@@ -226,6 +227,7 @@ async def get_news_by_id(news_id: str):
                 "original_title": result['original_title'],
                 "original_content": result['original_content'],
                 "original_language": result['original_language'],
+                "image_filename": result['image_filename'],
                 "category": result['category_name'], # Используем имя категории
                 "source": result['source_name'],     # Добавляем имя источника
                 "source_url": result['source_url'],

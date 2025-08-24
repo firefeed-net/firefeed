@@ -14,7 +14,7 @@ class UserManager:
         try:
             if self.connection is None or not self.connection.is_connected():
                 self.connection = mysql.connector.connect(**DB_CONFIG)
-                print("✅ Подключение к БД установлено")
+                # print("✅ Подключение к БД установлено")
             return self.connection
         except Error as e:
             print(f"❌ Ошибка подключения к MySQL: {e}")

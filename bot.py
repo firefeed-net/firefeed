@@ -11,7 +11,10 @@ from translator import translate_text, prepare_translations
 from functools import lru_cache
 from tenacity import retry, stop_after_attempt, wait_exponential
 from rss_manager import RSSManager
-from firefeed_utils import clean_html
+from firefeed_utils import clean_html, download_and_save_image, extract_image_from_preview
+
+import requests
+from bs4 import BeautifulSoup
 
 LANG_NAMES = {
     "en": "English 🇬🇧",
@@ -636,6 +639,7 @@ async def send_personal_news(bot, news_item: dict, translations_dict: dict):
     user_manager = UserManager() 
     
     original_title = news_item['title']
+    news_id = news_item.get('id')  # Получаем ID новости
     print(f"[LOG] Отправка персональной новости: {original_title[:50]}...")
     
     category = news_item.get('category')
@@ -649,6 +653,18 @@ async def send_personal_news(bot, news_item: dict, translations_dict: dict):
     if not subscribers:
         print(f"[LOG] Нет подписчиков для категории {category}.")
         return
+
+    # Получаем путь к локальному изображению (если оно было сохранено ранее)
+    local_image_path = None
+    if news_id:
+        # Предполагаем, что изображения сохраняются в директорию "/var/www/firefeed/data/www/firefeed.net/data/images"
+        # и имя файла формируется как {news_id}.{extension}
+        image_extensions = ['.jpg', '.jpeg', '.png', '.webp']
+        for ext in image_extensions:
+            potential_path = os.path.join("/var/www/firefeed/data/www/firefeed.net/data/images", f"{news_id}{ext}")
+            if os.path.exists(potential_path):
+                local_image_path = potential_path
+                break
 
     for user in subscribers:
         try:
@@ -686,7 +702,7 @@ async def send_personal_news(bot, news_item: dict, translations_dict: dict):
 
             # --- Формирование сообщения ---
             # Используем .get() с дефолтными значениями для надежности
-            message = (
+            content_text = (
                 f"🔥 <b>{title_to_send}</b>\n\n"
                 f"{description_to_send}\n\n"
                 f"FROM: {news_item.get('source', 'Unknown Source')}\n"
@@ -694,16 +710,40 @@ async def send_personal_news(bot, news_item: dict, translations_dict: dict):
                 f"⚡ <a href='{news_item.get('link', '#')}'>{READ_MORE_LABELS.get(user_lang, 'Read more')}</a>"
             )
 
-            # --- Отправка сообщения ---
-            await bot.send_message(
-                chat_id=user_id,
-                text=message,
-                parse_mode="HTML",
-                disable_web_page_preview=False,
-                read_timeout=30,
-                write_timeout=30,
-                connect_timeout=30
-            )
+            # --- Отправка в зависимости от наличия изображения ---
+            if local_image_path and os.path.exists(local_image_path):
+                # Отправляем через send_photo с локальным файлом
+                caption = content_text
+                if len(caption) > 1024:
+                    # Обрезаем description, сохраняя title, остальные элементы
+                    max_desc_length = 1024 - len(f"🔥 <b>{title_to_send}</b>\n\n\n\nFROM: {news_item.get('source', 'Unknown Source')}\nCATEGORY: {category}{lang_note}\n\n⚡ <a href='{news_item.get('link', '#')}'>{READ_MORE_LABELS.get(user_lang, 'Read more')}</a>")
+                    if max_desc_length > 0:
+                        truncated_desc = description_to_send[:max_desc_length-3] + "..."
+                        caption = f"🔥 <b>{title_to_send}</b>\n\n{truncated_desc}\n\nFROM: {news_item.get('source', 'Unknown Source')}\nCATEGORY: {category}{lang_note}\n\n⚡ <a href='{news_item.get('link', '#')}'>{READ_MORE_LABELS.get(user_lang, 'Read more')}</a>"
+                    else:
+                        # Если даже без description не влезает, обрезаем минимально
+                        caption = caption[:1021] + "..."
+
+                await bot.send_photo(
+                    chat_id=user_id,
+                    photo=local_image_path,  # Используем локальный путь
+                    caption=caption,
+                    parse_mode="HTML",
+                    read_timeout=30,
+                    write_timeout=30,
+                    connect_timeout=30
+                )
+            else:
+                # Отправляем обычное сообщение
+                await bot.send_message(
+                    chat_id=user_id,
+                    text=content_text,
+                    parse_mode="HTML",
+                    disable_web_page_preview=True,
+                    read_timeout=30,
+                    write_timeout=30,
+                    connect_timeout=30
+                )
             
             print(f"[LOG] Персональная новость отправлена пользователю {user_id}.")
             await asyncio.sleep(0.1) # Небольшая задержка между отправками
@@ -721,12 +761,29 @@ async def post_to_channel(bot, news_item: dict, translations_dict: dict):
 
     :param bot: Экземпляр бота python-telegram-bot.
     :param news_item: Словарь с оригинальными данными новости 
-                      (title, description, lang, category, source, link).
+                      (title, description, lang, category, source, link, id).
     :param translations_dict: Словарь переводов, полученный из prepare_translations.
     """
     original_title = news_item['title']
+    news_id = news_item.get('id')  # Получаем ID новости
     print(f"[LOG] Публикация новости в каналы: {original_title[:50]}...")
 
+    # Получаем путь к локальному изображению (если оно было сохранено ранее)
+    local_image_path = None
+    if news_id:
+        # Предполагаем, что изображения сохраняются в директорию "/var/www/firefeed/data/www/firefeed.net/data/images"
+        # и имя файла формируется как {news_id}.{extension}
+        image_extensions = ['.jpg', '.jpeg', '.png', '.webp']
+        for ext in image_extensions:
+            potential_path = os.path.join("/var/www/firefeed/data/www/firefeed.net/data/images", f"{news_id}{ext}")
+            if os.path.exists(potential_path):
+                local_image_path = potential_path
+                break
+
+    # Добавь эти принты после извлечения данных:
+    print(f"[DEBUG] news_id: {news_id}")
+    print(f"[DEBUG] local_image_path: {local_image_path}")
+    
     for target_lang, channel_id in CHANNEL_IDS.items():
         try:
             await asyncio.sleep(0.5) # По-прежнему нужно для соблюдения лимитов Telegram
@@ -735,7 +792,7 @@ async def post_to_channel(bot, news_item: dict, translations_dict: dict):
             translation_data = translations_dict.get(target_lang, {})
             if not translation_data:
                  print(f"[WARN] Нет данных перевода для языка {target_lang}. Пропущено.")
-                 continue # Или используем оригинальные данные?
+                 continue
 
             title = translation_data.get('title', original_title)
             description = translation_data.get('description', news_item.get('description', ''))
@@ -747,32 +804,53 @@ async def post_to_channel(bot, news_item: dict, translations_dict: dict):
             
             lang_note = ""
             if needs_translation_note:
-                # Получаем название оригинального языка, если нужно
-                # Например, TRANSLATED_FROM_LABELS.get(target_lang, "Translated from")
                 lang_note = f"\n\n🌐 {TRANSLATED_FROM_LABELS.get(target_lang, 'Translated from')} {original_lang.upper()}"
 
             # --- Формирование хэштегов ---
-            # Предполагаем, что source и category доступны в news_item
             hashtags = f"\n#{translated_category} #{news_item.get('source', 'UnknownSource')}"
             
             has_description = bool(description and description.strip())
             
-            # --- Сборка сообщения ---
-            message = f"<b>{title}</b>"
+            # --- Формирование базового контента ---
+            content_text = f"<b>{title}</b>"
             if has_description:
-                message += f"\n\n{description}"
-            message += f"{lang_note}\n{hashtags}" # Добавляем всегда, даже без описания?
+                content_text += f"\n\n{description}"
+            content_text += f"{lang_note}\n{hashtags}"
 
-            # --- Отправка ---
-            await bot.send_message(
-                chat_id=channel_id,
-                text=message,
-                parse_mode='HTML',
-                disable_web_page_preview=True,
-                read_timeout=30,
-                write_timeout=30,
-                connect_timeout=30
-            )
+            # --- Отправка в зависимости от наличия изображения ---
+            if local_image_path and os.path.exists(local_image_path):
+                # Отправляем через send_photo с локальным файлом
+                caption = content_text
+                if len(caption) > 1024:
+                    # Обрезаем description, сохраняя title, lang_note и hashtags
+                    max_desc_length = 1024 - len(f"<b>{title}</b>\n\n\n\n{lang_note}\n{hashtags}")
+                    if max_desc_length > 0:
+                        truncated_desc = description[:max_desc_length-3] + "..."
+                        caption = f"<b>{title}</b>\n\n{truncated_desc}{lang_note}\n{hashtags}"
+                    else:
+                        # Если даже без description не влезает, обрезаем минимально
+                        caption = caption[:1021] + "..."
+
+                await bot.send_photo(
+                    chat_id=channel_id,
+                    photo=local_image_path,  # Используем локальный путь
+                    caption=caption,
+                    parse_mode='HTML',
+                    read_timeout=30,
+                    write_timeout=30,
+                    connect_timeout=30
+                )
+            else:
+                # Отправляем обычное сообщение
+                await bot.send_message(
+                    chat_id=channel_id,
+                    text=content_text,
+                    parse_mode='HTML',
+                    disable_web_page_preview=True,
+                    read_timeout=30,
+                    write_timeout=30,
+                    connect_timeout=30
+                )
 
             print(f"[LOG] Опубликовано в {channel_id}: {title[:50]}...")
             
@@ -801,6 +879,50 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> N
     else:
         print(f"[ERROR] Другая ошибка: {context.error}")
 
+async def process_news_item(context, rss_manager, news):
+    """
+    Основная функция обработки новости
+    """
+    # 1. Сначала извлекаем и сохраняем изображение
+    news_id = news.get('id')
+    news_link = news.get('link')
+    image_filename = None
+    local_image_path = None
+
+    # 2. Готовим переводы
+    translations = await prepare_translations(
+        title=news['title'],
+        description=news['description'],
+        category=news['category'], # Предполагаем, что категория на 'en' или передаем category_lang
+        original_lang=news['lang']
+    )
+    
+    if news_link and news_id:
+        image_url = await extract_image_from_preview(news_link)
+        if image_url:
+            local_image_path = await download_and_save_image(image_url, news_id)
+            if local_image_path and os.path.exists(local_image_path):
+                image_filename = os.path.basename(local_image_path)
+    
+    # 3. Сохраняем в БД
+    success_db = rss_manager.mark_as_published(
+        title=news['title'],
+        content=news['description'],
+        url=news['link'],
+        original_language=news['lang'],
+        translations_dict=translations,
+        category_name=news['category'],
+        image_filename=image_filename
+    )
+
+    if success_db:
+        print("[MAIN] Данные новости успешно обработаны и сохранены в БД.")
+        asyncio.create_task(post_to_channel(context.bot, news, translations))
+        asyncio.create_task(send_personal_news(context.bot, news, translations))
+    else:
+        print("[MAIN] Ошибка обработки и сохранения данных в БД. Публикация в Telegram пропущена.")
+    
+    return success_db
 
 async def monitor_news_task(context):
         """Асинхронная задача мониторинга новостей"""
@@ -813,36 +935,9 @@ async def monitor_news_task(context):
             
             for i, news in enumerate(news_list[:20]):
                 try:
-                    # 2. Готовим переводы
-                    translations = await prepare_translations(
-                        title=news['title'],
-                        description=news['description'],
-                        category=news['category'], # Предполагаем, что категория на 'en' или передаем category_lang
-                        original_lang=news['lang']
-                    )
-
-                    # 3. Сохраняем в БД
-                    success_db = rss_manager.mark_as_published(
-                        title=news['title'],
-                        content=news['description'], # Или другое поле, если есть full_text
-                        url=news['link'], # или другой ключ для URL
-                        original_language=news['lang'],
-                        translations_dict=translations,
-                        category=news['category']
-                    )
-
-                    if success_db:
-                        print("[MAIN] Данные новости успешно сохранены в БД.")
-                        # Публикуем в Telegram КАНАЛЫ
-                        asyncio.create_task(post_to_channel(context.bot, news, translations))
-                        # Отправляем персональные новости ПОЛЬЗОВАТЕЛЯМ
-                        asyncio.create_task(send_personal_news(context.bot, news, translations))
-                    else:
-                        print("[MAIN] Ошибка сохранения данных в БД. Публикация в Telegram пропущена.")
-                    
+                    await process_news_item(context, rss_manager, news)
                     if i % 5 == 0:
                         await asyncio.sleep(5)
-                        
                 except Exception as e:
                     print(f"[ERROR] Ошибка обработки новости: {e}")
                     continue
@@ -870,7 +965,7 @@ def main():
     if job_queue:
         job_queue.run_repeating(
             callback=monitor_news_task, 
-            interval=300,
+            interval=120,
             first=1,
             job_kwargs={'misfire_grace_time': 600}
         )

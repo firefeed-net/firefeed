@@ -13,6 +13,7 @@ class NewsItem(BaseModel):
     original_title: str
     original_content: str
     original_language: str
+    image_filename: Optional[str] = None
     category: Optional[str] = None
     source: Optional[str] = None # Имя источника новости
     title_ru: Optional[str] = None

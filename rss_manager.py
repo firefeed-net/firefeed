@@ -19,7 +19,7 @@ class RSSManager:
         try:
             if self.connection is None or not self.connection.is_connected():
                 self.connection = mysql.connector.connect(**DB_CONFIG)
-                print("✅ Подключение к БД установлено")
+                # print("✅ Подключение к БД установлено")
             return self.connection
         except Error as e:
             print(f"❌ Ошибка подключения к MySQL: {e}")
@@ -353,16 +353,7 @@ class RSSManager:
         finally:
             cursor.close()
     
-    def is_news_new(self, title, content, url):
-        """
-        Проверяет, является ли новость новой, сверяя хэши заголовка и содержимого с БД.
-        Считается дубликатом, если совпадает заголовок ИЛИ содержимое.
-        """
-        title_hash = hashlib.sha256(title.encode('utf-8')).hexdigest()
-        # Увеличиваем длину проверяемого контента, если 500 символов недостаточно
-        content_hash = hashlib.sha256(content.encode('utf-8')).hexdigest() # Проверяем весь контент?
-        # Или оставить 500: content_hash = hashlib.sha256(content[:500].encode('utf-8')).hexdigest()
-        
+    def is_news_new(self, title_hash, content_hash, url):
         connection = self.get_db_connection()
         if not connection:
             # В случае ошибки БД лучше считать новость НЕ новой, чтобы не дублировать
@@ -382,11 +373,7 @@ class RSSManager:
             
             # Если результат есть (result не None), новость считается НЕ новой
             is_duplicate = result is not None
-            if is_duplicate:
-                print(f"[DB] [is_news_new] Новость '{title[:30]}...' ОТМЕЧЕНА как дубликат по хэшу.")
-            else:
-                print(f"[DB] [is_news_new] Новость '{title[:30]}...' ПРИНЯТА как новая.")
-            
+
             return not is_duplicate # Возвращаем True, если НЕ дубликат
             
         except mysql.connector.Error as err:
@@ -397,14 +384,17 @@ class RSSManager:
             cursor.close()
             connection.close()
 
-    def mark_as_published(self, title, content, url, original_language, translations_dict, category=None):
+    def mark_as_published(self, title, content, url, original_language, translations_dict, category_name=None, image_filename=None):
         """
         Сохраняет информацию о опубликованной новости с проверкой уникальности (хэши).
         Сохраняет оригинальные данные и переводы новости для API.
+
+        :param category_name: название категории (опционально)
+        :param image_filename: имя файла изображения (опционально)
         """
         # 1. Генерируем ID ОДИН РАЗ
         title_hash = hashlib.sha256(title.encode('utf-8')).hexdigest()
-        content_hash = hashlib.sha256(content[:500].encode('utf-8')).hexdigest()
+        content_hash = hashlib.sha256(content.encode('utf-8')).hexdigest()
         news_id = f"{title_hash}_{content_hash}"
         short_id = news_id[:20] + "..." if len(news_id) > 20 else news_id
         print(f"[DB] [mark_as_published] Начало обработки для ID: {short_id}")
@@ -416,11 +406,18 @@ class RSSManager:
 
         cursor = connection.cursor()
         try:
-            # --- Попробуем явно отключить autocommit для этой операции, если он вдруг включен ---
-            # connection.autocommit = False # Обычно это делается при создании соединения
-            
-            # --- ГАРАНТИРУЕМ существование записи в published_news ---
+            # --- Получаем category_id по названию категории ---
+            category_id = None
+            if category_name:
+                category_query = "SELECT id FROM categories WHERE name = %s LIMIT 1"
+                cursor.execute(category_query, (category_name,))
+                category_result = cursor.fetchone()
+                if category_result:
+                    category_id = category_result[0]
+                else:
+                    print(f"[DB] [WARN] Категория '{category_name}' не найдена в таблице categories")
 
+            # --- ГАРАНТИРУЕМ существование записи в published_news ---
             # 2a. Подробный лог запроса к published_news
             query_published_news = """
             INSERT INTO published_news (id, title_hash, content_hash, source_url, published_at)
@@ -472,15 +469,17 @@ class RSSManager:
             # -------------------------------------------------------------
 
             # 3. ВСТАВЛЯЕМ или ОБНОВЛЯЕМ в дочерней таблице published_news_data
+            # Обновленный запрос с category_id вместо category
             query_published_news_data = """
             INSERT INTO published_news_data 
-            (news_id, original_title, original_content, original_language, category, created_at, updated_at)
-            VALUES (%s, %s, %s, %s, %s, NOW(), NOW())
+            (news_id, original_title, original_content, original_language, category_id, image_filename, created_at, updated_at)
+            VALUES (%s, %s, %s, %s, %s, %s, NOW(), NOW())
             ON DUPLICATE KEY UPDATE
                 original_title = VALUES(original_title),
                 original_content = VALUES(original_content),
                 original_language = VALUES(original_language),
-                category = VALUES(category),
+                category_id = VALUES(category_id),
+                image_filename = VALUES(image_filename),
                 updated_at = NOW()
             """
             print(f"[DB] [mark_as_published] Подготовка запроса к 'published_news_data' (ID: {short_id})")
@@ -489,7 +488,8 @@ class RSSManager:
                 title, 
                 content, 
                 original_language, 
-                category
+                category_id,
+                image_filename
             ))
             print(f"[DB] [mark_as_published] Выполнен запрос к 'published_news_data'. (ID: {short_id})")
 
@@ -543,15 +543,8 @@ class RSSManager:
             active_feeds = self.get_all_active_feeds()
             print(f"[RSS] Найдено {len(active_feeds)} активных RSS-лент.")
 
-            # Итерируемся по списку фидов
-            # for category, sources in self.get_all_active_feeds(): # <-- СТАРЫЙ способ, вызывает ошибку
-            for feed_info in active_feeds: # <-- НОВЫЙ способ
+            for feed_info in active_feeds:
                 # Извлекаем информацию из словаря feed_info
-                # feed_url = feed_info['url']
-                # feed_category = feed_info['category']
-                # feed_lang = feed_info['lang']
-                # feed_source = feed_info['source']
-                
                 try:
                     print(f"[RSS] Парсинг ленты: {feed_info['name']} ({feed_info['url']})")
                     feed = feedparser.parse(feed_info['url'], request_headers=headers)
@@ -593,7 +586,10 @@ class RSSManager:
                     entry_link = entry.get('link', '#')
                     
                     # Проверяем уникальность через БД (хэши)
-                    if not self.is_news_new(title, description, entry_link):
+                    title_hash = hashlib.sha256(title.encode('utf-8')).hexdigest()
+                    content_hash = hashlib.sha256(description.encode('utf-8')).hexdigest()
+
+                    if not self.is_news_new(title_hash, content_hash, entry_link):
                         continue
 
                     # Обработка даты с fallback
@@ -606,10 +602,10 @@ class RSSManager:
                             published = datetime.now(pytz.utc)
                     else:
                         published = datetime.now(pytz.utc)
-                    
+
                     # --- Создание news_item с данными из feed_info ---
                     news_item = {
-                        'id': f"{entry_link}_{pub_date}", # Или другой уникальный ID
+                        'id': f"{title_hash}_{content_hash}",
                         'title': title,
                         'description': description,
                         'link': entry_link,
