@@ -1,6 +1,7 @@
 import asyncio
 import aiopg
 import psycopg2
+import json
 from pgvector.psycopg2 import register_vector
 from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
@@ -127,11 +128,11 @@ class FireFeedDuplicateDetector:
     async def is_duplicate(self, title: str, content: str) -> Tuple[bool, Optional[Dict[str, Any]]]:
         """
         Проверка, является ли новость дубликатом
-        
+
         Args:
             title: Заголовок новости
             content: Содержание новости
-            
+
         Returns:
             Кортеж: (является_дубликатом, информация_о_дубликате)
         """
@@ -139,31 +140,49 @@ class FireFeedDuplicateDetector:
         try:
             # Генерируем эмбеддинг для новой новости
             embedding = await self.generate_embedding(title, content)
-            
+
             # Ищем похожие новости
             similar_news = await self.get_similar_news(embedding, limit=5)
-            
+
             # Проверяем схожесть
             for news in similar_news:
                 if news['embedding'] is not None:
-                    stored_embedding = np.array(news['embedding'])
-                    new_embedding = np.array(embedding)
-                    
-                    similarity = cosine_similarity([stored_embedding], [new_embedding])[0][0]
-                    
+                    # Преобразуем строковое представление эмбеддинга обратно в список float
+                    try:
+                        if isinstance(news['embedding'], str):
+                            stored_embedding_array = np.array(json.loads(news['embedding']))
+                        elif isinstance(news['embedding'], (list, np.ndarray)):
+                            # На случай, если данные уже в правильном формате (например, при тестировании)
+                            stored_embedding_array = np.array(news['embedding'], dtype=float)
+                        else:
+                            # Если формат неизвестен, пропускаем эту новость
+                            logger.warning(f"[DUBLICATE_DETECTOR] Неизвестный тип данных для эмбеддинга: {type(news['embedding'])}")
+                            continue
+                    except (json.JSONDecodeError, ValueError) as e:
+                        logger.error(f"[DUBLICATE_DETECTOR] Ошибка преобразования эмбеддинга из БД: {e}")
+                        continue
+
+                    # Генерируем эмбеддинг для текущей новости (новый)
+                    new_embedding_array = np.array(embedding)
+
+                    # Вычисляем косинусное сходство
+                    similarity = cosine_similarity([stored_embedding_array], [new_embedding_array])[0][0]
+
                     if similarity > self.similarity_threshold:
                         logger.info(f"[DUBLICATE_DETECTOR] Найден дубликат с схожестью {similarity:.4f}")
                         return True, news
-            
+
             return False, None
-            
+
         except Exception as e:
             logger.error(f"[DUBLICATE_DETECTOR] Ошибка при проверке дубликата: {e}")
             raise
         finally:
-            if pool:
-                pool.close()
-                await pool.wait_closed()
+            if pool: # Переменная pool не используется в этом методе напрямую, 
+                    # но если бы использовалась, здесь было бы её закрытие
+                # pool.close()
+                # await pool.wait_closed()
+                pass
     
     async def process_news(self, news_id: str, title: str, content: str) -> bool:
         """
