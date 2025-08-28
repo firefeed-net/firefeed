@@ -5,14 +5,16 @@ import feedparser
 import asyncio
 import re
 import pytz
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from dateutil import parser
 from config import DB_CONFIG, MAX_ENTRIES_PER_FEED, MAX_TOTAL_NEWS
 from translator import prepare_translations
+from firefeed_dublicate_detector import FireFeedDuplicateDetector
 
 class RSSManager:
     def __init__(self):
         self.connection = None
+        self.dublicate_detector = FireFeedDuplicateDetector()
 
     def _get_all_feeds(self):
         """Вспомогательный метод: Получает список ВСЕХ RSS-лент."""
@@ -480,20 +482,24 @@ class RSSManager:
             
             if row and row[0]:
                 cooldown_minutes = row[0]
-                # Более логичная формула: 60 минут в часе / интервал между новостями
+                # Пропорциональная формула: 1 новость за cooldown_minutes
+                # Например: 360 минут = 1 новость за 6 часов = 1/6 новостей в час
                 max_news = max(1, round(60 / cooldown_minutes))
                 
-                # Но для очень больших интервалов лучше использовать прямое ограничение
-                if cooldown_minutes >= 60:
-                    # 1 новость на каждые полные 60 минут кулдауна
+                # Для корректного округления при больших значениях
+                if cooldown_minutes > 60:
+                    # Округляем вниз для больших интервалов
                     max_news = max(1, 60 // cooldown_minutes)
-                    
+                    # Если деление дает 0, то ставим 1 (минимум одна новость за период)
+                    if max_news == 0:
+                        max_news = 1
+                        
                 return max_news
             else:
                 return 1  # По умолчанию 1 новость в час
         except psycopg2.Error as err:
             print(f"[DB] [RSSManager] Ошибка в _get_max_news_per_hour_for_feed: {err}")
-            return 3
+            return 1
         finally:
             if cursor:
                 cursor.close()
@@ -636,7 +642,7 @@ class RSSManager:
         cursor = None
         try:
             # Создаем новое соединение внутри метода
-            connection = psycopg2.connect(**DB_CONFIG) # <-- Используем DB_CONFIG напрямую
+            connection = psycopg2.connect(**DB_CONFIG)
             cursor = connection.cursor()
             # --- Конец создания соединения ---
 
@@ -758,7 +764,7 @@ class RSSManager:
             traceback.print_exc()
             if connection:
                 connection.rollback()
-            return False # <-- Возвращаем False при любой другой ошибке
+            return False
         finally:
             # --- ВАЖНО: Закрываем курсор и соединение ---
             if cursor:
@@ -767,23 +773,38 @@ class RSSManager:
                 connection.close()
                 print(f"[DB] [mark_as_published] Соединение закрыто. (ID: {short_id})")
             # --- Конец закрытия соединения ---
-    
-    
+
     async def fetch_single_feed(self, feed_info, seen_keys, headers):
         """
         Асинхронно парсит одну RSS-ленту и возвращает список новостей из неё.
+        Перед парсингом проверяет cooldown и лимиты.
         """
         local_news = []
+
+        rss_feed_id = feed_info['id']
+
+        # Получаем параметры ленты
+        cooldown_minutes = await self.get_feed_cooldown_minutes(rss_feed_id)
+        max_news_per_hour = await self.get_max_news_per_hour_for_feed(rss_feed_id)
+        recent_count = await self.get_recent_news_count_for_feed(rss_feed_id, cooldown_minutes)
+
+        # Проверка лимита новостей за период кулдауна
+        if recent_count >= max_news_per_hour:
+            print(f"[SKIP] Лента ID {rss_feed_id} достигла лимита {max_news_per_hour} новостей за {cooldown_minutes} минут. Опубликовано: {recent_count}")
+            return local_news
+
+        # Проверка кулдауна (время последней публикации)
+        last_published = await self.get_last_published_time_for_feed(rss_feed_id)
+
+        if last_published:
+            elapsed = datetime.now(timezone.utc) - last_published
+            if elapsed < timedelta(minutes=cooldown_minutes):
+                print(f"[SKIP] Лента ID {rss_feed_id} находится на кулдауне ({cooldown_minutes} мин). Прошло: {elapsed}")
+                return local_news
+
+        # Если лента прошла все проверки — парсим её
         try:
             print(f"[RSS] Парсинг ленты: {feed_info['name']} ({feed_info['url']})")
-            # feedparser.parse синхронный, но его можно запустить в executor'е
-            # для неблокирующего выполнения в асинхронном коде.
-            # loop = asyncio.get_event_loop()
-            # feed = await loop.run_in_executor(None, feedparser.parse, feed_info['url'], headers)
-            # Однако, профилирование показывает, что feedparser.parse внутри
-            # run_in_executor всё равно может блокировать. Лучше оставить как есть
-            # или перенести всю fetch_news в executor.
-            # Пока оставим, как есть, но помним о потенциальной блокировке.
             feed = feedparser.parse(feed_info['url'], request_headers=headers)
 
             # Логируем ошибки парсинга
@@ -805,8 +826,6 @@ class RSSManager:
                     continue
 
                 normalized_title = re.sub(r'\s+', ' ', title).lower()
-                # Уникальный ключ для предотвращения дубликатов в текущей итерации
-                # Включаем источник и категорию для большей уникальности
                 unique_key = (feed_info['source'], feed_info['category'], normalized_title)
 
                 if unique_key in seen_keys:
@@ -821,19 +840,22 @@ class RSSManager:
 
                 loop = asyncio.get_event_loop()
                 is_new = await loop.run_in_executor(None, self.is_news_new, title_hash, content_hash, entry_link)
-                if not is_new:
+                is_unique = await self.dublicate_detector.process_news(
+                    news_id=f"{title_hash}_${content_hash}",
+                    title=title,
+                    content=description
+                )
+
+                if not is_new or not is_unique:
                     continue
 
                 # Обработка даты с fallback
                 pub_date = getattr(entry, 'published', None)
                 if pub_date:
                     try:
-                        # parser.parse также синхронный
                         loop = asyncio.get_event_loop()
                         published = await loop.run_in_executor(None, parser.parse, pub_date)
                         published = published.replace(tzinfo=pytz.utc)
-                        
-                        # published = parser.parse(pub_date).replace(tzinfo=pytz.utc)
                     except Exception as e:
                         print(f"[RSS] Ошибка парсинга даты '{pub_date}': {e}. Используется текущее время.")
                         published = datetime.now(pytz.utc)
@@ -872,11 +894,7 @@ class RSSManager:
             active_feeds = await self.get_all_active_feeds()
             print(f"[RSS] Найдено {len(active_feeds)} активных RSS-лент.")
 
-            if not active_feeds:
-                print("[RSS] Нет активных лент для парсинга.")
-                return []
-
-            # Создаем список задач для парсинга каждой ленты, передаем feed_id
+            # Создаём задачи по обработке всех активных лент
             tasks = [
                 self.fetch_single_feed(feed_info, seen_keys, headers)
                 for feed_info in active_feeds
@@ -890,7 +908,7 @@ class RSSManager:
                 feed_info = active_feeds[i] if i < len(active_feeds) else None
                 feed_url = feed_info['url'] if feed_info else "Unknown Feed"
                 feed_id = feed_info['id'] if feed_info else None
-                
+
                 if isinstance(result, Exception):
                     print(f"[RSS] [ERROR] Исключение при парсинге {feed_url}: {result}")
                 elif isinstance(result, list):

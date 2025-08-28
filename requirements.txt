@@ -1,7 +1,6 @@
 python-telegram-bot[job-queue]==22.3
 python-telegram-bot[webhooks]==22.3
 feedparser==6.0.11
-deep-translator==1.11.4
 tenacity==9.1.2
 pytz==2025.2
 torch==2.8.0
@@ -14,3 +13,11 @@ uvicorn[standard]==0.35.0
 pydantic==2.11.7
 bs4==0.0.2
 psycopg2-binary==2.9.10
+pillow==11.3.0
+aiopg==1.4.0
+async==timeout-4.0.3
+pgvector==0.4.1
+scikit-learn==1.7.1
+scipy==1.16.1
+sentence-transformers==5.1.0
+threadpoolctl==3.6.0

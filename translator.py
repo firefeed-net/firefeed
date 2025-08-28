@@ -5,6 +5,8 @@ import asyncio
 import torch
 import nltk
 import os
+import time
+import re
 from config import CHANNEL_IDS
 
 # Установка пути для данных NLTK
@@ -152,95 +154,129 @@ def cached_translate_text(text, source_lang, target_lang):
     return translate_text(text, source_lang, target_lang)
 
 def translate_text(text, source_lang='en', target_lang='ru', context_window=2):
+    start_time = time.time()
+    print(f"[{start_time:.3f}] Начало перевода: {source_lang} -> {target_lang}, текст длиной {len(text)} символов")
+    
     if source_lang == target_lang:
-        return clean_html(text)
+        result = clean_html(text)
+        end_time = time.time()
+        print(f"[{end_time:.3f}] Языки совпадают, возврат без перевода. Время выполнения: {end_time - start_time:.3f} сек")
+        return result
 
     cache_key = f"{source_lang}_{target_lang}_{hash(text)}"
     if cache_key in _translation_cache:
-        return _translation_cache[cache_key]
+        cached_result = _translation_cache[cache_key]
+        end_time = time.time()
+        print(f"[{end_time:.3f}] Результат найден в кэше. Время выполнения: {end_time - start_time:.3f} сек")
+        return cached_result
 
     # Проверяем, нужен ли каскадный перевод
     cascade_key = (source_lang, target_lang)
     if cascade_key in CASCADE_TRANSLATIONS:
+        print(f"[{time.time():.3f}] Используется каскадный перевод для {source_lang} -> {target_lang}")
         # Используем каскадный перевод через английский
         src_lang, intermediate_lang, tgt_lang = CASCADE_TRANSLATIONS[cascade_key]
         
         # Переводим на промежуточный язык (английский)
+        print(f"[{time.time():.3f}] Этап 1: Перевод {src_lang} -> {intermediate_lang}")
+        intermediate_start = time.time()
         intermediate_text = translate_text(text, src_lang, intermediate_lang, context_window)
+        intermediate_time = time.time() - intermediate_start
+        print(f"[{time.time():.3f}] Этап 1 завершен за {intermediate_time:.3f} сек")
         
         # Переводим с промежуточного на целевой язык
+        print(f"[{time.time():.3f}] Этап 2: Перевод {intermediate_lang} -> {tgt_lang}")
+        final_start = time.time()
         result = translate_text(intermediate_text, intermediate_lang, tgt_lang, context_window)
+        final_time = time.time() - final_start
+        print(f"[{time.time():.3f}] Этап 2 завершен за {final_time:.3f} сек")
     else:
+        print(f"[{time.time():.3f}] Прямой перевод {source_lang} -> {target_lang}")
+        print(f"[{time.time():.3f}] Токенизация текста...")
         sentences = nltk.sent_tokenize(text)
+        print(f"[{time.time():.3f}] Получено {len(sentences)} предложений")
+        
+        print(f"[{time.time():.3f}] Начало перевода с контекстом (окно: {context_window})")
+        translate_start = time.time()
         translated = " ".join(translate_with_context(sentences, source_lang, target_lang, context_window))
+        translate_time = time.time() - translate_start
+        print(f"[{time.time():.3f}] Перевод завершен за {translate_time:.3f} сек")
+        
         result = clean_html(translated)
 
     _translation_cache[cache_key] = result
+    end_time = time.time()
+    total_time = end_time - start_time
+    print(f"[{end_time:.3f}] Перевод завершен. Общее время выполнения: {total_time:.3f} сек")
     return result
+
+def is_broken_translation(text: str, max_repeats: int = 5) -> bool:
+    """
+    Проверяет, содержит ли текст подозрительное количество повторяющихся символов подряд.
+    Например: "......." или "........."
+    """
+    if not text:
+        return True
+    # Проверяем, есть ли последовательности из более чем max_repeats одинаковых символов
+    return bool(re.search(r'(.)\1{' + str(max_repeats) + ',}', text))
 
 async def prepare_translations(title: str, description: str, category: str, original_lang: str) -> dict:
     """
     Подготавливает переводы заголовка, описания и категории на все целевые языки.
-    Оборачивает синхронные вызовы translate_text в run_in_executor.
-
-    :param title: Оригинальный заголовок.
-    :param description: Оригинальное описание.
-    :param category: Категория (предположительно на английском).
-    :param original_lang: Оригинальный язык новости.
-    :return: Словарь переводов вида {
-        'ru': {'title': '...', 'description': '...', 'category': '...'},
-        'en': {...},
-        ...
-    }
+    Не включает переводы, если:
+    - Перевод совпадает с оригиналом
+    - Перевод содержит битые символы (например, куча точек)
     """
     translations = {}
-    target_languages = list(CHANNEL_IDS.keys()) # ['ru', 'en', 'de', 'fr']
+    target_languages = list(CHANNEL_IDS.keys())  # ['ru', 'en', 'de', 'fr']
 
     # Очищаем оригинальный текст один раз
     clean_title = clean_html(title)
     clean_description = clean_html(description)
 
-    # Получаем ссылку на текущий event loop
     loop = asyncio.get_event_loop()
-
-    # Создаем список задач для параллельного выполнения всех переводов
     translation_tasks = []
 
     for target_lang in target_languages:
-        # Копируем оригинальные данные на случай, если перевод не нужен или произойдет ошибка
-        trans_title = clean_title
-        trans_description = clean_description
-        trans_category = category
-
-        needs_translation = original_lang != target_lang
-
-        if needs_translation:
-            # Создаем задачи для асинхронного выполнения синхронных функций в пуле потоков
-            title_task = loop.run_in_executor(None, translate_text, clean_title, original_lang, target_lang)
-            desc_task = loop.run_in_executor(None, translate_text, clean_description, original_lang, target_lang)
-            # Переводим категорию, если она не на целевом языке (предполагаем 'en' как базовый для категорий)
-            cat_task = loop.run_in_executor(None, translate_text, category, 'en', target_lang) 
-            
-            # Сохраняем задачи и связанный с ними язык
-            translation_tasks.append((target_lang, title_task, desc_task, cat_task))
-        else:
-            # Если перевод не нужен, просто сохраняем оригиналы
+        if original_lang == target_lang:
             translations[target_lang] = {
-                'title': trans_title,
-                'description': trans_description,
-                'category': trans_category
+                'title': clean_title,
+                'description': clean_description,
+                'category': category
             }
             print(f"[LOG] Перевод с {original_lang} на {target_lang} не требуется. Используются оригинальные данные.")
+            continue
 
-    # Дожидаемся завершения всех задач перевода
+        print(f"[LOG] Перевод с {original_lang} на {target_lang} запущен.")
+
+        title_task = loop.run_in_executor(None, translate_text, clean_title, original_lang, target_lang)
+        desc_task = loop.run_in_executor(None, translate_text, clean_description, original_lang, target_lang)
+        cat_task = loop.run_in_executor(None, translate_text, category, 'en', target_lang)
+
+        translation_tasks.append((target_lang, title_task, desc_task, cat_task))
+
     for target_lang, title_task, desc_task, cat_task in translation_tasks:
         try:
-            # Дожидаемся результата каждой задачи
             trans_title = await title_task
             trans_description = await desc_task
             trans_category = await cat_task
 
-            # Сохраняем результаты перевода
+            # Проверка 1: Совпадение с оригиналом
+            if (
+                trans_title.strip().lower() == clean_title.strip().lower() and
+                trans_description.strip().lower() == clean_description.strip().lower()
+            ):
+                print(f"[WARN] Перевод на {target_lang} совпадает с оригиналом. Пропуск публикации.")
+                continue
+
+            # Проверка 2: Битый перевод (повторяющиеся символы)
+            if (
+                is_broken_translation(trans_title) or
+                is_broken_translation(trans_description)
+            ):
+                print(f"[WARN] Перевод на {target_lang} содержит битые символы. Пропуск публикации.")
+                continue
+
             translations[target_lang] = {
                 'title': trans_title,
                 'description': trans_description,
@@ -249,8 +285,6 @@ async def prepare_translations(title: str, description: str, category: str, orig
             print(f"[LOG] Перевод на {target_lang} успешно завершен.")
 
         except Exception as e:
-            print(f"[ERROR] Ошибка перевода на {target_lang}: {e}. Используются оригинальные данные.")
-            # В случае ошибки перевода, используем оригинальные данные (уже установлены по умолчанию выше)
-            # translations[target_lang] уже содержит оригиналы, так как мы их не перезаписали
+            print(f"[ERROR] Ошибка перевода на {target_lang}: {e}. Пропуск публикации.")
 
     return translations

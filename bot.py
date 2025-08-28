@@ -12,7 +12,6 @@ from translator import translate_text, prepare_translations
 from tenacity import retry, stop_after_attempt, wait_exponential
 from rss_manager import RSSManager
 from firefeed_utils import clean_html, download_and_save_image, extract_image_from_preview
-
 import requests
 from bs4 import BeautifulSoup
 
@@ -885,23 +884,6 @@ async def process_news_item(context, rss_manager, news):
     image_filename = None
     local_image_path = None
     loop = asyncio.get_event_loop()
-    
-    cooldown_minutes = await rss_manager.get_feed_cooldown_minutes(rss_feed_id)
-    max_news_per_hour = await rss_manager.get_max_news_per_hour_for_feed(rss_feed_id)
-    recent_count = await rss_manager.get_recent_news_count_for_feed(rss_feed_id, 60)
-    
-    if recent_count >= max_news_per_hour:
-        print(f"[SKIP] Лента ID {rss_feed_id} достигла лимита {max_news_per_hour} новостей в час. Опубликовано: {recent_count}")
-        return False
-    
-    # Проверка кулдауна (время последней публикации)
-    last_published = await rss_manager.get_last_published_time_for_feed(rss_feed_id)
-
-    if last_published:
-        elapsed = datetime.datetime.now(datetime.timezone.utc) - last_published
-        if elapsed < datetime.timedelta(minutes=cooldown_minutes):
-            print(f"[SKIP] Лента ID {rss_feed_id} находится на кулдауне ({cooldown_minutes} мин). Прошло: {elapsed}")
-            return False
     
     # 2. Готовим переводы
     translations = await prepare_translations(
