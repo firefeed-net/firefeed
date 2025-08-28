@@ -841,7 +841,7 @@ class RSSManager:
                 loop = asyncio.get_event_loop()
                 is_new = await loop.run_in_executor(None, self.is_news_new, title_hash, content_hash, entry_link)
                 is_unique = await self.dublicate_detector.process_news(
-                    news_id=f"{title_hash}_${content_hash}",
+                    news_id=f"{title_hash}_{content_hash}",
                     title=title,
                     content=description
                 )
