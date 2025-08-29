@@ -1,5 +1,4 @@
-import psycopg2
-from psycopg2 import Error
+import aiopg
 import hashlib
 import feedparser
 import asyncio
@@ -13,622 +12,408 @@ from firefeed_dublicate_detector import FireFeedDuplicateDetector
 
 class RSSManager:
     def __init__(self):
-        self.connection = None
         self.dublicate_detector = FireFeedDuplicateDetector()
+        self.pool = None
 
-    def _get_all_feeds(self):
+    async def init_pool(self):
+        """Инициализация пула соединений"""
+        if self.pool is None:
+            self.pool = await aiopg.create_pool(**DB_CONFIG)
+        return self.pool
+
+    async def _get_all_feeds(self):
         """Вспомогательный метод: Получает список ВСЕХ RSS-лент."""
-        connection = None
-        cursor = None
+        await self.init_pool()
         feeds = []
-        try:
-            connection = psycopg2.connect(**DB_CONFIG)
-            cursor = connection.cursor()
-            
-            query = """
-                SELECT 
-                    f.id AS feed_id,
-                    f.url AS feed_url,
-                    f.name AS feed_name,
-                    f.language AS feed_lang,
-                    s.name AS source_name,
-                    s.id AS source_id,
-                    c.name AS category_name,
-                    c.display_name AS category_display_name
-                FROM rss_feeds f
-                JOIN sources s ON f.source_id = s.id
-                LEFT JOIN categories c ON f.category_id = c.id
-            """
-            cursor.execute(query)
-            results = cursor.fetchall()
-            
-            for row in results:
-                feeds.append({
-                    'id': row[0],
-                    'url': row[1].strip(),
-                    'name': row[2],
-                    'lang': row[3],
-                    'source': row[4],
-                    'source_id': row[5],
-                    'category': row[6] if row[6] else 'uncategorized',
-                    'category_display': row[7]
-                })
-            
-        except psycopg2.Error as err:
-            print(f"[DB] [RSSManager] Ошибка в _get_all_feeds: {err}")
-        finally:
-            if cursor:
-                cursor.close()
-            if connection:
-                connection.close()
+        async with self.pool.acquire() as conn:
+            async with conn.cursor() as cur:
+                query = """
+                    SELECT 
+                        f.id AS feed_id,
+                        f.url AS feed_url,
+                        f.name AS feed_name,
+                        f.language AS feed_lang,
+                        s.name AS source_name,
+                        s.id AS source_id,
+                        c.name AS category_name,
+                        c.display_name AS category_display_name
+                    FROM rss_feeds f
+                    JOIN sources s ON f.source_id = s.id
+                    LEFT JOIN categories c ON f.category_id = c.id
+                """
+                await cur.execute(query)
+                async for row in cur:
+                    feeds.append({
+                        'id': row[0],
+                        'url': row[1].strip(),
+                        'name': row[2],
+                        'lang': row[3],
+                        'source': row[4],
+                        'source_id': row[5],
+                        'category': row[6] if row[6] else 'uncategorized',
+                        'category_display': row[7]
+                    })
         return feeds
 
-    def _get_all_active_feeds(self):
+    async def _get_all_active_feeds(self):
         """Вспомогательный метод: Получает список АКТИВНЫХ RSS-лент."""
-        connection = None
-        cursor = None
+        await self.init_pool()
         feeds = []
-        try:
-            connection = psycopg2.connect(**DB_CONFIG)
-            cursor = connection.cursor()
-            
-            query = """
-                SELECT 
-                    f.id AS feed_id,
-                    f.url AS feed_url,
-                    f.name AS feed_name,
-                    f.language AS feed_lang,
-                    s.name AS source_name,
-                    s.id AS source_id,
-                    c.name AS category_name,
-                    c.display_name AS category_display_name
-                FROM rss_feeds f
-                JOIN sources s ON f.source_id = s.id
-                LEFT JOIN categories c ON f.category_id = c.id
-                WHERE f.is_active = TRUE
-            """
-            cursor.execute(query)
-            results = cursor.fetchall()
-            
-            for row in results:
-                feeds.append({
-                    'id': row[0],
-                    'url': row[1].strip(),
-                    'name': row[2],
-                    'lang': row[3],
-                    'source': row[4],
-                    'source_id': row[5],
-                    'category': row[6] if row[6] else 'uncategorized',
-                    'category_display': row[7]
-                })
-            
-        except psycopg2.Error as err:
-            print(f"[DB] [RSSManager] Ошибка в _get_all_active_feeds: {err}")
-        finally:
-            if cursor:
-                cursor.close()
-            if connection:
-                connection.close()
+        async with self.pool.acquire() as conn:
+            async with conn.cursor() as cur:
+                query = """
+                    SELECT 
+                        f.id AS feed_id,
+                        f.url AS feed_url,
+                        f.name AS feed_name,
+                        f.language AS feed_lang,
+                        s.name AS source_name,
+                        s.id AS source_id,
+                        c.name AS category_name,
+                        c.display_name AS category_display_name
+                    FROM rss_feeds f
+                    JOIN sources s ON f.source_id = s.id
+                    LEFT JOIN categories c ON f.category_id = c.id
+                    WHERE f.is_active = TRUE
+                """
+                await cur.execute(query)
+                async for row in cur:
+                    feeds.append({
+                        'id': row[0],
+                        'url': row[1].strip(),
+                        'name': row[2],
+                        'lang': row[3],
+                        'source': row[4],
+                        'source_id': row[5],
+                        'category': row[6] if row[6] else 'uncategorized',
+                        'category_display': row[7]
+                    })
         return feeds
 
-    def _get_feeds_by_category(self, category_name):
+    async def _get_feeds_by_category(self, category_name):
         """Вспомогательный метод: Получить активные RSS-ленты по имени категории."""
-        connection = None
-        cursor = None
+        await self.init_pool()
         feeds = []
-        try:
-            connection = psycopg2.connect(**DB_CONFIG)
-            cursor = connection.cursor()
-            
-            query = """
-                SELECT rf.*, c.name as category_name, s.name as source_name
-                FROM rss_feeds rf
-                JOIN categories c ON rf.category_id = c.id
-                JOIN sources s ON rf.source_id = s.id
-                WHERE c.name = %s AND rf.is_active = TRUE
-            """
-            cursor.execute(query, (category_name,))
-            columns = [desc[0] for desc in cursor.description]
-            results = cursor.fetchall()
-            feeds = [dict(zip(columns, row)) for row in results]
-            
-        except psycopg2.Error as e:
-            print(f"[DB] [RSSManager] Ошибка при получении фидов по категории '{category_name}': {e}")
-        finally:
-            if cursor:
-                cursor.close()
-            if connection:
-                connection.close()
+        async with self.pool.acquire() as conn:
+            async with conn.cursor() as cur:
+                query = """
+                    SELECT rf.*, c.name as category_name, s.name as source_name
+                    FROM rss_feeds rf
+                    JOIN categories c ON rf.category_id = c.id
+                    JOIN sources s ON rf.source_id = s.id
+                    WHERE c.name = %s AND rf.is_active = TRUE
+                """
+                await cur.execute(query, (category_name,))
+                columns = [desc[0] for desc in cur.description]
+                async for row in cur:
+                    feeds.append(dict(zip(columns, row)))
         return feeds
 
-    def _get_feeds_by_lang(self, lang):
+    async def _get_feeds_by_lang(self, lang):
         """Вспомогательный метод: Получить активные RSS-ленты по языку."""
-        connection = None
-        cursor = None
+        await self.init_pool()
         feeds = []
-        try:
-            connection = psycopg2.connect(**DB_CONFIG)
-            cursor = connection.cursor()
-            
-            query = """
-                SELECT rf.*, c.name as category_name, s.name as source_name 
-                FROM rss_feeds rf 
-                JOIN categories c ON rf.category_id = c.id 
-                JOIN sources s ON rf.source_id = s.id 
-                WHERE rf.language = %s AND rf.is_active = TRUE
-            """
-            cursor.execute(query, (lang,))
-            columns = [desc[0] for desc in cursor.description]
-            results = cursor.fetchall()
-            feeds = [dict(zip(columns, row)) for row in results]
-            
-        except psycopg2.Error as e:
-            print(f"[DB] [RSSManager] Ошибка при получении фидов по языку '{lang}': {e}")
-        finally:
-            if cursor:
-                cursor.close()
-            if connection:
-                connection.close()
+        async with self.pool.acquire() as conn:
+            async with conn.cursor() as cur:
+                query = """
+                    SELECT rf.*, c.name as category_name, s.name as source_name 
+                    FROM rss_feeds rf 
+                    JOIN categories c ON rf.category_id = c.id 
+                    JOIN sources s ON rf.source_id = s.id 
+                    WHERE rf.language = %s AND rf.is_active = TRUE
+                """
+                await cur.execute(query, (lang,))
+                columns = [desc[0] for desc in cur.description]
+                async for row in cur:
+                    feeds.append(dict(zip(columns, row)))
         return feeds
 
-    def _get_feeds_by_source(self, source_name):
+    async def _get_feeds_by_source(self, source_name):
         """Вспомогательный метод: Получить активные RSS-ленты по имени источника."""
-        connection = None
-        cursor = None
+        await self.init_pool()
         feeds = []
-        try:
-            connection = psycopg2.connect(**DB_CONFIG)
-            cursor = connection.cursor()
-            
-            query = """
-                SELECT rf.*, c.name as category_name, s.name as source_name
-                FROM rss_feeds rf
-                JOIN categories c ON rf.category_id = c.id
-                JOIN sources s ON rf.source_id = s.id
-                WHERE s.name = %s AND rf.is_active = TRUE
-            """
-            cursor.execute(query, (source_name,))
-            columns = [desc[0] for desc in cursor.description]
-            results = cursor.fetchall()
-            feeds = [dict(zip(columns, row)) for row in results]
-            
-        except psycopg2.Error as e:
-            print(f"[DB] [RSSManager] Ошибка при получении фидов по источнику '{source_name}': {e}")
-        finally:
-            if cursor:
-                cursor.close()
-            if connection:
-                connection.close()
+        async with self.pool.acquire() as conn:
+            async with conn.cursor() as cur:
+                query = """
+                    SELECT rf.*, c.name as category_name, s.name as source_name
+                    FROM rss_feeds rf
+                    JOIN categories c ON rf.category_id = c.id
+                    JOIN sources s ON rf.source_id = s.id
+                    WHERE s.name = %s AND rf.is_active = TRUE
+                """
+                await cur.execute(query, (source_name,))
+                columns = [desc[0] for desc in cur.description]
+                async for row in cur:
+                    feeds.append(dict(zip(columns, row)))
         return feeds
 
-    def _add_feed(self, category_name, url, language, source_name):
+    async def _add_feed(self, category_name, url, language, source_name):
         """Вспомогательный метод: Добавить новую RSS-ленту."""
-        connection = None
-        cursor = None
+        await self.init_pool()
         try:
-            connection = psycopg2.connect(**DB_CONFIG)
-            cursor = connection.cursor()
-            
-            # 1. Получить ID категории по имени
-            cursor.execute("SELECT id FROM categories WHERE name = %s", (category_name,))
-            cat_result = cursor.fetchone()
-            if not cat_result:
-                print(f"[DB] [RSSManager] Ошибка: Категория '{category_name}' не найдена в таблице 'categories'.")
-                return False
-            category_id = cat_result[0]
+            async with self.pool.acquire() as conn:
+                async with conn.cursor() as cur:
+                    # 1. Получить ID категории по имени
+                    await cur.execute("SELECT id FROM categories WHERE name = %s", (category_name,))
+                    cat_result = await cur.fetchone()
+                    if not cat_result:
+                        print(f"[DB] [RSSManager] Ошибка: Категория '{category_name}' не найдена в таблице 'categories'.")
+                        return False
+                    category_id = cat_result[0]
 
-            # 2. Получить ID источника по имени
-            cursor.execute("SELECT id FROM sources WHERE name = %s", (source_name,))
-            src_result = cursor.fetchone()
-            if not src_result:
-                print(f"[DB] [RSSManager] Ошибка: Источник '{source_name}' не найден в таблице 'sources'.")
-                return False
-            source_id = src_result[0]
+                    # 2. Получить ID источника по имени
+                    await cur.execute("SELECT id FROM sources WHERE name = %s", (source_name,))
+                    src_result = await cur.fetchone()
+                    if not src_result:
+                        print(f"[DB] [RSSManager] Ошибка: Источник '{source_name}' не найден в таблице 'sources'.")
+                        return False
+                    source_id = src_result[0]
 
-            # 3. Вставить новую ленту
-            feed_name = url.split('/')[-1] or "Новая лента"
-            query = """
-                INSERT INTO rss_feeds (source_id, url, name, category_id, language, is_active)
-                VALUES (%s, %s, %s, %s, %s, %s)
-            """
-            cursor.execute(query, (source_id, url, feed_name, category_id, language, True))
-            connection.commit()
-            print(f"[DB] [RSSManager] Лента '{url}' успешно добавлена.")
-            return True
-            
-        except psycopg2.Error as e:
+                    # 3. Вставить новую ленту
+                    feed_name = url.split('/')[-1] or "Новая лента"
+                    query = """
+                        INSERT INTO rss_feeds (source_id, url, name, category_id, language, is_active)
+                        VALUES (%s, %s, %s, %s, %s, %s)
+                    """
+                    await cur.execute(query, (source_id, url, feed_name, category_id, language, True))
+                    await conn.commit()
+                    print(f"[DB] [RSSManager] Лента '{url}' успешно добавлена.")
+                    return True
+                    
+        except Exception as e:
             print(f"[DB] [RSSManager] Ошибка БД при добавлении фида '{url}': {e}")
-            if connection:
-                connection.rollback()
             return False
-        finally:
-            if cursor:
-                cursor.close()
-            if connection:
-                connection.close()
 
-    def _update_feed(self, feed_id, category_name, url, language, source_name, is_active, feed_name):
+    async def _update_feed(self, feed_id, category_name, url, language, source_name, is_active, feed_name):
         """Вспомогательный метод: Обновить RSS-ленту. None означает "не обновлять это поле"."""
-        connection = None
-        cursor = None
+        await self.init_pool()
         try:
-            connection = psycopg2.connect(**DB_CONFIG)
-            cursor = connection.cursor()
-            
-            updates = []
-            values = []
-            
-            # Обработка изменения категории по имени (если не None)
-            if category_name is not None:
-                cursor.execute("SELECT id FROM categories WHERE name = %s", (category_name,))
-                cat_result = cursor.fetchone()
-                if cat_result:
-                    updates.append("category_id = %s")
-                    values.append(cat_result[0])
-                else:
-                    print(f"[DB] [RSSManager] Предупреждение: Категория '{category_name}' не найдена. Поле category_id не обновлено.")
-            
-            # Обработка изменения источника по имени (если не None)
-            if source_name is not None:
-                cursor.execute("SELECT id FROM sources WHERE name = %s", (source_name,))
-                src_result = cursor.fetchone()
-                if src_result:
-                    updates.append("source_id = %s")
-                    values.append(src_result[0])
-                else:
-                    print(f"[DB] [RSSManager] Предупреждение: Источник '{source_name}' не найден. Поле source_id не обновлено.")
+            async with self.pool.acquire() as conn:
+                async with conn.cursor() as cur:
+                    updates = []
+                    values = []
+                    
+                    # Обработка изменения категории по имени (если не None)
+                    if category_name is not None:
+                        await cur.execute("SELECT id FROM categories WHERE name = %s", (category_name,))
+                        cat_result = await cur.fetchone()
+                        if cat_result:
+                            updates.append("category_id = %s")
+                            values.append(cat_result[0])
+                        else:
+                            print(f"[DB] [RSSManager] Предупреждение: Категория '{category_name}' не найдена. Поле category_id не обновлено.")
+                    
+                    # Обработка изменения источника по имени (если не None)
+                    if source_name is not None:
+                        await cur.execute("SELECT id FROM sources WHERE name = %s", (source_name,))
+                        src_result = await cur.fetchone()
+                        if src_result:
+                            updates.append("source_id = %s")
+                            values.append(src_result[0])
+                        else:
+                            print(f"[DB] [RSSManager] Предупреждение: Источник '{source_name}' не найден. Поле source_id не обновлено.")
 
-            # Обработка других полей (если не None)
-            if url is not None:
-                updates.append("url = %s")
-                values.append(url)
-            if language is not None:
-                updates.append("language = %s")
-                values.append(language)
-            if is_active is not None:
-                updates.append("is_active = %s")
-                values.append(is_active)
-            if feed_name is not None:
-                updates.append("name = %s")
-                values.append(feed_name)
+                    # Обработка других полей (если не None)
+                    if url is not None:
+                        updates.append("url = %s")
+                        values.append(url)
+                    if language is not None:
+                        updates.append("language = %s")
+                        values.append(language)
+                    if is_active is not None:
+                        updates.append("is_active = %s")
+                        values.append(is_active)
+                    if feed_name is not None:
+                        updates.append("name = %s")
+                        values.append(feed_name)
 
-            if not updates:
-                print("[DB] [RSSManager] Нет полей для обновления.")
-                return False
-                
-            values.append(feed_id)
-            query = f"UPDATE rss_feeds SET {', '.join(updates)} WHERE id = %s"
-            cursor.execute(query, values)
-            connection.commit()
-            cursor.execute("SELECT COUNT(*) FROM rss_feeds WHERE id = %s", (feed_id,))
-            affected_rows = cursor.fetchone()[0]
-            if affected_rows > 0:
-                print(f"[DB] [RSSManager] Лента с ID {feed_id} успешно обновлена.")
-            else:
-                print(f"[DB] [RSSManager] Лента с ID {feed_id} не найдена или не была изменена.")
-            return affected_rows > 0
-            
-        except psycopg2.Error as e:
+                    if not updates:
+                        print("[DB] [RSSManager] Нет полей для обновления.")
+                        return False
+                        
+                    values.append(feed_id)
+                    query = f"UPDATE rss_feeds SET {', '.join(updates)} WHERE id = %s"
+                    await cur.execute(query, values)
+                    await conn.commit()
+                    await cur.execute("SELECT COUNT(*) FROM rss_feeds WHERE id = %s", (feed_id,))
+                    result = await cur.fetchone()
+                    affected_rows = result[0] if result else 0
+                    if affected_rows > 0:
+                        print(f"[DB] [RSSManager] Лента с ID {feed_id} успешно обновлена.")
+                    else:
+                        print(f"[DB] [RSSManager] Лента с ID {feed_id} не найдена или не была изменена.")
+                    return affected_rows > 0
+                    
+        except Exception as e:
             print(f"[DB] [RSSManager] Ошибка БД при обновлении фида с ID {feed_id}: {e}")
-            if connection:
-                connection.rollback()
             return False
-        finally:
-            if cursor:
-                cursor.close()
-            if connection:
-                connection.close()
 
-    def _delete_feed(self, feed_id):
+    async def _delete_feed(self, feed_id):
         """Вспомогательный метод: Удалить RSS-ленту по ID."""
-        connection = None
-        cursor = None
+        await self.init_pool()
         try:
-            connection = psycopg2.connect(**DB_CONFIG)
-            cursor = connection.cursor()
-            
-            query = "DELETE FROM rss_feeds WHERE id = %s"
-            cursor.execute(query, (feed_id,))
-            connection.commit()
-            affected_rows = cursor.rowcount
-            if affected_rows > 0:
-                print(f"[DB] [RSSManager] Лента с ID {feed_id} успешно удалена.")
-            else:
-                print(f"[DB] [RSSManager] Лента с ID {feed_id} не найдена.")
-            return affected_rows > 0
-            
-        except psycopg2.Error as e:
+            async with self.pool.acquire() as conn:
+                async with conn.cursor() as cur:
+                    query = "DELETE FROM rss_feeds WHERE id = %s"
+                    await cur.execute(query, (feed_id,))
+                    await conn.commit()
+                    affected_rows = cur.rowcount
+                    if affected_rows > 0:
+                        print(f"[DB] [RSSManager] Лента с ID {feed_id} успешно удалена.")
+                    else:
+                        print(f"[DB] [RSSManager] Лента с ID {feed_id} не найдена.")
+                    return affected_rows > 0
+                    
+        except Exception as e:
             print(f"[DB] [RSSManager] Ошибка БД при удалении фида с ID {feed_id}: {e}")
-            if connection:
-                connection.rollback()
             return False
-        finally:
-            if cursor:
-                cursor.close()
-            if connection:
-                connection.close()
 
-    def _get_categories(self):
+    async def _get_categories(self):
         """Вспомогательный метод: Получить список всех категорий."""
-        connection = None
-        cursor = None
+        await self.init_pool()
         categories = []
         try:
-            connection = psycopg2.connect(**DB_CONFIG)
-            cursor = connection.cursor()
-            
-            get_categories_query = """
-                SELECT DISTINCT c.name AS category
-                FROM categories c
-                JOIN rss_feeds rf ON c.id = rf.category_id
-                WHERE rf.is_active = TRUE
-                ORDER BY c.name;
-            """
-            cursor.execute(get_categories_query)
-            categories = [row[0] for row in cursor.fetchall()]
-            
-        except psycopg2.Error as e:
+            async with self.pool.acquire() as conn:
+                async with conn.cursor() as cur:
+                    get_categories_query = """
+                        SELECT DISTINCT c.name AS category
+                        FROM categories c
+                        JOIN rss_feeds rf ON c.id = rf.category_id
+                        WHERE rf.is_active = TRUE
+                        ORDER BY c.name;
+                    """
+                    await cur.execute(get_categories_query)
+                    async for row in cur:
+                        categories.append(row[0])
+        except Exception as e:
             print(f"[DB] [RSSManager] Ошибка при получении категорий: {e}")
-        finally:
-            if cursor:
-                cursor.close()
-            if connection:
-                connection.close()
         return categories
 
-    def _get_feed_cooldown_minutes(self, rss_feed_id):
+    async def _get_feed_cooldown_minutes(self, rss_feed_id):
         """Вспомогательный метод: Получить время кулдауна в минутах для конкретной RSS-ленты"""
-        connection = None
-        cursor = None
+        await self.init_pool()
         minutes = 20
         try:
-            connection = psycopg2.connect(**DB_CONFIG)
-            cursor = connection.cursor()
-
-            query = """
-                SELECT cooldown_minutes 
-                FROM rss_feeds 
-                WHERE id = %s AND is_active = true
-            """
-
-            cursor.execute(query, (rss_feed_id,))
-            row = cursor.fetchone()
-            minutes = row[0] if row else 20
-
-        except psycopg2.Error as e:
+            async with self.pool.acquire() as conn:
+                async with conn.cursor() as cur:
+                    query = """
+                        SELECT cooldown_minutes 
+                        FROM rss_feeds 
+                        WHERE id = %s AND is_active = true
+                    """
+                    await cur.execute(query, (rss_feed_id,))
+                    row = await cur.fetchone()
+                    minutes = row[0] if row else 20
+        except Exception as e:
             print(f"[DB] [RSSManager] Ошибка при получении времени кулдауна: {e}")
-            return minutes
-        finally:
-            if cursor:
-                cursor.close()
-            if connection:
-                connection.close()
         return minutes
 
-    def _get_last_published_time_for_feed(self, rss_feed_id):
+    async def _get_last_published_time_for_feed(self, rss_feed_id):
         """Вспомогательный метод: Получить время последней публикации из конкретной RSS-ленты"""
-        connection = None
-        cursor = None
+        await self.init_pool()
         published_time = None
-
         try:
-            connection = psycopg2.connect(**DB_CONFIG)
-            cursor = connection.cursor()
-
-            query = """
-                SELECT created_at 
-                FROM published_news_data 
-                WHERE rss_feed_id = %s 
-                ORDER BY created_at DESC 
-                LIMIT 1
-            """
-
-            cursor.execute(query, (rss_feed_id,))
-            row = cursor.fetchone()
-            published_time = row[0] if row else None
-
-        except psycopg2.Error as e:
+            async with self.pool.acquire() as conn:
+                async with conn.cursor() as cur:
+                    query = """
+                        SELECT created_at 
+                        FROM published_news_data 
+                        WHERE rss_feed_id = %s 
+                        ORDER BY created_at DESC 
+                        LIMIT 1
+                    """
+                    await cur.execute(query, (rss_feed_id,))
+                    row = await cur.fetchone()
+                    published_time = row[0] if row else None
+        except Exception as e:
             print(f"[DB] [RSSManager] Ошибка при получении времени последней публикации из конкретной RSS-ленты: {e}")
-            return published_time
-        finally:
-            if cursor:
-                cursor.close()
-            if connection:
-                connection.close()
         return published_time
 
-    def _get_recent_news_count_for_feed(self, rss_feed_id, minutes=60):
+    async def _get_recent_news_count_for_feed(self, rss_feed_id, minutes=60):
         """Вспомогательный метод: Получает количество новостей из ленты за последние N минут"""
-        connection = None
-        cursor = None
+        await self.init_pool()
         news_count = 0
-
         try:
-            connection = psycopg2.connect(**DB_CONFIG)
-            cursor = connection.cursor()
-            cursor.execute("""
-                SELECT COUNT(*) 
-                FROM published_news_data 
-                WHERE rss_feed_id = %s 
-                AND created_at >= NOW() - INTERVAL '%s minutes'
-            """, (rss_feed_id, minutes))
-            row = cursor.fetchone()
-            news_count = row[0] if row else 0
-        except psycopg2.Error as err:
-            print(f"[DB] [RSSManager] Ошибка в _get_recent_news_count_for_feed: {err}")
-            return news_count
-        finally:
-            if cursor:
-                cursor.close()
-            if connection:
-                connection.close()
+            async with self.pool.acquire() as conn:
+                async with conn.cursor() as cur:
+                    await cur.execute("""
+                        SELECT COUNT(*) 
+                        FROM published_news_data 
+                        WHERE rss_feed_id = %s 
+                        AND created_at >= NOW() - INTERVAL '%s minutes'
+                    """, (rss_feed_id, minutes))
+                    row = await cur.fetchone()
+                    news_count = row[0] if row else 0
+        except Exception as e:
+            print(f"[DB] [RSSManager] Ошибка в _get_recent_news_count_for_feed: {e}")
         return news_count
 
-    def _get_max_news_per_hour_for_feed(self, rss_feed_id):
+    async def _get_max_news_per_hour_for_feed(self, rss_feed_id):
         """Вспомогательный метод: Получает максимальное количество новостей в час для ленты"""
-        connection = None
-        cursor = None
+        await self.init_pool()
         max_news = 1
-
         try:
-            connection = psycopg2.connect(**DB_CONFIG)
-            cursor = connection.cursor()
-            cursor.execute("""
-                SELECT cooldown_minutes 
-                FROM rss_feeds 
-                WHERE id = %s
-            """, (rss_feed_id,))
-            row = cursor.fetchone()
-            
-            if row and row[0]:
-                cooldown_minutes = row[0]
-                # Пропорциональная формула: 1 новость за cooldown_minutes
-                # Например: 360 минут = 1 новость за 6 часов = 1/6 новостей в час
-                max_news = max(1, round(60 / cooldown_minutes))
-                
-                # Для корректного округления при больших значениях
-                if cooldown_minutes > 60:
-                    # Округляем вниз для больших интервалов
-                    max_news = max(1, 60 // cooldown_minutes)
-                    # Если деление дает 0, то ставим 1 (минимум одна новость за период)
-                    if max_news == 0:
-                        max_news = 1
+            async with self.pool.acquire() as conn:
+                async with conn.cursor() as cur:
+                    await cur.execute("""
+                        SELECT cooldown_minutes 
+                        FROM rss_feeds 
+                        WHERE id = %s
+                    """, (rss_feed_id,))
+                    row = await cur.fetchone()
+                    
+                    if row and row[0]:
+                        cooldown_minutes = row[0]
+                        # Пропорциональная формула: 1 новость за cooldown_minutes
+                        # Например: 360 минут = 1 новость за 6 часов = 1/6 новостей в час
+                        max_news = max(1, round(60 / cooldown_minutes))
                         
-                return max_news
-            else:
-                return 1  # По умолчанию 1 новость в час
-        except psycopg2.Error as err:
-            print(f"[DB] [RSSManager] Ошибка в _get_max_news_per_hour_for_feed: {err}")
+                        # Для корректного округления при больших значениях
+                        if cooldown_minutes > 60:
+                            # Округляем вниз для больших интервалов
+                            max_news = max(1, 60 // cooldown_minutes)
+                            # Если деление дает 0, то ставим 1 (минимум одна новость за период)
+                            if max_news == 0:
+                                max_news = 1
+                                
+                        return max_news
+                    else:
+                        return 1  # По умолчанию 1 новость в час
+        except Exception as e:
+            print(f"[DB] [RSSManager] Ошибка в _get_max_news_per_hour_for_feed: {e}")
             return 1
-        finally:
-            if cursor:
-                cursor.close()
-            if connection:
-                connection.close()
         return max_news
 
-    # --- Публичные асинхронные методы ---
-    # Эти методы будут вызываться из вашего асинхронного кода.
-    # Они оборачивают вспомогательные методы в run_in_executor.
-
-    async def get_all_feeds(self):
-        """Асинхронно получает список ВСЕХ RSS-лент."""
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(None, self._get_all_feeds)
-
-    async def get_all_active_feeds(self):
-        """Асинхронно получает список АКТИВНЫХ RSS-лент."""
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(None, self._get_all_active_feeds)
-
-    async def get_feeds_by_category(self, category_name):
-        """Асинхронно получить активные RSS-ленты по имени категории."""
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(None, self._get_feeds_by_category, category_name)
-
-    async def get_feeds_by_lang(self, lang):
-        """Асинхронно получить активные RSS-ленты по языку."""
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(None, self._get_feeds_by_lang, lang)
-
-    async def get_feeds_by_source(self, source_name):
-        """Асинхронно получить активные RSS-ленты по имени источника."""
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(None, self._get_feeds_by_source, source_name)
-
-    async def add_feed(self, category_name, url, language, source_name):
-        """Асинхронно добавить новую RSS-ленту."""
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(None, self._add_feed, category_name, url, language, source_name)
-
-    async def update_feed(self, feed_id, category_name=None, url=None, language=None, source_name=None, is_active=None, feed_name=None):
-        """Асинхронно обновить RSS-ленту. None означает "не обновлять это поле"."""
-        # Примечание: run_in_executor требует передачи всех аргументов, даже если они None.
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(None, self._update_feed, feed_id, category_name, url, language, source_name, is_active, feed_name)
-
-    async def delete_feed(self, feed_id):
-        """Асинхронно удалить RSS-ленту по ID."""
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(None, self._delete_feed, feed_id)
-
-    async def get_categories(self):
-        """Асинхронно получить список всех категорий."""
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(None, self._get_categories)
-
-    async def get_feed_cooldown_minutes(self, rss_feed_id):
-        """Асинхронно получить время кулдауна в минутах для конкретной RSS-ленты"""
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(None, self._get_feed_cooldown_minutes, rss_feed_id)
-
-    async def get_last_published_time_for_feed(self, rss_feed_id):
-        """Асинхронно получить время последней публикации из конкретной RSS-ленты"""
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(None, self._get_last_published_time_for_feed, rss_feed_id)
-
-    async def get_recent_news_count_for_feed(self, rss_feed_id, minutes=60):
-        """Асинхронно получает количество новостей из ленты за последние N минут"""
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(None, self._get_recent_news_count_for_feed, rss_feed_id, minutes)
-
-    async def get_max_news_per_hour_for_feed(self, rss_feed_id):
-        """Асинхронно получает максимальное количество новостей в час для ленты"""
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(None, self._get_max_news_per_hour_for_feed, rss_feed_id)
-
-
-    def is_news_new(self, title_hash, content_hash, url):
+    async def is_news_new(self, title_hash, content_hash, url):
         """
-        Проверяет, является ли новость новой (не опубликованной ранее).
-        Создает собственное соединение с БД.
-        Эта версия предназначена для вызова через run_in_executor.
+        Асинхронно проверяет, является ли новость новой (не опубликованной ранее).
         """
-        connection = None
-        cursor = None
+        await self.init_pool()
         try:
-            # 1. Создаем новое соединение внутри метода
-            connection = psycopg2.connect(**DB_CONFIG)
-            cursor = connection.cursor()
-
-            # 2. Проверяем существование по title_hash ИЛИ content_hash
-            query = """
-                SELECT 1 FROM published_news 
-                WHERE title_hash = %s OR content_hash = %s 
-                LIMIT 1
-            """
-            cursor.execute(query, (title_hash, content_hash))
-            result = cursor.fetchone()
-            
-            # Если результат есть (result не None), новость считается НЕ новой
-            is_duplicate = result is not None
-
-            return not is_duplicate # Возвращаем True, если НЕ дубликат
-            
-        except psycopg2.Error as err:
+            async with self.pool.acquire() as conn:
+                async with conn.cursor() as cur:
+                    # Проверяем существование по title_hash ИЛИ content_hash
+                    query = """
+                        SELECT 1 FROM published_news 
+                        WHERE title_hash = %s OR content_hash = %s 
+                        LIMIT 1
+                    """
+                    await cur.execute(query, (title_hash, content_hash))
+                    result = await cur.fetchone()
+                    
+                    # Если результат есть (result не None), новость считается НЕ новой
+                    is_duplicate = result is not None
+                    return not is_duplicate # Возвращаем True, если НЕ дубликат
+                    
+        except Exception as err:
             print(f"[DB] [is_news_new] Ошибка БД: {err}")
             # В случае ошибки БД лучше считать новость НЕ новой, чтобы избежать дубликатов
-            return False 
-        except Exception as e: # Ловим все остальные исключения
-            print(f"[DB] [is_news_new] Неожиданная ошибка: {e}")
             return False
-        finally:
-            # 3. ВАЖНО: Закрываем курсор и соединение
-            if cursor:
-                cursor.close()
-            if connection:
-                connection.close()
-                # print("[DB] [is_news_new] Соединение закрыто") # Опционально
 
-    def mark_as_published(self, title, content, url, original_language, translations_dict, category_name=None, image_filename=None, rss_feed_id=None):
+    async def mark_as_published(self, title, content, url, original_language, translations_dict, category_name=None, image_filename=None, rss_feed_id=None):
         """
-        Сохраняет информацию о опубликованной новости с проверкой уникальности (хэши).
+        Асинхронно сохраняет информацию о опубликованной новости с проверкой уникальности (хэши).
         Сохраняет оригинальные данные и переводы новости для API.
-        Создает собственное соединение с БД. Предназначена для вызова через run_in_executor.
-
-        :param category_name: название категории (опционально)
-        :param image_filename: имя файла изображения (опционально)
-        :param rss_feed_id: ID RSS-ленты (опционально)
         """
         # 1. Генерируем ID ОДИН РАЗ
         title_hash = hashlib.sha256(title.encode('utf-8')).hexdigest()
@@ -637,142 +422,173 @@ class RSSManager:
         short_id = news_id[:20] + "..." if len(news_id) > 20 else news_id
         print(f"[DB] [mark_as_published] Начало обработки для ID: {short_id}")
 
-        # --- ВАЖНО: Создаем собственное соединение ---
-        connection = None
-        cursor = None
+        await self.init_pool()
         try:
-            # Создаем новое соединение внутри метода
-            connection = psycopg2.connect(**DB_CONFIG)
-            cursor = connection.cursor()
-            # --- Конец создания соединения ---
+            async with self.pool.acquire() as conn:
+                async with conn.cursor() as cur:
+                    # --- Получаем category_id по названию категории ---
+                    category_id = None
+                    if category_name:
+                        category_query = "SELECT id FROM categories WHERE name = %s LIMIT 1"
+                        await cur.execute(category_query, (category_name,))
+                        category_result = await cur.fetchone()
+                        if category_result:
+                            category_id = category_result[0]
+                        else:
+                            print(f"[DB] [WARN] Категория '{category_name}' не найдена в таблице categories")
 
-            # --- Получаем category_id по названию категории ---
-            category_id = None
-            if category_name:
-                category_query = "SELECT id FROM categories WHERE name = %s LIMIT 1"
-                cursor.execute(category_query, (category_name,))
-                category_result = cursor.fetchone()
-                if category_result:
-                    category_id = category_result[0]
-                else:
-                    print(f"[DB] [WARN] Категория '{category_name}' не найдена в таблице categories")
+                    # --- ГАРАНТИРУЕМ существование записи в published_news ---
+                    query_published_news = """
+                    INSERT INTO published_news (id, title_hash, content_hash, source_url, published_at)
+                    VALUES (%s, %s, %s, %s, NOW())
+                    ON CONFLICT (id) DO UPDATE SET 
+                        source_url = EXCLUDED.source_url,
+                        published_at = NOW()
+                    """
+                    print(f"[DB] [mark_as_published] Подготовка запроса к 'published_news' (ID: {short_id})")
+                    await cur.execute(query_published_news, (news_id, title_hash, content_hash, url))
+                    print(f"[DB] [mark_as_published] Запрос к 'published_news' выполнен. (ID: {short_id})")
 
-            # --- ГАРАНТИРУЕМ существование записи в published_news ---
-            query_published_news = """
-            INSERT INTO published_news (id, title_hash, content_hash, source_url, published_at)
-            VALUES (%s, %s, %s, %s, NOW())
-            ON CONFLICT (id) DO UPDATE SET 
-                source_url = EXCLUDED.source_url,
-                published_at = NOW()
-            """
-            params_news = (news_id, title_hash, content_hash, url)
-            print(f"[DB] [mark_as_published] Подготовка запроса к 'published_news' (ID: {short_id})")
+                    # --- УБИРАЕМ commit - пусть работает в autocommit режиме ---
+                    print(f"[DB] [mark_as_published] Операция в 'published_news' выполнена. (ID: {short_id})")
+                    # -------------------------------------------------------------
 
-            cursor.execute(query_published_news, params_news)
-            rows_affected_news = cursor.rowcount
-            print(f"[DB] [mark_as_published] Запрос к 'published_news' выполнен. ROWS AFFECTED: {rows_affected_news} (ID: {short_id})")
-
-            # --- ВАЖНО: Коммитим сразу после вставки в родительскую таблицу ---
-            connection.commit()
-            print(f"[DB] [mark_as_published] Коммит после вставки в 'published_news' выполнен. (ID: {short_id})")
-            # ---------------------------------------------------------------
-
-            # 2b. Проверяем существование ПОСЛЕ коммита
-            check_query = "SELECT 1 FROM published_news WHERE id = %s LIMIT 1"
-            print(f"[DB] [mark_as_published] Выполнение проверочного SELECT (ID: {short_id})")
-            cursor.execute(check_query, (news_id,))
-            exists_in_parent = cursor.fetchone()
-            
-            if not exists_in_parent:
-                # Критическая ошибка
-                error_msg = f"[DB] [CRITICAL] Запись в 'published_news' НЕ существует после КОММИТА! FK constraint будет нарушено. (ID: {short_id})"
-                print(error_msg)
-                # Отладочный запрос
-                debug_query = "SELECT id, title_hash, content_hash FROM published_news WHERE id = %s OR title_hash = %s OR content_hash = %s LIMIT 5"
-                debug_params = (news_id, title_hash, content_hash)
-                print(f"[DB] [DEBUG] Выполнение отладочного запроса по ID, title_hash, content_hash...")
-                cursor.execute(debug_query, debug_params)
-                debug_results = cursor.fetchall()
-                if debug_results:
-                    print(f"[DB] [DEBUG] Найдены потенциально конфликтующие записи в 'published_news':")
-                    for row in debug_results:
-                        print(f"  - ID: {row[0]}, Title_Hash: {row[1][:20]}..., Content_Hash: {row[2][:20]}...")
-                else:
-                    print(f"[DB] [DEBUG] Записи с таким ID, title_hash или content_hash в 'published_news' НЕ НАЙДЕНЫ.")
-                # Возвращаем False вместо исключения, чтобы не прерывать всю задачу
-                return False 
-            else:
-                print(f"[DB] [mark_as_published] Подтверждено: запись в 'published_news' существует ПОСЛЕ КОММИТА. (ID: {short_id})")
-            # -------------------------------------------------------------
-
-            # 3. ВСТАВЛЯЕМ или ОБНОВЛЯЕМ в дочерней таблице published_news_data
-            query_published_news_data = """
-            INSERT INTO published_news_data 
-            (news_id, original_title, original_content, original_language, category_id, image_filename, rss_feed_id, created_at, updated_at)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, NOW(), NOW())
-            ON CONFLICT (news_id) DO UPDATE SET
-                original_title = EXCLUDED.original_title,
-                original_content = EXCLUDED.original_content,
-                original_language = EXCLUDED.original_language,
-                category_id = EXCLUDED.category_id,
-                image_filename = EXCLUDED.image_filename,
-                rss_feed_id = EXCLUDED.rss_feed_id,
-                updated_at = NOW()
-            """
-            print(f"[DB] [mark_as_published] Подготовка запроса к 'published_news_data' (ID: {short_id})")
-            cursor.execute(query_published_news_data, (
-                news_id,
-                title, 
-                content, 
-                original_language, 
-                category_id,
-                image_filename,
-                rss_feed_id
-            ))
-            print(f"[DB] [mark_as_published] Выполнен запрос к 'published_news_data'. (ID: {short_id})")
-
-            # 4. ВСТАВЛЯЕМ или ОБНОВЛЯЕМ переводы в news_translations
-            for lang_code, trans_data in translations_dict.items():
-                if lang_code in ['ru', 'en', 'de', 'fr'] and isinstance(trans_data, dict):
-                    trans_title = trans_data.get('title', title)
-                    trans_content = trans_data.get('description', content)
+                    # 2b. Проверяем существование
+                    check_query = "SELECT 1 FROM published_news WHERE id = %s LIMIT 1"
+                    print(f"[DB] [mark_as_published] Выполнение проверочного SELECT (ID: {short_id})")
+                    await cur.execute(check_query, (news_id,))
+                    exists_in_parent = await cur.fetchone()
                     
-                    query_translation = """
-                    INSERT INTO news_translations (news_id, language, translated_title, translated_content, created_at, updated_at)
-                    VALUES (%s, %s, %s, %s, NOW(), NOW())
-                    ON CONFLICT (news_id, language) DO UPDATE SET
-                        translated_title = EXCLUDED.translated_title,
-                        translated_content = EXCLUDED.translated_content,
+                    if not exists_in_parent:
+                        # Критическая ошибка
+                        error_msg = f"[DB] [CRITICAL] Запись в 'published_news' НЕ существует! FK constraint будет нарушено. (ID: {short_id})"
+                        print(error_msg)
+                        # Отладочный запрос
+                        debug_query = "SELECT id, title_hash, content_hash FROM published_news WHERE id = %s OR title_hash = %s OR content_hash = %s LIMIT 5"
+                        debug_params = (news_id, title_hash, content_hash)
+                        print(f"[DB] [DEBUG] Выполнение отладочного запроса по ID, title_hash, content_hash...")
+                        await cur.execute(debug_query, debug_params)
+                        debug_results = []
+                        async for row in cur:
+                            debug_results.append(row)
+                        if debug_results:
+                            print(f"[DB] [DEBUG] Найдены потенциально конфликтующие записи в 'published_news':")
+                            for row in debug_results:
+                                print(f"  - ID: {row[0]}, Title_Hash: {row[1][:20]}..., Content_Hash: {row[2][:20]}...")
+                        else:
+                            print(f"[DB] [DEBUG] Записи с таким ID, title_hash или content_hash в 'published_news' НЕ НАЙДЕНЫ.")
+                        # Возвращаем False вместо исключения, чтобы не прерывать всю задачу
+                        return False 
+                    else:
+                        print(f"[DB] [mark_as_published] Подтверждено: запись в 'published_news' существует. (ID: {short_id})")
+                    # -------------------------------------------------------------
+
+                    # 3. ВСТАВЛЯЕМ или ОБНОВЛЯЕМ в дочерней таблице published_news_data
+                    query_published_news_data = """
+                    INSERT INTO published_news_data 
+                    (news_id, original_title, original_content, original_language, category_id, image_filename, rss_feed_id, created_at, updated_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, NOW(), NOW())
+                    ON CONFLICT (news_id) DO UPDATE SET
+                        original_title = EXCLUDED.original_title,
+                        original_content = EXCLUDED.original_content,
+                        original_language = EXCLUDED.original_language,
+                        category_id = EXCLUDED.category_id,
+                        image_filename = EXCLUDED.image_filename,
+                        rss_feed_id = EXCLUDED.rss_feed_id,
                         updated_at = NOW()
                     """
-                    cursor.execute(query_translation, (news_id, lang_code, trans_title, trans_content))
-            
-            connection.commit()
-            print(f"[DB] [SUCCESS] Новость и переводы сохранены: {short_id}")
-            print(f"[DB] [mark_as_published] Обработка переводов завершена. (ID: {short_id})")
-            
-            return True # <-- Возвращаем True при успехе
-            
-        except psycopg2.Error as err:
+                    print(f"[DB] [mark_as_published] Подготовка запроса к 'published_news_data' (ID: {short_id})")
+                    await cur.execute(query_published_news_data, (
+                        news_id,
+                        title, 
+                        content, 
+                        original_language, 
+                        category_id,
+                        image_filename,
+                        rss_feed_id
+                    ))
+                    print(f"[DB] [mark_as_published] Выполнен запрос к 'published_news_data'. (ID: {short_id})")
+
+                    # 4. ВСТАВЛЯЕМ или ОБНОВЛЯЕМ переводы в news_translations
+                    for lang_code, trans_data in translations_dict.items():
+                        if lang_code in ['ru', 'en', 'de', 'fr'] and isinstance(trans_data, dict):
+                            trans_title = trans_data.get('title', title)
+                            trans_content = trans_data.get('description', content)
+                            
+                            query_translation = """
+                            INSERT INTO news_translations (news_id, language, translated_title, translated_content, created_at, updated_at)
+                            VALUES (%s, %s, %s, %s, NOW(), NOW())
+                            ON CONFLICT (news_id, language) DO UPDATE SET
+                                translated_title = EXCLUDED.translated_title,
+                                translated_content = EXCLUDED.translated_content,
+                                updated_at = NOW()
+                            """
+                            await cur.execute(query_translation, (news_id, lang_code, trans_title, trans_content))
+                    
+                    # УБИРАЕМ commit - все операции выполняются по отдельности
+                    print(f"[DB] [SUCCESS] Новость и переводы сохранены: {short_id}")
+                    print(f"[DB] [mark_as_published] Обработка переводов завершена. (ID: {short_id})")
+                    
+                    return True # <-- Возвращаем True при успехе
+                    
+        except Exception as err:
             print(f"[DB] [ERROR] Ошибка БД при сохранении (ID: {short_id}): {err}")
-            if connection:
-                connection.rollback()
-            return False # <-- Возвращаем False при ошибке БД
-        except Exception as e:
-            print(f"[DB] [ERROR] Неожиданная ошибка в mark_as_published (ID: {short_id}): {e}")
             import traceback
             traceback.print_exc()
-            if connection:
-                connection.rollback()
             return False
-        finally:
-            # --- ВАЖНО: Закрываем курсор и соединение ---
-            if cursor:
-                cursor.close()
-            if connection:
-                connection.close()
-                print(f"[DB] [mark_as_published] Соединение закрыто. (ID: {short_id})")
-            # --- Конец закрытия соединения ---
+
+    # --- Публичные асинхронные методы ---
+    async def get_all_feeds(self):
+        """Асинхронно получает список ВСЕХ RSS-лент."""
+        return await self._get_all_feeds()
+
+    async def get_all_active_feeds(self):
+        """Асинхронно получает список АКТИВНЫХ RSS-лент."""
+        return await self._get_all_active_feeds()
+
+    async def get_feeds_by_category(self, category_name):
+        """Асинхронно получить активные RSS-ленты по имени категории."""
+        return await self._get_feeds_by_category(category_name)
+
+    async def get_feeds_by_lang(self, lang):
+        """Асинхронно получить активные RSS-ленты по языку."""
+        return await self._get_feeds_by_lang(lang)
+
+    async def get_feeds_by_source(self, source_name):
+        """Асинхронно получить активные RSS-ленты по имени источника."""
+        return await self._get_feeds_by_source(source_name)
+
+    async def add_feed(self, category_name, url, language, source_name):
+        """Асинхронно добавить новую RSS-ленту."""
+        return await self._add_feed(category_name, url, language, source_name)
+
+    async def update_feed(self, feed_id, category_name=None, url=None, language=None, source_name=None, is_active=None, feed_name=None):
+        """Асинхронно обновить RSS-ленту. None означает "не обновлять это поле"."""
+        return await self._update_feed(feed_id, category_name, url, language, source_name, is_active, feed_name)
+
+    async def delete_feed(self, feed_id):
+        """Асинхронно удалить RSS-ленту по ID."""
+        return await self._delete_feed(feed_id)
+
+    async def get_categories(self):
+        """Асинхронно получить список всех категорий."""
+        return await self._get_categories()
+
+    async def get_feed_cooldown_minutes(self, rss_feed_id):
+        """Асинхронно получить время кулдауна в минутах для конкретной RSS-ленты"""
+        return await self._get_feed_cooldown_minutes(rss_feed_id)
+
+    async def get_last_published_time_for_feed(self, rss_feed_id):
+        """Асинхронно получить время последней публикации из конкретной RSS-ленты"""
+        return await self._get_last_published_time_for_feed(rss_feed_id)
+
+    async def get_recent_news_count_for_feed(self, rss_feed_id, minutes=60):
+        """Асинхронно получает количество новостей из ленты за последние N минут"""
+        return await self._get_recent_news_count_for_feed(rss_feed_id, minutes)
+
+    async def get_max_news_per_hour_for_feed(self, rss_feed_id):
+        """Асинхронно получает максимальное количество новостей в час для ленты"""
+        return await self._get_max_news_per_hour_for_feed(rss_feed_id)
 
     async def fetch_single_feed(self, feed_info, seen_keys, headers):
         """
@@ -838,12 +654,11 @@ class RSSManager:
                 title_hash = hashlib.sha256(title.encode('utf-8')).hexdigest()
                 content_hash = hashlib.sha256(description.encode('utf-8')).hexdigest()
 
-                loop = asyncio.get_event_loop()
-                is_new = await loop.run_in_executor(None, self.is_news_new, title_hash, content_hash, entry_link)
+                is_new = await self.is_news_new(title_hash, content_hash, entry_link)
                 is_unique = await self.dublicate_detector.process_news(
-                    news_id=f"{title_hash}_{content_hash}",
-                    title=title,
-                    content=description
+                    news_id = f"{title_hash}_{content_hash}",
+                    title = title,
+                    content = description
                 )
 
                 if not is_new or not is_unique:
@@ -853,8 +668,7 @@ class RSSManager:
                 pub_date = getattr(entry, 'published', None)
                 if pub_date:
                     try:
-                        loop = asyncio.get_event_loop()
-                        published = await loop.run_in_executor(None, parser.parse, pub_date)
+                        published = parser.parse(pub_date)
                         published = published.replace(tzinfo=pytz.utc)
                     except Exception as e:
                         print(f"[RSS] Ошибка парсинга даты '{pub_date}': {e}. Используется текущее время.")

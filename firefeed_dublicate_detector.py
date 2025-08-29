@@ -1,8 +1,6 @@
 import asyncio
 import aiopg
-import psycopg2
 import json
-from pgvector.psycopg2 import register_vector
 from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
 import numpy as np
@@ -311,3 +309,204 @@ class FireFeedDuplicateDetector:
             if pool:
                 pool.close()
                 await pool.wait_closed()
+
+    # --- Методы для пакетной обработки ---
+    
+    async def get_news_without_embeddings(self, limit: int = 100) -> List[Dict[str, Any]]:
+        """
+        Получает список новостей без эмбеддингов из базы данных (асинхронно).
+
+        Args:
+            limit: Максимальное количество новостей для получения.
+
+        Returns:
+            Список словарей с данными новостей (news_id, original_title, original_content).
+        """
+        pool = None
+        try:
+            # Используем существующий метод для получения пула
+            pool = await self._get_db_pool()
+            async with pool.acquire() as conn:
+                async with conn.cursor() as cur:
+                    
+                    query = """
+                        SELECT news_id, original_title, original_content
+                        FROM published_news_data
+                        WHERE embedding IS NULL
+                        ORDER BY created_at ASC -- Обрабатываем самые старые записи первыми
+                        LIMIT %s
+                    """
+                    await cur.execute(query, (limit,))
+                    results = await cur.fetchall()
+                    
+                    # Получаем имена колонок
+                    # cur.description доступен после execute
+                    column_names = [desc[0] for desc in cur.description]
+                    
+                    # Преобразуем результаты в список словарей
+                    news_list = [dict(zip(column_names, row)) for row in results]
+                    
+                    logger.info(f"[BATCH_EMBEDDING] Получено {len(news_list)} новостей без эмбеддингов.")
+                    return news_list
+                    
+        except Exception as e:
+            logger.error(f"[BATCH_EMBEDDING] Ошибка при получении новостей без эмбеддингов: {e}")
+            raise
+        finally:
+            # Не закрываем пул здесь, он будет закрыт вызывающим кодом
+            pass
+
+    async def process_single_news_batch(self, news_item: Dict[str, Any], pool: aiopg.Pool) -> bool:
+        """
+        Асинхронно обрабатывает одну новость в рамках пакетной обработки:
+        генерирует и сохраняет эмбеддинг.
+
+        Args:
+            news_item: Словарь с данными новости (news_id, original_title, original_content).
+            pool: Пул соединений aiopg для использования.
+
+        Returns:
+            True, если эмбеддинг успешно сохранен, False в случае ошибки.
+        """
+        news_id = news_item['news_id']
+        title = news_item['original_title']
+        content = news_item['original_content']
+        
+        try:
+            logger.debug(f"[BATCH_EMBEDDING] Начало обработки новости {news_id}...")
+            
+            # 1. Генерируем эмбеддинг
+            embedding = await self.generate_embedding(title, content)
+            logger.debug(f"[BATCH_EMBEDDING] Эмбеддинг для {news_id} сгенерирован.")
+
+            # 2. Сохраняем эмбеддинг, используя переданный пул
+            async with pool.acquire() as conn:
+                async with conn.cursor() as cur:
+                    await cur.execute("""
+                        UPDATE published_news_data
+                        SET embedding = %s
+                        WHERE news_id = %s
+                    """, (embedding, news_id))
+                    # Коммит происходит автоматически в aiopg
+                    logger.info(f"[BATCH_EMBEDDING] Эмбеддинг для новости {news_id} успешно сохранен.")
+                    return True
+                    
+        except Exception as e:
+            logger.error(f"[BATCH_EMBEDDING] Ошибка при обработке новости {news_id}: {e}", exc_info=True)
+            return False
+
+    async def process_missing_embeddings_batch(self, batch_size: int = 50, delay_between_items: float = 0.1) -> Tuple[int, int]:
+        """
+        Асинхронно обрабатывает одну партию новостей без эмбеддингов.
+
+        Args:
+            batch_size: Количество новостей для обработки за один "прогон".
+            delay_between_items: Задержка (в секундах) между обработкой каждой новости
+                                внутри партии для снижения нагрузки.
+
+        Returns:
+            Кортеж (успешно обработано, ошибок).
+        """
+        logger.info(f"[BATCH_EMBEDDING] Запуск пакетной обработки: размер партии {batch_size}.")
+
+        # 1. Получаем список новостей без эмбеддингов (асинхронно)
+        try:
+            news_without_embeddings = await self.get_news_without_embeddings(limit=batch_size)
+        except Exception as e:
+            logger.error(f"[BATCH_EMBEDDING] Не удалось получить список новостей: {e}")
+            return 0, 0 # Возвращаем 0, 0 в случае ошибки получения списка
+
+        if not news_without_embeddings:
+            logger.info("[BATCH_EMBEDDING] Новости без эмбеддингов не найдены.")
+            return 0, 0
+
+        logger.info(f"[BATCH_EMBEDDING] Найдено {len(news_without_embeddings)} новостей для обработки.")
+
+        # 2. Создаем пул соединений aiopg для асинхронных операций сохранения
+        pool = None
+        success_count = 0
+        error_count = 0
+
+        try:
+            pool = await self._get_db_pool()
+
+            # 3. Обрабатываем каждую новость в партии
+            for i, news_item in enumerate(news_without_embeddings):
+                news_id = news_item['news_id']
+                logger.debug(f"[BATCH_EMBEDDING] Обработка новости {i+1}/{len(news_without_embeddings)}: {news_id}")
+                
+                success = await self.process_single_news_batch(news_item, pool)
+                if success:
+                    success_count += 1
+                else:
+                    error_count += 1
+
+                # Добавляем небольшую задержку между обработками новостей в партии
+                if delay_between_items > 0 and (i + 1) < len(news_without_embeddings):
+                    await asyncio.sleep(delay_between_items)
+
+        except Exception as e:
+            logger.error(f"[BATCH_EMBEDDING] Критическая ошибка в пакетной обработке: {e}", exc_info=True)
+            # Считаем все оставшиеся новости в партии как ошибки, если произошла критическая ошибка пула
+            processed_count = success_count + error_count
+            remaining_count = len(news_without_embeddings) - processed_count
+            error_count += remaining_count
+        finally:
+            if pool:
+                pool.close()
+                await pool.wait_closed()
+
+        logger.info(f"[BATCH_EMBEDDING] Партия обработана. Успешно: {success_count}, Ошибок: {error_count}")
+        return success_count, error_count
+
+    async def run_batch_processor_continuously(self, batch_size: int = 50, delay_between_batches: float = 60.0, delay_between_items: float = 0.1):
+        """
+        Запускает непрерывную пакетную обработку новостей без эмбеддингов по расписанию.
+
+        Args:
+            batch_size: Количество новостей для обработки за один "прогон".
+            delay_between_batches: Задержка (в секундах) между обработкой партий.
+            delay_between_items: Задержка (в секундах) между обработкой каждой новости внутри партии.
+        """
+        logger.info("[BATCH_EMBEDDING] Запуск непрерывной пакетной обработки...")
+        while True:
+            try:
+                success, errors = await self.process_missing_embeddings_batch(
+                    batch_size=batch_size,
+                    delay_between_items=delay_between_items
+                )
+                # Даже если обработано 0 новостей, всё равно ждем перед следующей итерацией
+                logger.debug(f"[BATCH_EMBEDDING] Ожидание {delay_between_batches} секунд до следующей партии...")
+                await asyncio.sleep(delay_between_batches)
+                
+            except asyncio.CancelledError:
+                logger.info("[BATCH_EMBEDDING] Непрерывная пакетная обработка отменена.")
+                break # Выходим из цикла при отмене задачи
+            except Exception as e:
+                logger.error(f"[BATCH_EMBEDDING] Неожиданная ошибка в непрерывной обработке: {e}", exc_info=True)
+                # Ждем перед повторной попыткой в случае ошибки
+                logger.debug(f"[BATCH_EMBEDDING] Ожидание {delay_between_batches} секунд перед повторной попыткой...")
+                await asyncio.sleep(delay_between_batches)
+
+    async def run_batch_processor_once(self, batch_size: int = 100, delay_between_items: float = 0.1) -> Tuple[int, int]:
+        """
+        Запускает пакетную обработку один раз.
+
+        Args:
+            batch_size: Количество новостей для обработки.
+            delay_between_items: Задержка (в секундах) между обработкой каждой новости.
+
+        Returns:
+            Кортеж (успешно обработано, ошибок).
+        """
+        logger.info("[BATCH_EMBEDDING] Запуск однократной пакетной обработки...")
+        try:
+            success, errors = await self.process_missing_embeddings_batch(
+                batch_size=batch_size,
+                delay_between_items=delay_between_items
+            )
+            logger.info(f"[BATCH_EMBEDDING] Однократная обработка завершена. Успешно: {success}, Ошибок: {errors}")
+            return success, errors
+        except Exception as e:
+            logger.error(f"[BATCH_EMBEDDING] Ошибка в однократной обработке: {e}", exc_info=True)
+            raise # Повторно выбрасываем исключение, чтобы вызывающая сторона могла его обработать
