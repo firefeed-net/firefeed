@@ -1,8 +1,12 @@
-from fastapi import FastAPI, Depends, HTTPException, Query, status
+from fastapi import FastAPI, Depends, HTTPException, Query, status, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware # Для CORS
 from typing import List, Optional
 import sys
 import os
+import asyncio
+import json
+from datetime import datetime
+import threading
 
 # Добавляем корень проекта и папку api в путь поиска модулей
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -93,18 +97,164 @@ def build_translations_dict(row_dict):
     
     return translations
 
-# --- Endpoints ---
+active_connections = []
 
-@app.get("/api/news/", response_model=List[models.NewsItem], summary="Получить список новостей")
+# --- WebSocket endpoint для реалтайм обновлений ---
+@app.websocket("/api/ws/news")
+async def websocket_endpoint(websocket: WebSocket):
+    await websocket.accept()
+    active_connections.append(websocket)
+    print(f"[WebSocket] New connection. Total connections: {len(active_connections)}")
+    
+    try:
+        while True:
+            # Получаем сообщение от клиента (например, heartbeat)
+            data = await websocket.receive_text()
+            try:
+                message = json.loads(data)
+                if message.get("type") == "ping":
+                    # Отвечаем на ping
+                    await websocket.send_text(json.dumps({
+                        "type": "pong", 
+                        "timestamp": datetime.now().isoformat()
+                    }))
+            except json.JSONDecodeError:
+                # Просто эхо если не JSON
+                await websocket.send_text(json.dumps({"type": "echo", "data": data}))
+                
+    except WebSocketDisconnect:
+        active_connections.remove(websocket)
+        print(f"[WebSocket] Connection closed. Total connections: {len(active_connections)}")
+    except Exception as e:
+        print(f"[WebSocket] Error: {e}")
+        if websocket in active_connections:
+            active_connections.remove(websocket)
+
+# --- Функция для отправки уведомлений о новых новостях ---
+async def broadcast_new_news(news_items: List[dict]):
+    """Отправляет уведомление о новых новостях всем подключенным клиентам"""
+    if not active_connections:
+        return
+        
+    message = {
+        "type": "new_news",
+        "timestamp": datetime.now().isoformat(),
+        "count": len(news_items),
+        "news": [  # Отправляем только основную информацию для уведомления
+            {
+                "news_id": item.get("news_id"),
+                "title": item.get("original_title", "")[:100] + "..." if item.get("original_title", "") else "Без заголовка",
+                "category": item.get("category", "Без категории"),
+                "published_at": item.get("published_at")
+            }
+            for item in news_items[:5]  # Ограничиваем 5 новостями для уведомления
+        ]
+    }
+    
+    disconnected = []
+    for connection in active_connections:
+        try:
+            await connection.send_text(json.dumps(message, ensure_ascii=False))
+        except WebSocketDisconnect:
+            disconnected.append(connection)
+        except Exception as e:
+            print(f"[WebSocket] Error sending to connection: {e}")
+            disconnected.append(connection)
+    
+    # Удаляем отключенные соединения
+    for conn in disconnected:
+        if conn in active_connections:
+            active_connections.remove(conn)
+    
+    if disconnected:
+        print(f"[WebSocket] Removed {len(disconnected)} disconnected clients")
+
+# --- Функция для периодической проверки новых новостей ---
+async def check_for_new_news():
+    """Периодически проверяет наличие новых новостей и отправляет уведомления"""
+    last_check_time = datetime.now()
+    
+    while True:
+        try:
+            await asyncio.sleep(60)  # Проверяем каждую минуту
+            
+            # Здесь логика проверки новых новостей
+            # Например, можно проверить новости за последние 2 минуты
+            pool = await database.get_db_pool()
+            if pool:
+                async with pool.acquire() as conn:
+                    async with conn.cursor() as cur:
+                        query = """
+                        SELECT 
+                            nd.news_id,
+                            nd.original_title,
+                            nd.original_content,
+                            nd.original_language,
+                            nd.image_filename,
+                            COALESCE(c.name, 'Unknown Category') AS category_name,
+                            COALESCE(s.name, 'Unknown Source') AS source_name,
+                            pn.source_url,
+                            pn.published_at
+                        FROM published_news_data nd
+                        LEFT JOIN published_news pn ON nd.news_id = pn.id
+                        LEFT JOIN rss_feeds rf ON nd.rss_feed_id = rf.id
+                        LEFT JOIN categories c ON nd.category_id = c.id
+                        LEFT JOIN sources s ON rf.source_id = s.id
+                        WHERE pn.published_at > %s
+                        ORDER BY pn.published_at DESC
+                        LIMIT 10
+                        """
+                        
+                        check_time_str = last_check_time.strftime('%Y-%m-%d %H:%M:%S')
+                        await cur.execute(query, (check_time_str,))
+                        results = []
+                        async for row in cur:
+                            results.append(row)
+                        
+                        if results:
+                            # Преобразуем в формат для отправки
+                            columns = [desc[0] for desc in cur.description]
+                            news_items = []
+                            for row in results:
+                                row_dict = dict(zip(columns, row))
+                                news_items.append({
+                                    "news_id": row_dict['news_id'],
+                                    "original_title": row_dict['original_title'],
+                                    "category": row_dict['category_name'],
+                                    "published_at": row_dict['published_at'].isoformat() if row_dict['published_at'] else None
+                                })
+                            
+                            # Отправляем уведомление
+                            await broadcast_new_news(news_items)
+                            
+            last_check_time = datetime.now()
+            
+        except Exception as e:
+            print(f"[News Check] Error checking for new news: {e}")
+
+# --- Запуск фоновой задачи при старте приложения ---
+@app.on_event("startup")
+async def startup_event():
+    """Запускает фоновые задачи при старте приложения"""
+    # Запускаем задачу проверки новых новостей
+    asyncio.create_task(check_for_new_news())
+    print("[Startup] News checking task started")
+
+
+# --- Endpoints ---
+@app.get("/api/news/", summary="Получить список новостей")
 async def get_news(
     display_language: str = Query(..., description="Язык, на котором отображать новости (ru, en, de, fr)"),
     original_language: Optional[str] = Query(None, description="Фильтр по оригинальному языку новости"),
-    category: Optional[str] = Query(None, description="Фильтр по категории (имя категории)"), # Изменено описание
-    source: Optional[str] = Query(None, description="Фильтр по источнику (имя источника)"), # Новый фильтр
-    limit: Optional[int] = Query(50, description="Количество новостей", le=100, gt=0)
+    category_id: Optional[int] = Query(None, description="Фильтр по ID категории"),
+    source_id: Optional[int] = Query(None, description="Фильтр по ID источника"),
+    limit: Optional[int] = Query(50, description="Количество новостей на странице", le=100, gt=0),
+    offset: Optional[int] = Query(0, description="Смещение (количество пропущенных новостей)", ge=0)
 ):
     """
     Получить список новостей, отображая заголовок и содержимое на выбранном языке (display_language).
+    Поддерживает пагинацию через параметры limit и offset.
+    Возвращает данные в формате: {"count": общее_количество, "results": [список_новостей]}
     """
     supported_languages = ['ru', 'en', 'de', 'fr']
     if display_language not in supported_languages:
@@ -117,7 +267,32 @@ async def get_news(
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
             try:
-                # Начинаем с базовых параметров для JOIN'ов
+                # Сначала получаем общее количество новостей для пагинации
+                count_query = """
+                SELECT COUNT(*)
+                FROM published_news_data nd
+                LEFT JOIN published_news pn ON nd.news_id = pn.id
+                LEFT JOIN rss_feeds rf ON nd.rss_feed_id = rf.id
+                WHERE 1=1
+                """
+                count_params = []
+                
+                # Добавляем фильтры для подсчета
+                if original_language:
+                    count_query += " AND nd.original_language = %s"
+                    count_params.append(original_language)
+                if category_id:
+                    count_query += " AND nd.category_id = %s"
+                    count_params.append(category_id)
+                if source_id:
+                    count_query += " AND rf.source_id = %s"
+                    count_params.append(source_id)
+                
+                await cur.execute(count_query, count_params)
+                total_count = await cur.fetchone()
+                total_count = total_count[0] if total_count else 0
+
+                # Затем получаем сами новости с JOIN'ами
                 query_params = []
                 
                 # JOIN с rss_feeds, categories и sources для получения имен категории и источника
@@ -144,7 +319,7 @@ async def get_news(
                     nt_fr.translated_content as content_fr
                 FROM published_news_data nd
                 LEFT JOIN published_news pn ON nd.news_id = pn.id
-                LEFT JOIN rss_feeds rf ON pn.source_url LIKE CONCAT(rf.url, %s) OR rf.url LIKE CONCAT(pn.source_url, %s)
+                LEFT JOIN rss_feeds rf ON nd.rss_feed_id = rf.id
                 LEFT JOIN categories c ON nd.category_id = c.id
                 LEFT JOIN sources s ON rf.source_id = s.id
                 LEFT JOIN news_translations nt_ru ON nd.news_id = nt_ru.news_id AND nt_ru.language = %s
@@ -155,23 +330,24 @@ async def get_news(
                 WHERE 1=1
                 """
                 
-                # Добавляем параметры: сначала для LIKE условий, потом для языковых JOIN'ов
-                query_params.extend(['%%', '%%', 'ru', 'en', 'de', 'fr', display_language])
+                # Добавляем параметры для языковых JOIN'ов
+                query_params.extend(['ru', 'en', 'de', 'fr', display_language])
                 
                 # Добавляем фильтры в WHERE и соответствующие параметры
                 if original_language:
                     query += " AND nd.original_language = %s"
                     query_params.append(original_language)
-                if category:
-                    query += " AND c.name = %s"
-                    query_params.append(category)
-                if source:
-                    query += " AND s.name = %s"
-                    query_params.append(source)
+                if category_id:
+                    query += " AND nd.category_id = %s"
+                    query_params.append(category_id)
+                if source_id:
+                    query += " AND rf.source_id = %s"
+                    query_params.append(source_id)
                 
-                # Добавляем ORDER BY и LIMIT
-                query += " ORDER BY pn.published_at DESC LIMIT %s"
+                # Добавляем ORDER BY, LIMIT и OFFSET
+                query += " ORDER BY pn.published_at DESC LIMIT %s OFFSET %s"
                 query_params.append(limit)
+                query_params.append(offset)
                 
                 # Отладочный вывод
                 count_percent_s = query.count('%s')
@@ -207,13 +383,17 @@ async def get_news(
                     }
                     news_list.append(models.NewsItem(**item_data))
                      
-                return news_list
+                # Возвращаем данные в формате с count и results
+                return {
+                    "count": total_count,
+                    "results": news_list
+                }
 
             except Exception as e:
                 print(f"[API] Ошибка при выполнении запроса в get_news: {e}")
                 traceback.print_exc()
                 raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Внутренняя ошибка сервера")
-
+        
 
 @app.get("/api/news/{news_id}", response_model=models.NewsItem, summary="Получить новость по ID")
 async def get_news_by_id(news_id: str):
@@ -287,11 +467,14 @@ async def get_news_by_id(news_id: str):
                 raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Внутренняя ошибка сервера")
 
 
-@app.get("/api/categories/", response_model=List[models.CategoryItem], summary="Получить категории")
-async def get_categories():
+@app.get("/api/categories/", summary="Получить категории новостей")
+async def get_categories(
+    limit: Optional[int] = Query(100, description="Количество категорий на странице", le=1000, gt=0),
+    offset: Optional[int] = Query(0, description="Смещение (количество пропущенных категорий)", ge=0)
+):
     """
     Получить список всех уникальных категорий.
-    Данные в формате id, name из таблицы `categories`.
+    Данные в формате: {"count": общее_количество, "results": [список_категорий]}
     """
     pool = await database.get_db_pool()
     if pool is None:
@@ -300,22 +483,39 @@ async def get_categories():
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
             try:
-                query = "SELECT id, name FROM categories ORDER BY name"
-                await cur.execute(query)
+                # Сначала получаем общее количество категорий
+                count_query = "SELECT COUNT(*) FROM categories"
+                await cur.execute(count_query)
+                total_count = await cur.fetchone()
+                total_count = total_count[0] if total_count else 0
+
+                # Затем получаем сами категории с пагинацией
+                query = "SELECT id, name FROM categories ORDER BY name LIMIT %s OFFSET %s"
+                await cur.execute(query, (limit, offset))
                 results = []
                 async for row in cur:
                     results.append(row)
                 
-                return [models.CategoryItem(id=row[0], name=row[1]) for row in results]
+                # Создаем CategoryItem с правильными полями
+                categories_list = [models.CategoryItem(id=row[0], name=row[1]) for row in results]
+                
+                # Возвращаем данные в формате с count и results
+                return {
+                    "count": total_count,
+                    "results": categories_list
+                }
             except Exception as e:
                 print(f"[API] Ошибка при получении категорий в get_categories: {e}")
                 raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Внутренняя ошибка сервера")
 
-
-@app.get("/api/languages/", response_model=List[models.LanguageItem], summary="Получить оригинальные языки")
-async def get_original_languages():
+@app.get("/api/sources/", summary="Получить источники новостей")
+async def get_sources(
+    limit: Optional[int] = Query(100, description="Количество источников на странице", le=1000, gt=0),
+    offset: Optional[int] = Query(0, description="Смещение (количество пропущенных источников)", ge=0)
+):
     """
-    Получить список всех языков активных фидов
+    Получить список всех источников новостей.
+    Данные в формате: {"count": общее_количество, "results": [список_источников]}
     """
     pool = await database.get_db_pool()
     if pool is None:
@@ -324,13 +524,67 @@ async def get_original_languages():
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
             try:
-                query = "SELECT DISTINCT language FROM rss_feeds WHERE is_active = TRUE ORDER BY language"
-                await cur.execute(query)
+                # Сначала получаем общее количество источников
+                count_query = "SELECT COUNT(*) FROM sources"
+                await cur.execute(count_query)
+                total_count = await cur.fetchone()
+                total_count = total_count[0] if total_count else 0
+
+                # Затем получаем сами источники с пагинацией
+                query = "SELECT id, name, description FROM sources ORDER BY name LIMIT %s OFFSET %s"
+                await cur.execute(query, (limit, offset))
                 results = []
                 async for row in cur:
                     results.append(row)
                 
-                return [models.LanguageItem(language=row[0]) for row in results]
+                sources_list = [models.SourceItem(id=row[0], name=row[1], description=row[2]) for row in results]
+                
+                # Возвращаем данные в формате с count и results
+                return {
+                    "count": total_count,
+                    "results": sources_list
+                }
+            except Exception as e:
+                print(f"[API] Ошибка при получении источников в get_sources: {e}")
+                traceback.print_exc()
+                raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Внутренняя ошибка сервера")
+
+@app.get("/api/languages/", summary="Получить оригинальные языки")
+async def get_original_languages(
+    limit: Optional[int] = Query(100, description="Количество языков на странице", le=1000, gt=0),
+    offset: Optional[int] = Query(0, description="Смещение (количество пропущенных языков)", ge=0)
+):
+    """
+    Получить список всех языков активных фидов.
+    Данные в формате: {"count": общее_количество, "results": [список_языков]}
+    """
+    pool = await database.get_db_pool()
+    if pool is None:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Ошибка подключения к базе данных")
+
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            try:
+                # Сначала получаем общее количество языков
+                count_query = "SELECT COUNT(DISTINCT language) FROM rss_feeds WHERE is_active = TRUE"
+                await cur.execute(count_query)
+                total_count = await cur.fetchone()
+                total_count = total_count[0] if total_count else 0
+
+                # Затем получаем сами языки с пагинацией
+                query = "SELECT DISTINCT language FROM rss_feeds WHERE is_active = TRUE ORDER BY language LIMIT %s OFFSET %s"
+                await cur.execute(query, (limit, offset))
+                results = []
+                async for row in cur:
+                    results.append(row)
+                
+                languages_list = [models.LanguageItem(language=row[0]) for row in results]
+                
+                # Возвращаем данные в формате с count и results
+                return {
+                    "count": total_count,
+                    "results": languages_list
+                }
             except Exception as e:
                 print(f"[API] Ошибка при получении языков в get_original_languages: {e}")
                 traceback.print_exc()

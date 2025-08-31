@@ -1,5 +1,8 @@
 from pydantic import BaseModel
-from typing import Optional, List, Dict
+from typing import List, Optional, Generic, TypeVar, Dict
+
+# Определяем типовой параметр для Generic
+T = TypeVar('T')
 
 # Модель для представления перевода на конкретный язык
 class LanguageTranslation(BaseModel):
@@ -26,8 +29,17 @@ class CategoryItem(BaseModel):
     id: int
     name: str
 
+class SourceItem(BaseModel):
+    id: int
+    name: str
+    description: Optional[str] = None
+
 class LanguageItem(BaseModel):
     language: str
+
+class PaginatedResponse(BaseModel, Generic[T]):
+    count: int
+    results: List[T]
 
 # Модель для ответа с ошибкой (опционально, но полезно)
 class HTTPError(BaseModel):
