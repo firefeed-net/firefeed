@@ -375,7 +375,7 @@ class RSSManager:
             return 0
 
     # --- ОСНОВНАЯ ЛОГИКА ПАРСИНГА ---
-    async def fetch_single_feed(self, feed_info, seen_keys, headers):
+    async def fetch_single_feed(self, feed_info, headers):
         """Асинхронно парсит одну RSS-ленту и возвращает список новостей из неё.
         Перед парсингом проверяет cooldown и лимиты."""
         # Задача будет ждать здесь, если уже обрабатывается MAX_CONCURRENT_FEEDS фидов
@@ -493,10 +493,14 @@ class RSSManager:
                     title_hash = hashlib.sha256(title.encode('utf-8')).hexdigest()
                     content_hash = hashlib.sha256(description.encode('utf-8')).hexdigest()
                     unique_key = f"{title_hash}_{content_hash}"
-                    
-                    if unique_key in seen_keys:
-                        continue # Пропускаем дубликат
-                    seen_keys.add(unique_key)
+
+                    is_unique = await self.dublicate_detector.process_news(
+                        news_id=f"{title_hash}_{content_hash}",
+                        title=title,
+                        content=description
+                    )
+                    if not is_unique:
+                        continue
                     
                     # --- Инициализация базовых данных новости ---
                     news_item = {
@@ -543,7 +547,6 @@ class RSSManager:
                                 print(f"[RSS] [IMG] Найден URL изображения по MIME в URL: {image_url_for_processing[:100]}...")
                                 # Скачиваем и сохраняем изображение, используя unique_key как идентификатор
                                 local_image_path = await download_and_save_image(image_url_for_processing, unique_key, save_directory=IMAGES_ROOT_DIR)
-                                print(f"[RSS] [IMG] local_image_path = {local_image_path}")
                             else:
                                 # Пытаемся получить Content-Type через HEAD-запрос
                                 print(f"[RSS] [IMG] Проверка типа изображения через HEAD-запрос для: {image_url_for_processing[:100]}...")
@@ -557,7 +560,6 @@ class RSSManager:
                                                 print(f"[RSS] [IMG] Подтвержден тип изображения через HEAD. Скачиваем...")
                                                 # Скачиваем и сохраняем изображение, используя unique_key как идентификатор
                                                 local_image_path = await download_and_save_image(image_url_for_processing, unique_key, save_directory=IMAGES_ROOT_DIR)
-                                                print(f"[RSS] [IMG] local_image_path = {local_image_path}")
                                             else:
                                                 print(f"[WARN] URL изображения {image_url_for_processing[:100]}... не является изображением (Content-Type: {content_type})")
                                 except asyncio.TimeoutError:
@@ -586,11 +588,6 @@ class RSSManager:
                         news_item['video_url'] = video_url
                     else:
                         news_item['video_url'] = None
-
-                    if news_item.get('image_filename'):
-                        print(f"[DEBUG] Перед save_news_to_db image_filename = '{news_item['image_filename']}' для новости '{news_item['title'][:30]}...'")
-                    else:
-                        print(f"[DEBUG] Перед save_news_to_db image_filename отсутствует или None для новости '{news_item['title'][:30]}...'")
 
                     # --- Сохранение новости в БД (ОДИН запрос с изображением) ---
                     try:
@@ -779,7 +776,6 @@ class RSSManager:
 
     async def fetch_news(self):
         """Асинхронная функция для получения новостей из RSS-лент"""
-        seen_keys = set()
         all_news = []
         headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"}
         try:
@@ -789,7 +785,7 @@ class RSSManager:
                 print("[RSS] Нет активных лент для парсинга.")
                 return []
             # Создаем список задач (но они не запускаются сразу)
-            tasks = [asyncio.create_task(self.fetch_single_feed(feed_info, seen_keys, headers))
+            tasks = [asyncio.create_task(self.fetch_single_feed(feed_info, headers))
                      for feed_info in active_feeds]
             # Обрабатываем задачи по мере завершения
             completed_count = 0
@@ -830,7 +826,7 @@ class RSSManager:
 
     # --- МЕТОДЫ СОХРАНЕНИЯ В БД ---
     async def save_news_to_db(self, news_item, rss_feed_id):
-        print(f"[DEBUG] save_news_to_db news_item = {news_item}")
+        # print(f"[DEBUG] save_news_to_db news_item = {news_item}")
 
         """Асинхронно сохраняет информацию о новости в базу данных."""
         title = news_item['title']

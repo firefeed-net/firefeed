@@ -413,7 +413,7 @@ async def send_personal_news(bot, prepared_news_item: PreparedNewsItem):
             
             lang_note = ""
             if user_lang != original_news_lang:
-                lang_note = f"\n🌐 {TRANSLATED_FROM_LABELS.get(user_lang, 'Translated from')} {original_news_lang.upper()}"
+                lang_note = f"\n🌐 {TRANSLATED_FROM_LABELS.get(user_lang, 'Translated from')} {original_news_lang.upper()}\n"
             content_text = (
                 f"🔥 <b>{title_to_send}</b>\n"
                 f"\n\n{description_to_send}\n"
@@ -502,7 +502,7 @@ async def post_to_channel(bot, prepared_news_item: PreparedNewsItem):
             if i > 0:
                 await asyncio.sleep(1.0)
             
-            lang_note = f"\n🌐 {TRANSLATED_FROM_LABELS.get(target_lang, 'Translated from')} {original_lang.upper()}" if original_lang != target_lang else ""
+            lang_note = f"\n🌐 {TRANSLATED_FROM_LABELS.get(target_lang, 'Translated from')} {original_lang.upper()}\n" if original_lang != target_lang else ""
             hashtags = f"\n#{category} #{original_source}"
             content_text = f"<b>{title}</b>\n"
             if description and description.strip():

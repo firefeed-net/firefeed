@@ -13,11 +13,20 @@ class RSSParserService:
     def __init__(self):
         self.duplicate_detector = FireFeedDuplicateDetector()
         # --- Инициализация переводчика ---
-        self.translator = FireFeedTranslator(device="cpu", max_workers=1, max_concurrent_translations=1) 
-        self.translator_queue = FireFeedTranslatorTaskQueue(self.translator, max_workers=1, queue_size=30)
+        self.translator = FireFeedTranslator(
+            device="cpu", 
+            max_workers=3,
+            max_concurrent_translations=2,
+            max_cached_models=10
+        )
+        self.translator_queue = FireFeedTranslatorTaskQueue(
+            self.translator,
+            max_workers=2,
+            queue_size=30
+        )
         # --- Инициализация потока и loop'а для переводчика ---
         self._start_translator_loop()
-        # -------------------------------------------------------
+
         self.rss_manager = RSSManager(duplicate_detector=self.duplicate_detector, translator_queue=self.translator_queue)
         self.running = True
         self.parse_task = None

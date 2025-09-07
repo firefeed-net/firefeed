@@ -10,6 +10,9 @@ from config import CHANNEL_IDS, NLTK_DATA_DIR
 import threading
 from concurrent.futures import ThreadPoolExecutor
 import traceback
+import gc
+import psutil
+from collections import OrderedDict
 
 # Установка пути для данных NLTK
 nltk_data_path = NLTK_DATA_DIR
@@ -26,65 +29,149 @@ try:
 except LookupError:
     nltk.download('punkt_tab', download_dir=nltk_data_path)
 
+class CachedModel:
+    """Класс для хранения модели с метаданными"""
+    def __init__(self, model, tokenizer, timestamp):
+        self.model = model
+        self.tokenizer = tokenizer
+        self.timestamp = timestamp
+        self.last_used = timestamp
+
 class FireFeedTranslator:
     # Языковые пары, требующие каскадного перевода через английский
     CASCADE_TRANSLATIONS = {
         ('ru', 'de'): ('ru', 'en', 'de')
     }
 
-    def __init__(self, device="cpu", max_workers=1, max_concurrent_translations=1):
+    def __init__(self, device="cpu", max_workers=4, max_concurrent_translations=3, max_cached_models=15):
         """
         Инициализация переводчика
         Args:
             device: устройство для моделей (cpu/cuda)
             max_workers: максимальное количество потоков в пуле
             max_concurrent_translations: максимальное количество одновременных переводов
+            max_cached_models: максимальное количество моделей в кэше
         """
         self.device = device
-        self.model_cache = {}
-        self.tokenizer_cache = {}
+        self.max_cached_models = max_cached_models
+        self.model_cache = OrderedDict()
+        self.tokenizer_cache = OrderedDict()
         self.translation_cache = {}
         self.model_load_lock = threading.RLock()
         self.executor = ThreadPoolExecutor(max_workers=max_workers)
         self.translation_semaphore = asyncio.Semaphore(max_concurrent_translations)
         
+        # Статистика использования
+        self.stats = {
+            'models_loaded': 0,
+            'translations_processed': 0,
+            'cache_hits': 0,
+            'cache_misses': 0,
+            'total_translation_time': 0
+        }
+        
         print(f"[TRANSLATOR] Инициализация FireFeedTranslator на устройстве: {self.device}")
         print(f"[TRANSLATOR] Пул потоков: {max_workers} workers")
         print(f"[TRANSLATOR] Максимум одновременных переводов: {max_concurrent_translations}")
+        print(f"[TRANSLATOR] Максимум моделей в кэше: {max_cached_models}")
+
+    def _check_memory_usage(self):
+        """Проверка использования памяти"""
+        try:
+            memory = psutil.virtual_memory()
+            return memory.percent
+        except:
+            return 0
+
+    def _cleanup_old_models(self):
+        """Очистка старых моделей при высоком использовании памяти"""
+        memory_percent = self._check_memory_usage()
+        if memory_percent > 85:  # Если памяти > 85%
+            print(f"[MEMORY] Высокое использование памяти: {memory_percent}%. Очистка кэша моделей...")
+            # Очищаем половину кэша
+            models_to_remove = len(self.model_cache) // 2
+            for _ in range(models_to_remove):
+                if self.model_cache:
+                    old_key, _ = self.model_cache.popitem(last=False)
+                    self.tokenizer_cache.pop(old_key, None)
+            gc.collect()
+            print(f"[MEMORY] Очищено {models_to_remove} моделей из кэша")
+
+    def _enforce_cache_limit(self):
+        """Принудительное ограничение размера кэша"""
+        while len(self.model_cache) >= self.max_cached_models:
+            old_key, _ = self.model_cache.popitem(last=False)
+            self.tokenizer_cache.pop(old_key, None)
+            print(f"[CACHE] Удалена старая модель из кэша: {old_key}")
 
     def _get_model(self, src_lang, tgt_lang):
         """Получает модель и токенизатор для перевода. Потокобезопасна."""
         cache_key = f"{src_lang}-{tgt_lang}"
-        if cache_key not in self.model_cache:
-            # Используем рекурсивную блокировку, чтобы избежать одновременной загрузки одной и той же модели несколькими потоками
-            with self.model_load_lock:
-                # Повторная проверка, может быть загружена пока ждали лок
-                if cache_key not in self.model_cache:
-                    try:
-                        model_name = f'Helsinki-NLP/opus-mt-{src_lang}-{tgt_lang}'
-                        print(f"[TRANSLATOR] [{time.time():.3f}] Начало загрузки модели {model_name}...")
-                        
-                        # Оптимизированная загрузка модели
-                        model = MarianMTModel.from_pretrained(
-                            model_name,
-                            # torch_dtype=torch.float16,  # Отключено для CPU совместимости
-                            low_cpu_mem_usage=True
-                        )
-                        
-                        tokenizer = MarianTokenizer.from_pretrained(model_name)
-                        
-                        # Явно перемещаем модель на выбранное устройство
-                        model = model.to(self.device)
-                        print(f"[TRANSLATOR] [{time.time():.3f}] Модель {model_name} загружена и перемещена на {self.device}.")
-                        
-                        self.model_cache[cache_key] = model
-                        self.tokenizer_cache[cache_key] = tokenizer
-                        
-                    except Exception as e:
-                        print(f"[ERROR] [TRANSLATOR] [{time.time():.3f}] Ошибка загрузки модели {model_name}: {e}")
-                        traceback.print_exc()
-                        return None, None
-        return self.model_cache[cache_key], self.tokenizer_cache[cache_key]
+        current_time = time.time()
+        
+        # Проверяем наличие в кэше
+        if cache_key in self.model_cache:
+            cached = self.model_cache[cache_key]
+            # Проверяем TTL (2 часа)
+            if current_time - cached.timestamp > 7200:
+                # Удаляем устаревшую модель
+                del self.model_cache[cache_key]
+                self.tokenizer_cache.pop(cache_key, None)
+                gc.collect()
+                print(f"[MODEL] Удалена устаревшая модель: {cache_key}")
+            else:
+                # Обновляем время последнего использования (LRU)
+                cached.last_used = current_time
+                self.model_cache.move_to_end(cache_key)
+                self.tokenizer_cache.move_to_end(cache_key)
+                self.stats['cache_hits'] += 1
+                return cached.model, cached.tokenizer
+        
+        # Загружаем новую модель
+        with self.model_load_lock:
+            # Повторная проверка после получения лока
+            if cache_key in self.model_cache:
+                cached = self.model_cache[cache_key]
+                cached.last_used = current_time
+                self.stats['cache_hits'] += 1
+                return cached.model, cached.tokenizer
+            
+            # Ограничиваем размер кэша
+            self._enforce_cache_limit()
+            
+            try:
+                model_name = f'Helsinki-NLP/opus-mt-{src_lang}-{tgt_lang}'
+                print(f"[TRANSLATOR] [{time.time():.3f}] Начало загрузки модели {model_name}...")
+                
+                # Оптимизированная загрузка модели
+                model = MarianMTModel.from_pretrained(
+                    model_name,
+                    torch_dtype=torch.float16 if self.device != "cpu" else torch.float32,
+                    low_cpu_mem_usage=True
+                )
+                
+                tokenizer = MarianTokenizer.from_pretrained(model_name)
+                
+                # Явно перемещаем модель на выбранное устройство
+                model = model.to(self.device)
+                print(f"[TRANSLATOR] [{time.time():.3f}] Модель {model_name} загружена и перемещена на {self.device}.")
+                
+                # Сохраняем в кэш
+                cached_model = CachedModel(model, tokenizer, current_time)
+                self.model_cache[cache_key] = cached_model
+                self.tokenizer_cache[cache_key] = tokenizer
+                self.stats['models_loaded'] += 1
+                self.stats['cache_misses'] += 1
+                
+                # Проверяем память и очищаем при необходимости
+                self._cleanup_old_models()
+                
+                return model, tokenizer
+                
+            except Exception as e:
+                print(f"[ERROR] [TRANSLATOR] [{time.time():.3f}] Ошибка загрузки модели {model_name}: {e}")
+                traceback.print_exc()
+                return None, None
 
     def _translate_with_context_sync(self, texts, source_lang='en', target_lang='ru', context_window=2):
         """
@@ -196,8 +283,24 @@ class FireFeedTranslator:
         self.translation_cache[cache_key] = result
         end_time = time.time()
         total_time = end_time - start_time
+        self.stats['total_translation_time'] += total_time
         print(f"[TRANSLATOR] [{end_time:.3f}] Перевод завершен. Общее время выполнения: {total_time:.3f} сек")
         return result
+
+    def _get_optimal_batch_size(self):
+        """Определение оптимального размера батча в зависимости от доступной памяти"""
+        try:
+            available_memory = psutil.virtual_memory().available / (1024**3)  # ГБ
+            if available_memory < 1:
+                return 2
+            elif available_memory < 2:
+                return 4
+            elif available_memory < 4:
+                return 8
+            else:
+                return 16
+        except:
+            return 8  # значение по умолчанию
 
     def _translate_batch_sync(self, texts, source_lang='en', target_lang='ru', context_window=2):
         """Синхронная версия translate_batch для использования в пуле потоков"""
@@ -237,8 +340,10 @@ class FireFeedTranslator:
         # Переводим все предложения пакетно
         print(f"[TRANSLATOR] [BATCH] Используемое устройство: {self.device}")
         
-        # Создаем батчи
-        batch_size = 8  # Настройте под вашу память
+        # Определяем оптимальный размер батча
+        batch_size = self._get_optimal_batch_size()
+        print(f"[TRANSLATOR] [BATCH] Оптимальный размер батча: {batch_size}")
+        
         translated_batches = []
         
         for i in range(0, len(all_sentences), batch_size):
@@ -319,7 +424,7 @@ class FireFeedTranslator:
                 
                 # Ждем его с таймаутом
                 result = await asyncio.wait_for(future, timeout=120.0)
-                print(f"[DEBUG] [TRANSLATOR] result перевода = {result}")
+                self.stats['translations_processed'] += len(texts)
                 return result
             except asyncio.TimeoutError:
                 print(f"[ERROR] [TRANSLATOR] ТАЙМАУТ (120 сек) для '{source_lang}' -> '{target_lang}'!")
@@ -334,7 +439,7 @@ class FireFeedTranslator:
         start_time = time.time()
         print(f"[TRANSLATOR] prepare_translations начата для языка '{original_lang}' для задачи: {task_id[:20] if task_id else 'Unknown'}")
 
-        try: # Обернем всю логику в try-except для обработки ошибок и вызова error_callback
+        try:
             translations = {}
             target_languages = list(CHANNEL_IDS.keys())
 
@@ -356,7 +461,7 @@ class FireFeedTranslator:
                 pairs = [
                     (original_lang, target_lang, clean_title, 'title'),
                     (original_lang, target_lang, clean_description, 'description'),
-                    ('en', target_lang, category, 'category') # Предполагается, что категория на английском? Или нужно тоже переводить с original_lang?
+                    ('en', target_lang, category, 'category')
                 ]
                 lang_pairs.append((original_lang, target_lang, pairs))
 
@@ -496,7 +601,38 @@ class FireFeedTranslator:
             # ---------------------------------------------
 
 
+    def get_stats(self):
+        """Получение статистики использования переводчика"""
+        return {
+            **self.stats,
+            'cached_models': len(self.model_cache),
+            'cached_translations': len(self.translation_cache),
+            'memory_usage_percent': self._check_memory_usage()
+        }
+
+    def clear_cache(self):
+        """Очистка всех кэшей"""
+        self.model_cache.clear()
+        self.tokenizer_cache.clear()
+        self.translation_cache.clear()
+        gc.collect()
+        print("[TRANSLATOR] Все кэши очищены")
+
+    def preload_popular_models(self):
+        """Предзагрузка самых популярных моделей"""
+        popular_pairs = [('en', 'ru'), ('ru', 'en'), ('en', 'de'), ('en', 'fr'), ('en', 'es')]
+        loaded_count = 0
+        for src, tgt in popular_pairs:
+            try:
+                self._get_model(src, tgt)
+                loaded_count += 1
+                print(f"[PRELOAD] Модель {src}-{tgt} загружена")
+            except Exception as e:
+                print(f"[PRELOAD] Ошибка загрузки {src}-{tgt}: {e}")
+        print(f"[PRELOAD] Загружено {loaded_count} моделей из {len(popular_pairs)}")
+
     def shutdown(self):
         """Корректное завершение работы переводчика"""
         self.executor.shutdown(wait=True)
+        self.clear_cache()
         print("[TRANSLATOR] Переводчик корректно завершил работу")
