@@ -273,12 +273,11 @@ async def update_user_categories(pool, user_id: int, category_ids: Set[int]) -> 
 
                 # Добавляем новые категории
                 if category_ids:
-                    values = [(user_id, cat_id) for cat_id in category_ids]
-                    # Для aiopg используем executemany с корректным синтаксисом
-                    await cur.executemany(
-                        "INSERT INTO user_categories (user_id, category_id) VALUES (%s, %s)",
-                        values
-                    )
+                    for cat_id in category_ids:
+                        await cur.execute(
+                            "INSERT INTO user_categories (user_id, category_id) VALUES (%s, %s)",
+                            (user_id, cat_id)
+                        )
 
                 # Коммитим транзакцию
                 await cur.execute("COMMIT")
