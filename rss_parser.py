@@ -27,7 +27,7 @@ class RSSParserService:
         # --- Инициализация потока и loop'а для переводчика ---
         self._start_translator_loop()
 
-        self.rss_manager = RSSManager(duplicate_detector=self.duplicate_detector, translator_queue=self.translator_queue)
+        self.rss_manager = RSSManager(translator_queue=self.translator_queue)
         self.running = True
         self.parse_task = None
         self.translator_thread = None 
@@ -69,7 +69,7 @@ class RSSParserService:
         while self.running:
             try:
                 print("[RSS_PARSER] Начало парсинга RSS лент...")
-                await self.rss_manager.fetch_news()
+                await self.rss_manager.fetch_rss_items()
                 print("[RSS_PARSER] Парсинг RSS лент завершен")
                 
                 # Ждем 15 минут перед следующим парсингом или пока не будет установлен флаг self.running = False
