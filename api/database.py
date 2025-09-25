@@ -285,8 +285,12 @@ async def update_user_categories(pool, user_id: int, category_ids: Set[int]) -> 
                 print(f"[DB] Error updating user categories: {e}")
                 return False
 
-async def get_user_categories(pool, user_id: int) -> List[Dict[str, Any]]:
-    """Получает список категорий пользователя"""
+async def get_user_categories(
+    pool, 
+    user_id: int, 
+    source_ids: Optional[List[int]] = None
+) -> List[Dict[str, Any]]:
+    """Получает список категорий пользователя с фильтрацией по source_id"""
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
             try:
@@ -296,7 +300,14 @@ async def get_user_categories(pool, user_id: int) -> List[Dict[str, Any]]:
                 JOIN categories c ON uc.category_id = c.id
                 WHERE uc.user_id = %s AND c.id != %s
                 """
-                await cur.execute(query, (user_id, config.USER_DEFINED_RSS_CATEGORY_ID))
+                params = [user_id, config.USER_DEFINED_RSS_CATEGORY_ID]
+
+                if source_ids:
+                    placeholders = ','.join(['%s'] * len(source_ids))
+                    query += f" AND c.id IN (SELECT category_id FROM source_categories WHERE source_id IN ({placeholders})  AND category_id != %s)"
+                    params.extend(source_ids)
+
+                await cur.execute(query, params)
                 results = []
                 async for row in cur:
                     results.append({"id": row[0], "name": row[1]})
@@ -723,6 +734,7 @@ async def get_all_rss_items_list(
     category_id: Optional[List[int]],
     source_id: Optional[List[int]],
     telegram_published: Optional[bool],
+    from_date: Optional[datetime],
     limit: int,
     offset: int
 ) -> Tuple[int, List[Tuple], List[str]]:
@@ -795,6 +807,11 @@ async def get_all_rss_items_list(
                     else:
                         query += " AND nd.telegram_published_at IS NULL"
                     # query_params не нужен для этого фильтра, так как он использует IS NULL/IS NOT NULL
+                
+                # Добавляем фильтр по дате
+                if from_date is not None:
+                    query += " AND nd.created_at > %s"
+                    query_params.append(from_date)
 
                 # Добавляем ORDER BY, LIMIT и OFFSET
                 query += " ORDER BY nd.created_at DESC LIMIT %s OFFSET %s"
@@ -840,11 +857,16 @@ async def get_all_rss_items_list(
                         count_params.extend(source_id)
                 # Добавляем фильтр по telegram_published для подсчета
                 if telegram_published is not None:
-                     if telegram_published_value: # Используем уже вычисленное значение
+                    if telegram_published_value: # Используем уже вычисленное значение
                         count_query += " AND nd.telegram_published_at IS NOT NULL"
-                     else:
+                    else:
                         count_query += " AND nd.telegram_published_at IS NULL"
                     # count_params не нужен
+                
+                # Добавляем фильтр по дате для подсчета
+                if from_date is not None:
+                    count_query += " AND nd.created_at > %s"
+                    count_params.append(from_date)
 
                 await cur.execute(count_query, count_params)
                 total_count_row = await cur.fetchone()
@@ -857,22 +879,49 @@ async def get_all_rss_items_list(
                 print(f"[DB] Ошибка при выполнении запроса в get_all_rss_items_list: {e}")
                 raise # Перебрасываем исключение
 
-async def get_all_categories_list(pool, limit: int, offset: int) -> Tuple[int, List[Dict[str, Any]]]:
+async def get_all_categories_list(
+    pool, 
+    limit: int, 
+    offset: int, 
+    source_ids: Optional[List[int]] = None
+) -> Tuple[int, List[Dict[str, Any]]]:
     """
-    Получает список всех категорий с пагинацией.
+    Получает список всех категорий с пагинацией и фильтрацией по source_id.
     Возвращает кортеж (total_count, results).
     """
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
             try:
+                # Базовый запрос
+                count_query = "SELECT COUNT(*) FROM categories WHERE id != %s"
+                data_query = "SELECT id, name FROM categories WHERE id != %s"
+                conditions = []
+                params = [config.USER_DEFINED_RSS_CATEGORY_ID]
+                count_params = [config.USER_DEFINED_RSS_CATEGORY_ID]
+
+                # Добавляем фильтр по source_id, если передан
+                if source_ids:
+                    placeholders = ','.join(['%s'] * len(source_ids))
+                    conditions.append(f"id IN (SELECT category_id FROM source_categories WHERE source_id IN ({placeholders}) AND category_id != %s)")
+                    params.extend(source_ids)
+                    params.append(config.USER_DEFINED_RSS_CATEGORY_ID)
+                    count_params.extend(source_ids)
+                    count_params.append(config.USER_DEFINED_RSS_CATEGORY_ID)
+
+                where_clause = ""
+                if conditions:
+                    where_clause = " AND " + " AND ".join(conditions)
+                else:
+                    where_clause = ""
+
                 # Получаем общее количество
-                await cur.execute("SELECT COUNT(*) FROM categories")
+                await cur.execute(count_query + where_clause, count_params)
                 total_count_row = await cur.fetchone()
                 total_count = total_count_row[0] if total_count_row else 0
 
                 # Получаем список с пагинацией
-                query = "SELECT id, name FROM categories ORDER BY name LIMIT %s OFFSET %s"
-                await cur.execute(query, (limit, offset))
+                final_query = data_query + where_clause + " ORDER BY name LIMIT %s OFFSET %s"
+                await cur.execute(final_query, params + [limit, offset])
                 results = []
                 async for row in cur:
                     results.append({"id": row[0], "name": row[1]})
@@ -897,7 +946,7 @@ async def get_all_sources_list(
             try:
                 # Формируем базовые части запроса
                 base_query_select = """
-                    SELECT DISTINCT s.id, s.name, s.description
+                    SELECT DISTINCT s.id, s.name, s.description, s.alias, s.logo, s.site_url
                     FROM sources s
                 """
                 base_query_count = """
@@ -930,7 +979,11 @@ async def get_all_sources_list(
                 async for row in cur:
                     results.append({
                         "id": row[0],
-                        "name": row[1]
+                        "name": row[1],
+                        "description": row[2],
+                        "alias": row[3],
+                        "logo": row[4],
+                        "site_url": row[5]
                     })
 
                 return total_count, results

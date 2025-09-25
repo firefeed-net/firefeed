@@ -8,15 +8,10 @@ import pytz
 import aiohttp
 from urllib.parse import urljoin, urlparse
 from firefeed_utils import download_and_save_image, extract_image_from_preview
-from config import IMAGES_ROOT_DIR, get_shared_db_pool
+from config import IMAGES_ROOT_DIR, get_shared_db_pool, MAX_TOTAL_NEWS, MAX_ENTRIES_PER_FEED, MAX_CONCURRENT_FEEDS
 import mimetypes
 import traceback
 import json
-
-# - КОНФИГУРАЦИЯ -
-MAX_CONCURRENT_FEEDS = 2  # Максимальное количество RSS-лент, обрабатываемых одновременно
-MAX_ENTRIES_PER_FEED = 3  # Максимальное количество записей из одной RSS-ленты в каждом интервале проверки обновлений
-MAX_TOTAL_NEWS = 20       # Максимальное общее количество RSS-элементов за один цикл парсинга
 
 class RSSManager:
     # Сохраняем оригинальную сигнатуру конструктора, но без duplicate_detector
