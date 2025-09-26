@@ -166,12 +166,14 @@ def build_translations_dict(row_dict):
                 "content": content
             }
     return translations
-active_connections = []
+active_connections = set()
+active_connections_lock = asyncio.Lock()
 # --- WebSocket endpoint для реалтайм обновлений ---
 @app.websocket("/api/v1/ws/rss-items")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
-    active_connections.append(websocket)
+    async with active_connections_lock:
+        active_connections.add(websocket)
     print(f"[WebSocket] New connection. Total connections: {len(active_connections)}")
     try:
         while True:
@@ -189,12 +191,13 @@ async def websocket_endpoint(websocket: WebSocket):
                 # Просто эхо если не JSON
                 await websocket.send_text(json.dumps({"type": "echo", "data": data}))
     except WebSocketDisconnect:
-        active_connections.remove(websocket)
+        async with active_connections_lock:
+            active_connections.discard(websocket)
         print(f"[WebSocket] Connection closed. Total connections: {len(active_connections)}")
     except Exception as e:
         print(f"[WebSocket] Error: {e}")
-        if websocket in active_connections:
-            active_connections.remove(websocket)
+        async with active_connections_lock:
+            active_connections.discard(websocket)
 
 # --- Функция для отправки уведомлений о новых новостях ---
 async def broadcast_new_news(news_items: List[dict]):
@@ -216,7 +219,9 @@ async def broadcast_new_news(news_items: List[dict]):
         ]
     }
     disconnected = []
-    for connection in active_connections:
+    async with active_connections_lock:
+        connections_snapshot = list(active_connections)
+    for connection in connections_snapshot:
         try:
             await connection.send_text(json.dumps(message, ensure_ascii=False))
         except WebSocketDisconnect:
@@ -224,11 +229,10 @@ async def broadcast_new_news(news_items: List[dict]):
         except Exception as e:
             print(f"[WebSocket] Error sending to connection: {e}")
             disconnected.append(connection)
-    # Удаляем отключенные соединения
-    for conn in disconnected:
-        if conn in active_connections:
-            active_connections.remove(conn)
     if disconnected:
+        async with active_connections_lock:
+            for conn in disconnected:
+                active_connections.discard(conn)
         print(f"[WebSocket] Removed {len(disconnected)} disconnected clients")
 
 # --- Фоновая задача для проверки новых новостей ---
@@ -259,6 +263,15 @@ async def startup_event():
     asyncio.create_task(check_for_new_news())
     print("[Startup] News checking task started")
 
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Корректно закрывает общий пул соединений с БД при остановке приложения."""
+    try:
+        await database.close_db_pool()
+        print("[Shutdown] Database pool closed")
+    except Exception as e:
+        print(f"[Shutdown] Error closing DB pool: {e}")
+
 # --- Endpoints для новостей ---
 from datetime import datetime
 from typing import Optional, List
@@ -277,7 +290,10 @@ async def get_news(
     source_id: Optional[List[int]] = Query(None, description="Фильтр по ID источника (можно указать несколько)"),
     telegram_published: Optional[bool] = Query(None, description="Фильтр по статусу публикации в Telegram (true/false)"),
     from_date: Optional[int] = Query(None, description="Фильтр по дате публикации (timestamp в миллисекундах). Возвращает новости, опубликованные после этой даты."),
-    search_phrase: Optional[str] = Query(None, description="Строка для поиска по заголовку и содержанию на языке отображения"),
+    search_phrase: Optional[str] = Query(None, alias="searchPhrase", description="Строка для поиска по заголовку и содержанию на языке отображения"),
+    include_all_translations: Optional[bool] = Query(False, description="Вернуть переводы для всех языков (дороже по ресурсам)"),
+    cursor_published_at: Optional[int] = Query(None, description="Курсор пагинации: published_at (ms) для keyset-пагинации"),
+    cursor_news_id: Optional[str] = Query(None, description="Курсор пагинации: news_id для keyset-пагинации"),
     limit: Optional[int] = Query(50, description="Количество новостей на странице", le=100, gt=0),
     offset: Optional[int] = Query(0, description="Смещение (количество пропущенных новостей)", ge=0)
 ):
@@ -298,13 +314,22 @@ async def get_news(
         except (ValueError, OSError) as e:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Некорректный формат timestamp в параметре from_date")
     
+    before_published_at = None
+    if cursor_published_at is not None:
+        try:
+            before_published_at = datetime.fromtimestamp(cursor_published_at / 1000.0)
+        except (ValueError, OSError):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Некорректный формат timestamp в параметре cursor_published_at")
+    
+    page_offset = 0 if (cursor_published_at is not None or cursor_news_id is not None) else offset
+
     pool = await database.get_db_pool()
     if pool is None:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Ошибка подключения к базе данных")
 
     try:
         total_count, results, columns = await database.get_all_rss_items_list(
-            pool, display_language, original_language, category_id, source_id, telegram_published, from_datetime, search_phrase, limit, offset
+            pool, display_language, original_language, category_id, source_id, telegram_published, from_datetime, search_phrase, include_all_translations or False, before_published_at, cursor_news_id, limit, page_offset
         )
     except Exception as e:
         logger.error(f"[API] Ошибка при выполнении запроса в get_news: {e}")
@@ -341,10 +366,7 @@ async def get_news_by_id(rss_item_id: str):
     if pool is None:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Ошибка подключения к базе данных")
 
-    result = await database.get_rss_item_by_id(pool, rss_item_id)
-    if not result:
-         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="News item not found")
-
+        
     try:
         # Предполагаем, что database.get_rss_item_by_id возвращает кортеж результата и список колонок
         # или изменена сигнатура, чтобы возвращать только кортеж/строку результата.
@@ -352,8 +374,7 @@ async def get_news_by_id(rss_item_id: str):
         # В предоставленном коде database.get_rss_item_by_id возвращала Optional[Tuple].
         # Переделаем вызов и обработку.
         # Пусть database.get_rss_item_by_id возвращает Optional[Tuple]
-        row = result
-        # Получаем названия колонок внутри database.py или передаем их оттуда.
+                # Получаем названия колонок внутри database.py или передаем их оттуда.
         # Для простоты, предположим, что database.get_rss_item_by_id теперь возвращает (row, columns) или None
         # Или пусть database.get_rss_item_by_id возвращает row, а columns получаем отдельно.
         # Лучше изменить database.get_rss_item_by_id, чтобы она возвращала row_dict напрямую.

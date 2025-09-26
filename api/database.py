@@ -736,109 +736,121 @@ async def get_all_rss_items_list(
     telegram_published: Optional[bool],
     from_date: Optional[datetime],
     search_phrase: Optional[str],
+    include_all_translations: bool,
+    before_published_at: Optional[datetime],
+    cursor_news_id: Optional[str],
     limit: int,
     offset: int
 ) -> Tuple[int, List[Tuple], List[str]]:
     """
     Получает список всех RSS-элементов с фильтрацией.
-    Возвращает кортеж (total_count, results_rows, column_names).
+    По умолчанию джоинит только переводы nt_display (display_language). При include_all_translations=True
+    добавляет JOIN для ru/en/de/fr.
+    Поддерживает keyset-пагинацию через before_published_at и cursor_news_id.
     """
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
             try:
-                # --- Основной запрос для получения данных ---
-                query = """
-                SELECT
-                nd.*,
-                COALESCE(c.name, 'Unknown Category') AS category_name,
-                COALESCE(s.name, 'Unknown Source') AS source_name,
-                rf.url as source_url,
-                nd.created_at as published_at,
-                nt_ru.translated_title as title_ru,
-                nt_ru.translated_content as content_ru,
-                nt_en.translated_title as title_en,
-                nt_en.translated_content as content_en,
-                nt_de.translated_title as title_de,
-                nt_de.translated_content as content_de,
-                nt_fr.translated_title as title_fr,
-                nt_fr.translated_content as content_fr
+                params = []
+                # Базовый SELECT
+                select_parts = [
+                    "nd.*",
+                    "COALESCE(c.name, 'Unknown Category') AS category_name",
+                    "COALESCE(s.name, 'Unknown Source') AS source_name",
+                    "rf.url as source_url",
+                    "nd.created_at as published_at",
+                    "nt_display.translated_title as display_title",
+                    "nt_display.translated_content as display_content",
+                ]
+                join_parts = [
+                    "LEFT JOIN rss_feeds rf ON nd.rss_feed_id = rf.id",
+                    "LEFT JOIN categories c ON nd.category_id = c.id",
+                    "LEFT JOIN sources s ON rf.source_id = s.id",
+                    "LEFT JOIN news_translations nt_display ON nd.news_id = nt_display.news_id AND nt_display.language = %s",
+                ]
+                params.append(display_language)
+
+                if include_all_translations:
+                    # Дополнительные JOIN'ы и колонки только при необходимости
+                    select_parts.extend([
+                        "nt_ru.translated_title as title_ru",
+                        "nt_ru.translated_content as content_ru",
+                        "nt_en.translated_title as title_en",
+                        "nt_en.translated_content as content_en",
+                        "nt_de.translated_title as title_de",
+                        "nt_de.translated_content as content_de",
+                        "nt_fr.translated_title as title_fr",
+                        "nt_fr.translated_content as content_fr",
+                    ])
+                    join_parts.extend([
+                        "LEFT JOIN news_translations nt_ru ON nd.news_id = nt_ru.news_id AND nt_ru.language = 'ru'",
+                        "LEFT JOIN news_translations nt_en ON nd.news_id = nt_en.news_id AND nt_en.language = 'en'",
+                        "LEFT JOIN news_translations nt_de ON nd.news_id = nt_de.news_id AND nt_de.language = 'de'",
+                        "LEFT JOIN news_translations nt_fr ON nd.news_id = nt_fr.news_id AND nt_fr.language = 'fr'",
+                    ])
+
+                query = f"""
+                SELECT {', '.join(select_parts)}
                 FROM published_news_data nd
-                LEFT JOIN rss_feeds rf ON nd.rss_feed_id = rf.id
-                LEFT JOIN categories c ON nd.category_id = c.id
-                LEFT JOIN sources s ON rf.source_id = s.id
-                LEFT JOIN news_translations nt_ru ON nd.news_id = nt_ru.news_id AND nt_ru.language = %s
-                LEFT JOIN news_translations nt_en ON nd.news_id = nt_en.news_id AND nt_en.language = %s
-                LEFT JOIN news_translations nt_de ON nd.news_id = nt_de.news_id AND nt_de.language = %s
-                LEFT JOIN news_translations nt_fr ON nd.news_id = nt_fr.news_id AND nt_fr.language = %s
-                LEFT JOIN news_translations nt_display ON nd.news_id = nt_display.news_id AND nt_display.language = %s
+                {chr(10).join(join_parts)}
                 WHERE 1=1
                 """
-                # Добавляем параметры для языковых JOIN'ов
-                query_params = ['ru', 'en', 'de', 'fr', display_language]
-                # Подготовка шаблона поиска (если задан)
+
+                # Фильтры
+                if original_language:
+                    query += " AND nd.original_language = %s"
+                    params.append(original_language)
+                if category_id:
+                    if len(category_id) == 1:
+                        query += " AND nd.category_id = %s"
+                        params.append(category_id[0])
+                    else:
+                        placeholders = ','.join(['%s'] * len(category_id))
+                        query += f" AND nd.category_id IN ({placeholders})"
+                        params.extend(category_id)
+                if source_id:
+                    if len(source_id) == 1:
+                        query += " AND rf.source_id = %s"
+                        params.append(source_id[0])
+                    else:
+                        placeholders = ','.join(['%s'] * len(source_id))
+                        query += f" AND rf.source_id IN ({placeholders})"
+                        params.extend(source_id)
+
+                telegram_published_value = None
+                if telegram_published is not None:
+                    telegram_published_value = bool(str(telegram_published).lower() == 'true') if isinstance(telegram_published, str) else bool(telegram_published)
+                    if telegram_published_value:
+                        query += " AND nd.telegram_published_at IS NOT NULL"
+                    else:
+                        query += " AND nd.telegram_published_at IS NULL"
+
+                if from_date is not None:
+                    query += " AND nd.created_at > %s"
+                    params.append(from_date)
+
+                # Поиск: OR-условия по каждому полю, без конкатенаций
                 phrase = None
                 if search_phrase:
                     sp = search_phrase.strip()
                     if sp:
                         phrase = f"%{sp}%"
+                        query += " AND ((nt_display.translated_title ILIKE %s OR nt_display.translated_content ILIKE %s) OR (nd.original_title ILIKE %s OR nd.original_content ILIKE %s))"
+                        params.extend([phrase, phrase, phrase, phrase])
 
-                # Добавляем фильтры в WHERE и соответствующие параметры
-                if original_language:
-                    query += " AND nd.original_language = %s"
-                    query_params.append(original_language)
-                if category_id:
-                    if len(category_id) == 1:
-                        query += " AND nd.category_id = %s"
-                        query_params.append(category_id[0])
-                    else:
-                        placeholders = ','.join(['%s'] * len(category_id))
-                        query += f" AND nd.category_id IN ({placeholders})"
-                        query_params.extend(category_id)
-                if source_id:
-                    if len(source_id) == 1:
-                        query += " AND rf.source_id = %s"
-                        query_params.append(source_id[0])
-                    else:
-                        placeholders = ','.join(['%s'] * len(source_id))
-                        query += f" AND rf.source_id IN ({placeholders})"
-                        query_params.extend(source_id)
-                # Добавляем фильтр по telegram_published
-                if telegram_published is not None:
-                    # Преобразуем в boolean если строка (это делалось в main.py, переносим логику)
-                    if isinstance(telegram_published, str):
-                        telegram_published_value = telegram_published.lower() == 'true'
-                    else:
-                        telegram_published_value = bool(telegram_published)
-                    if telegram_published_value:
-                        query += " AND nd.telegram_published_at IS NOT NULL"
-                    else:
-                        query += " AND nd.telegram_published_at IS NULL"
-                    # query_params не нужен для этого фильтра, так как он использует IS NULL/IS NOT NULL
-                
-                # Добавляем фильтр по дате
-                if from_date is not None:
-                    query += " AND nd.created_at > %s"
-                    query_params.append(from_date)
+                # Keyset pagination (по убыванию created_at, затем news_id)
+                if before_published_at is not None:
+                    query += " AND (nd.created_at < %s OR (nd.created_at = %s AND nd.news_id < %s))"
+                    params.extend([before_published_at, before_published_at, cursor_news_id or "\uffff"])
 
-                # Добавляем поиск по фразе (в переводах для display_language, с fallback на оригинал)
-                if phrase:
-                    query += " AND ((COALESCE(nt_display.translated_title,'') || ' ' || COALESCE(nt_display.translated_content,'')) ILIKE %s OR (COALESCE(nd.original_title,'') || ' ' || COALESCE(nd.original_content,'')) ILIKE %s)"
-                    query_params.extend([phrase, phrase])
+                query += " ORDER BY nd.created_at DESC, nd.news_id DESC LIMIT %s OFFSET %s"
+                params.extend([limit, offset])
 
-                # Добавляем ORDER BY, LIMIT и OFFSET
-                query += " ORDER BY nd.created_at DESC LIMIT %s OFFSET %s"
-                query_params.append(limit)
-                query_params.append(offset)
-
-                await cur.execute(query, query_params)
-                results = []
-                async for row in cur:
-                    results.append(row)
-
-                # Получаем названия колонок
+                await cur.execute(query, params)
+                results = [row async for row in cur]
                 columns = [desc[0] for desc in cur.description]
 
-                # --- Подсчет общего количества ---
+                # Подсчет общего количества (без учета курсора keyset, но с остальными фильтрами)
                 count_query = """
                 SELECT COUNT(*)
                 FROM published_news_data nd
@@ -846,13 +858,7 @@ async def get_all_rss_items_list(
                 WHERE 1=1
                 """
                 count_params = []
-                
-                # Для поиска требуется JOIN с переводами на display_language
-                if phrase:
-                    count_query = count_query.replace("WHERE 1=1", "LEFT JOIN news_translations nt_display ON nd.news_id = nt_display.news_id AND nt_display.language = %s WHERE 1=1")
-                    count_params.append(display_language)
 
-                # Добавляем те же фильтры для подсчета
                 if original_language:
                     count_query += " AND nd.original_language = %s"
                     count_params.append(original_language)
@@ -872,34 +878,33 @@ async def get_all_rss_items_list(
                         placeholders = ','.join(['%s'] * len(source_id))
                         count_query += f" AND rf.source_id IN ({placeholders})"
                         count_params.extend(source_id)
-                # Добавляем фильтр по telegram_published для подсчета
                 if telegram_published is not None:
-                    if telegram_published_value: # Используем уже вычисленное значение
+                    if telegram_published_value:
                         count_query += " AND nd.telegram_published_at IS NOT NULL"
                     else:
                         count_query += " AND nd.telegram_published_at IS NULL"
-                    # count_params не нужен
-                
-                # Добавляем фильтр по дате для подсчета
                 if from_date is not None:
                     count_query += " AND nd.created_at > %s"
                     count_params.append(from_date)
 
-                # Добавляем поиск по фразе для подсчета
                 if phrase:
-                    count_query += " AND ((COALESCE(nt_display.translated_title,'') || ' ' || COALESCE(nt_display.translated_content,'')) ILIKE %s OR (COALESCE(nd.original_title,'') || ' ' || COALESCE(nd.original_content,'')) ILIKE %s)"
-                    count_params.extend([phrase, phrase])
+                    # Требуется join с nt_display
+                    count_query = count_query.replace(
+                        "WHERE 1=1",
+                        "LEFT JOIN news_translations nt_display ON nd.news_id = nt_display.news_id AND nt_display.language = %s WHERE 1=1"
+                    )
+                    count_params.insert(0, display_language)
+                    count_query += " AND ((nt_display.translated_title ILIKE %s OR nt_display.translated_content ILIKE %s) OR (nd.original_title ILIKE %s OR nd.original_content ILIKE %s))"
+                    count_params.extend([phrase, phrase, phrase, phrase])
 
                 await cur.execute(count_query, count_params)
                 total_count_row = await cur.fetchone()
                 total_count = total_count_row[0] if total_count_row else 0
-                # --- Конец подсчета общего количества ---
 
                 return total_count, results, columns
-
             except Exception as e:
                 print(f"[DB] Ошибка при выполнении запроса в get_all_rss_items_list: {e}")
-                raise # Перебрасываем исключение
+                raise
 
 async def get_all_categories_list(
     pool, 
