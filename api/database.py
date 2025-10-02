@@ -1,16 +1,10 @@
 # database.py
-import aiopg
 import os
 import sys
-import hashlib
-import secrets
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import config
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any, List, Set, Tuple
-import asyncio
-
-# Добавляем корень проекта в путь поиска модулей, чтобы импортировать config
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 async def get_db_pool():
     """Получает общий пул подключений к базе данных."""
@@ -227,22 +221,22 @@ async def save_password_reset_token(pool, user_id: int, token: str, expires_at: 
                 print(f"[DB] Error saving password reset token: {e}")
                 return False
 
-async def get_user_id_by_reset_token(pool, token: str) -> Optional[int]:
-    """Получает user_id по токену сброса, если токен действителен"""
+async def get_password_reset_token(pool, token: str) -> Optional[Dict[str, Any]]:
+    """Получает данные токена сброса пароля, если токен действителен"""
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
             try:
                 query = """
-                SELECT user_id FROM password_reset_tokens
+                SELECT user_id, expires_at FROM password_reset_tokens
                 WHERE token = %s AND expires_at > %s
                 """
                 await cur.execute(query, (token, datetime.utcnow()))
                 result = await cur.fetchone()
                 if result:
-                    return result[0]
+                    return {"user_id": result[0], "expires_at": result[1]}
                 return None
             except Exception as e:
-                print(f"[DB] Error getting user ID by reset token: {e}")
+                print(f"[DB] Error getting password reset token: {e}")
                 return None
 
 async def delete_password_reset_token(pool, token: str) -> bool:

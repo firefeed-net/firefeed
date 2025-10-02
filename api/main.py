@@ -1,33 +1,32 @@
-from fastapi import FastAPI, APIRouter, Depends, HTTPException, Query, status, WebSocket, WebSocketDisconnect
-from fastapi.middleware.cors import CORSMiddleware # Для CORS
-from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-from typing import List, Optional, Union, Set
-import sys
+# Добавляем корень проекта и папку api в путь поиска модулей
 import os
+import sys
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'api'))
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
+from fastapi import FastAPI, APIRouter, Depends, HTTPException, Query, status, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from typing import List, Optional
 import asyncio
 import json
 from datetime import datetime, timedelta
-import threading
 import logging
 import traceback
 import hashlib
 import secrets
 import jwt
 import random
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-from email_service.sender import send_verification_email
+from api import database, models
 
-# Настройка логирования для этого модуля
-logger = logging.getLogger("api.news")
-logger.setLevel(logging.DEBUG) # Установите INFO в продакшене
-# Добавляем корень проекта и папку api в путь поиска модулей
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'api'))
-from api import database, models # Импортируем наши модули
-import config  # Импортируем конфигурационный файл
+from email_service.sender import send_verification_email, send_password_reset_email
+import config
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import StreamingResponse
-import traceback
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG) # Установите INFO в продакшене
 
 # --- Настройки JWT ---
 SECRET_KEY = getattr(config, 'JWT_SECRET_KEY', 'your-secret-key-change-in-production')
@@ -69,12 +68,14 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
+
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Проверяет пароль против хэша"""
     return hashlib.pbkdf2_hmac('sha256', 
                                plain_password.encode('utf-8'), 
                                SECRET_KEY.encode('utf-8'), 
                                100000) == bytes.fromhex(hashed_password)
+
 def get_password_hash(password: str) -> str:
     """Создает хэш пароля"""
     pwdhash = hashlib.pbkdf2_hmac('sha256',
@@ -82,6 +83,7 @@ def get_password_hash(password: str) -> str:
                                   SECRET_KEY.encode('utf-8'),
                                   100000)
     return pwdhash.hex()
+
 async def get_current_user(token: str = Depends(oauth2_scheme)):
     """Получает текущего пользователя по токену"""
     credentials_exception = HTTPException(
@@ -103,14 +105,16 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
     if user is None:
         raise credentials_exception
     return user
+
 async def get_current_active_user(current_user: dict = Depends(get_current_user)):
     """Проверяет, что пользователь активен"""
     if not current_user.get("is_active"):
         raise HTTPException(status_code=400, detail="Inactive user")
     return current_user
+
 # --- FastAPI приложение ---
 app = FastAPI(
-    title="News API for Chrome Extension",
+    title="FireFeed API",
     description="API для получения новостей из RSS-лент, обработанных Telegram-ботом.",
     version="1.0.0",
     openapi_url="/api/openapi.json", # Путь к OpenAPI схеме
@@ -119,10 +123,17 @@ app = FastAPI(
 )
 app.add_middleware(ForceUTF8ResponseMiddleware)
 # --- Настройка CORS (важно для расширения Chrome) ---
-# (Закомментировано, как в оригинале)
-# origins = [...]
-# app.add_middleware(CORSMiddleware, ...)
-origins = ["*"] # ИЛИ список конкретных origins как выше
+# Разрешены только localhost для отладки и firefeed.net для продакшена
+origins = [
+    "http://localhost",
+    "http://localhost:3000",
+    "http://localhost:8000",
+    "http://127.0.0.1",
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:8000",
+    "https://firefeed.net",
+    "https://www.firefeed.net"
+]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,           # Разрешенные источники
@@ -149,6 +160,7 @@ def get_full_image_url(image_filename: str) -> str:
     # Убираем слэш в начале image_filename, если он есть
     filename = image_filename.lstrip('/')
     return f"{base_url}/{filename}"
+
 # --- Вспомогательная функция для формирования структуры переводов ---
 def build_translations_dict(row_dict):
     """Формирует структуру переводов из данных строки."""
@@ -168,6 +180,7 @@ def build_translations_dict(row_dict):
     return translations
 active_connections = set()
 active_connections_lock = asyncio.Lock()
+
 # --- WebSocket endpoint для реалтайм обновлений ---
 @app.websocket("/api/v1/ws/rss-items")
 async def websocket_endpoint(websocket: WebSocket):
@@ -273,15 +286,6 @@ async def shutdown_event():
         print(f"[Shutdown] Error closing DB pool: {e}")
 
 # --- Endpoints для новостей ---
-from datetime import datetime
-from typing import Optional, List
-from fastapi import Query, HTTPException, status
-import traceback
-import logging
-
-logger = logging.getLogger(__name__)
-
-# --- Endpoints для новостей ---
 @app.get("/api/v1/rss-items/", summary="Получить список новостей")
 async def get_news(
     display_language: str = Query(..., description="Язык, на котором отображать новости (ru, en, de, fr)"),
@@ -365,34 +369,8 @@ async def get_news_by_id(rss_item_id: str):
     pool = await database.get_db_pool()
     if pool is None:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Ошибка подключения к базе данных")
-
         
     try:
-        # Предполагаем, что database.get_rss_item_by_id возвращает кортеж результата и список колонок
-        # или изменена сигнатура, чтобы возвращать только кортеж/строку результата.
-        # Для совместимости предположим, что она возвращает (row, columns) или просто row.
-        # В предоставленном коде database.get_rss_item_by_id возвращала Optional[Tuple].
-        # Переделаем вызов и обработку.
-        # Пусть database.get_rss_item_by_id возвращает Optional[Tuple]
-                # Получаем названия колонок внутри database.py или передаем их оттуда.
-        # Для простоты, предположим, что database.get_rss_item_by_id теперь возвращает (row, columns) или None
-        # Или пусть database.get_rss_item_by_id возвращает row, а columns получаем отдельно.
-        # Лучше изменить database.get_rss_item_by_id, чтобы она возвращала row_dict напрямую.
-        # Но чтобы не менять сигнатуру кардинально, пусть возвращает row_tuple.
-        # Нужно получить columns. Пусть database.py предоставит их.
-        # Или сделаем обертку.
-
-        # Предположим, database.get_rss_item_by_id возвращает (row_tuple, column_names) или (None, None)
-        # row, columns = result
-        # if not row:
-        #     raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="News item not found")
-
-        # Но оригинальная сигнатура: async def get_rss_item_by_id(pool, news_id: str) -> Optional[Tuple]:
-        # Значит, она возвращает row_tuple или None.
-        # Нужно получить columns отдельно или внутри database.py обработать.
-        # Лучше обернуть в database.py.
-
-        # Пусть database.get_rss_item_by_id_full возвращает (row, columns) или (None, [])
         full_result = await database.get_rss_item_by_id_full(pool, rss_item_id)
         if not full_result or not full_result[0]:
              raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="News item not found")
@@ -623,6 +601,7 @@ async def login_user(form_data: OAuth2PasswordRequestForm = Depends()):
         "token_type": "bearer",
         "expires_in": ACCESS_TOKEN_EXPIRE_MINUTES * 60
     }
+
 @auth_router.post("/reset-password/request")
 async def request_password_reset(request: models.PasswordResetRequest):
     """Запрос на сброс пароля"""
@@ -638,12 +617,17 @@ async def request_password_reset(request: models.PasswordResetRequest):
     token = secrets.token_urlsafe(32)
     expires_at = datetime.utcnow() + timedelta(hours=1)  # Токен действует 1 час
     # Сохраняем токен в БД
-    success = await database.create_password_reset_token(pool, user["id"], token, expires_at)
+    success = await database.save_password_reset_token(pool, user["id"], token, expires_at)
     if not success:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to create reset token")
-    # Здесь должна быть логика отправки email (в реальной реализации)
-    # send_reset_email(request.email, token)
+    # Отправляем email с ссылкой на сброс пароля
+    email_sent = send_password_reset_email(request.email, token, user.get("language", "en"))
+    if not email_sent:
+        # Если email не отправился, удаляем токен и возвращаем ошибку
+        await database.delete_password_reset_token(pool, token)
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to send reset email")
     return {"message": "If email exists, reset instructions have been sent"}
+
 @auth_router.post("/reset-password/confirm")
 async def confirm_password_reset(request: models.PasswordResetConfirm):
     """Подтверждение сброса пароля"""
@@ -664,7 +648,7 @@ async def confirm_password_reset(request: models.PasswordResetConfirm):
     if not success:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to update password")
     # Помечаем токен как использованный
-    await database.use_password_reset_token(pool, request.token)
+    await database.delete_password_reset_token(pool, request.token)
     return {"message": "Password successfully reset"}
 
 # --- User endpoints ---
@@ -674,6 +658,7 @@ user_router = APIRouter(prefix="/api/v1/users", tags=["users"])
 async def get_current_user_profile(current_user: dict = Depends(get_current_active_user)):
     """Получение профиля текущего пользователя"""
     return models.UserResponse(**current_user)
+
 @user_router.put("/me", response_model=models.UserResponse)
 async def update_current_user(user_update: models.UserUpdate, current_user: dict = Depends(get_current_active_user)):
     """Обновление профиля текущего пользователя"""
@@ -696,6 +681,7 @@ async def update_current_user(user_update: models.UserUpdate, current_user: dict
     if not updated_user:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to update user")
     return models.UserResponse(**updated_user)
+
 @user_router.delete("/me", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_current_user(current_user: dict = Depends(get_current_active_user)):
     """Удаление (деактивация) аккаунта текущего пользователя"""
@@ -726,6 +712,7 @@ async def get_user_categories(
 
 # --- User RSS Feeds endpoints ---
 rss_router = APIRouter(prefix="/api/v1/users/me/rss-feeds", tags=["user_rss_feeds"])
+
 @rss_router.post("/", response_model=models.UserRSSFeedResponse, status_code=status.HTTP_201_CREATED)
 async def create_user_rss_feed(feed: models.UserRSSFeedCreate, current_user: dict = Depends(get_current_active_user)):
     """Создание пользовательской RSS-ленты"""
@@ -797,6 +784,7 @@ async def get_user_rss_feeds(
         count=len(feed_models),
         results=feed_models
     )
+
 @rss_router.get("/{feed_id}", response_model=models.UserRSSFeedResponse)
 async def get_user_rss_feed(feed_id: int, current_user: dict = Depends(get_current_active_user)):
     """Получение конкретной пользовательской RSS-ленты"""
@@ -808,6 +796,7 @@ async def get_user_rss_feed(feed_id: int, current_user: dict = Depends(get_curre
     if not feed:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="RSS feed not found")
     return models.UserRSSFeedResponse(**feed)
+
 @rss_router.put("/{feed_id}", response_model=models.UserRSSFeedResponse)
 async def update_user_rss_feed(
     feed_id: int, 
@@ -831,6 +820,7 @@ async def update_user_rss_feed(
     if not updated_feed:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="RSS feed not found or failed to update")
     return models.UserRSSFeedResponse(**updated_feed)
+
 @rss_router.delete("/{feed_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_user_rss_feed(feed_id: int, current_user: dict = Depends(get_current_active_user)):
     """Удаление пользовательской RSS-ленты"""
@@ -842,6 +832,7 @@ async def delete_user_rss_feed(feed_id: int, current_user: dict = Depends(get_cu
     if not success:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="RSS feed not found")
     return
+
 # --- Healthcheck endpoint ---
 @app.get("/api/v1/health", summary="Проверка состояния API")
 async def health_check():
