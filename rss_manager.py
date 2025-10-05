@@ -757,6 +757,7 @@ class RSSManager:
                     image_filename = news_item['image_filename']
                     category_name = news_item['category']
                     source_name = news_item['source']
+                    source_url = news_item['link'] # Ссылка на оригинальную новость
 
                     # 3. Получаем category_id
                     await cur.execute("SELECT id FROM categories WHERE name = %s", (category_name,))
@@ -768,9 +769,9 @@ class RSSManager:
 
                     # 4. Выполняем запрос к published_news_data с INSERT ... ON CONFLICT
                     query_published_news_data = """
-                    INSERT INTO published_news_data 
-                    (news_id, original_title, original_content, original_language, category_id, image_filename, rss_feed_id, created_at, updated_at)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, NOW(), NOW())
+                    INSERT INTO published_news_data
+                    (news_id, original_title, original_content, original_language, category_id, image_filename, rss_feed_id, source_url, created_at, updated_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW(), NOW())
                     ON CONFLICT (news_id) DO UPDATE SET
                     original_title = EXCLUDED.original_title,
                     original_content = EXCLUDED.original_content,
@@ -778,12 +779,13 @@ class RSSManager:
                     category_id = EXCLUDED.category_id,
                     image_filename = EXCLUDED.image_filename,
                     rss_feed_id = EXCLUDED.rss_feed_id,
+                    source_url = EXCLUDED.source_url,
                     updated_at = NOW()
                     """
                     # 4a. Выполняем запрос
                     print(f"[DB] [save_rss_item_to_db] Подготовка запроса к 'published_news_data' (ID: {short_id})")
                     await cur.execute(query_published_news_data, (
-                        news_id, title, content, original_language, category_id, image_filename, rss_feed_id
+                        news_id, title, content, original_language, category_id, image_filename, rss_feed_id, source_url
                     ))
                     print(f"[DB] [save_rss_item_to_db] Запрос к 'published_news_data' выполнен. (ID: {short_id})")
 
@@ -1013,7 +1015,7 @@ class RSSManager:
                         nd.updated_at,
                         c.name as category_name,
                         s.name as source_name,
-                        rf.url as source_url
+                        nd.source_url as source_url
                     FROM published_news_data nd
                     LEFT JOIN categories c ON nd.category_id = c.id
                     LEFT JOIN rss_feeds rf ON nd.rss_feed_id = rf.id

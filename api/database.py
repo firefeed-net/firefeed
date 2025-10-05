@@ -483,7 +483,7 @@ async def get_user_rss_items_list(
                 nd.*,
                 COALESCE(c.name, 'Unknown Category') AS category_name,
                 COALESCE(s.name, 'Unknown Source') AS source_name,
-                rf.url as source_url, -- Получаем URL источника из rss_feeds
+                nd.source_url as source_url, -- Получаем URL оригинальной новости из published_news_data
                 nd.created_at as published_at, -- Используем created_at из published_news_data как published_at
                 nt_ru.translated_title as title_ru,
                 nt_ru.translated_content as content_ru,
@@ -587,7 +587,7 @@ async def get_user_rss_items_list_by_feed(
                 nd.*,
                 COALESCE(c.name, 'Unknown Category') AS category_name,
                 COALESCE(s.name, 'Unknown Source') AS source_name,
-                rf.url as source_url, -- Получаем URL источника из rss_feeds
+                nd.source_url as source_url, -- Получаем URL оригинальной новости из published_news_data
                 nd.created_at as published_at, -- Используем created_at из published_news_data как published_at
                 nt_ru.translated_title as title_ru,
                 nt_ru.translated_content as content_ru,
@@ -652,7 +652,7 @@ async def get_rss_item_by_id(pool, news_id: str) -> Optional[Tuple]:
                 nd.*,
                 COALESCE(c.name, 'Unknown Category') AS category_name,
                 COALESCE(s.name, 'Unknown Source') AS source_name,
-                rf.url as source_url, -- Получаем URL источника из rss_feeds
+                nd.source_url as source_url, -- Получаем URL оригинальной новости из published_news_data
                 nd.created_at as published_at, -- Используем created_at из published_news_data как published_at
                 nt_ru.translated_title as title_ru,
                 nt_ru.translated_content as content_ru,
@@ -692,7 +692,7 @@ async def get_rss_item_by_id_full(pool, news_id: str) -> Tuple[Optional[Tuple], 
                 nd.*,
                 COALESCE(c.name, 'Unknown Category') AS category_name,
                 COALESCE(s.name, 'Unknown Source') AS source_name,
-                rf.url as source_url,
+                nd.source_url as source_url,
                 nd.created_at as published_at,
                 nt_ru.translated_title as title_ru,
                 nt_ru.translated_content as content_ru,
@@ -751,7 +751,7 @@ async def get_all_rss_items_list(
                     "nd.*",
                     "COALESCE(c.name, 'Unknown Category') AS category_name",
                     "COALESCE(s.name, 'Unknown Source') AS source_name",
-                    "rf.url as source_url",
+                    "nd.source_url as source_url",
                     "nd.created_at as published_at",
                     "nt_display.translated_title as display_title",
                     "nt_display.translated_content as display_content",
@@ -1023,12 +1023,25 @@ async def get_recent_news_for_broadcast(pool, last_check_time: datetime) -> List
                 SELECT
                     nd.news_id,
                     nd.original_title,
+                    nd.original_language,
                     c.name as category_name,
-                    nd.created_at as published_at
+                    nd.created_at as published_at,
+                    nt_ru.translated_title as title_ru,
+                    nt_ru.translated_content as content_ru,
+                    nt_en.translated_title as title_en,
+                    nt_en.translated_content as content_en,
+                    nt_de.translated_title as title_de,
+                    nt_de.translated_content as content_de,
+                    nt_fr.translated_title as title_fr,
+                    nt_fr.translated_content as content_fr
                 FROM published_news_data nd
                 LEFT JOIN rss_feeds rf ON nd.rss_feed_id = rf.id
                 LEFT JOIN categories c ON nd.category_id = c.id
                 LEFT JOIN sources s ON rf.source_id = s.id
+                LEFT JOIN news_translations nt_ru ON nd.news_id = nt_ru.news_id AND nt_ru.language = 'ru'
+                LEFT JOIN news_translations nt_en ON nd.news_id = nt_en.news_id AND nt_en.language = 'en'
+                LEFT JOIN news_translations nt_de ON nd.news_id = nt_de.news_id AND nt_de.language = 'de'
+                LEFT JOIN news_translations nt_fr ON nd.news_id = nt_fr.news_id AND nt_fr.language = 'fr'
                 WHERE nd.created_at > %s
                 ORDER BY nd.created_at DESC
                 LIMIT 10
@@ -1047,8 +1060,15 @@ async def get_recent_news_for_broadcast(pool, last_check_time: datetime) -> List
                     news_items.append({
                         "news_id": row_dict['news_id'],
                         "original_title": row_dict['original_title'],
+                        "original_language": row_dict['original_language'],
                         "category": row_dict['category_name'],
-                        "published_at": row_dict['published_at'].isoformat() if row_dict['published_at'] else None
+                        "published_at": row_dict['published_at'].isoformat() if row_dict['published_at'] else None,
+                        "translations": {
+                            "ru": {"title": row_dict.get('title_ru'), "content": row_dict.get('content_ru')},
+                            "en": {"title": row_dict.get('title_en'), "content": row_dict.get('content_en')},
+                            "de": {"title": row_dict.get('title_de'), "content": row_dict.get('content_de')},
+                            "fr": {"title": row_dict.get('title_fr'), "content": row_dict.get('content_fr')}
+                        }
                     })
                 return news_items
             except Exception as e:

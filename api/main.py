@@ -178,74 +178,122 @@ def build_translations_dict(row_dict):
                 "content": content
             }
     return translations
-active_connections = set()
+active_connections = {}  # websocket: params dict
 active_connections_lock = asyncio.Lock()
 
 # --- WebSocket endpoint для реалтайм обновлений ---
 @app.websocket("/api/v1/ws/rss-items")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
-    async with active_connections_lock:
-        active_connections.add(websocket)
-    print(f"[WebSocket] New connection. Total connections: {len(active_connections)}")
+    params = None
+    try:
+        # Ожидаем subscribe сообщение в течение 10 секунд
+        data = await asyncio.wait_for(websocket.receive_text(), timeout=10.0)
+        message = json.loads(data)
+        if message.get("type") != "subscribe":
+            await websocket.send_text(json.dumps({"error": "Expected subscribe message"}))
+            await websocket.close()
+            return
+        params = {
+            "original_language": message.get("original_language"),
+            "display_language": message.get("display_language"),
+            "use_translations": message.get("use_translations", False)
+        }
+        async with active_connections_lock:
+            active_connections[websocket] = params
+        print(f"[WebSocket] New connection with params: {params}. Total connections: {len(active_connections)}")
+    except asyncio.TimeoutError:
+        await websocket.send_text(json.dumps({"error": "Subscribe timeout"}))
+        await websocket.close()
+        return
+    except json.JSONDecodeError:
+        await websocket.send_text(json.dumps({"error": "Invalid JSON"}))
+        await websocket.close()
+        return
+    except Exception as e:
+        print(f"[WebSocket] Error during subscribe: {e}")
+        await websocket.close()
+        return
+
     try:
         while True:
-            # Получаем сообщение от клиента (например, heartbeat)
+            # Получаем сообщение от клиента (например, heartbeat или update params)
             data = await websocket.receive_text()
             try:
                 message = json.loads(data)
                 if message.get("type") == "ping":
                     # Отвечаем на ping
                     await websocket.send_text(json.dumps({
-                        "type": "pong", 
+                        "type": "pong",
                         "timestamp": datetime.now().isoformat()
                     }))
+                elif message.get("type") == "update_params":
+                    # Обновляем параметры
+                    new_params = {
+                        "original_language": message.get("original_language", params.get("original_language")),
+                        "display_language": message.get("display_language", params.get("display_language")),
+                        "use_translations": message.get("use_translations", params.get("use_translations", False))
+                    }
+                    async with active_connections_lock:
+                        active_connections[websocket] = new_params
+                    params = new_params
+                    await websocket.send_text(json.dumps({"type": "params_updated"}))
             except json.JSONDecodeError:
                 # Просто эхо если не JSON
                 await websocket.send_text(json.dumps({"type": "echo", "data": data}))
     except WebSocketDisconnect:
-        async with active_connections_lock:
-            active_connections.discard(websocket)
-        print(f"[WebSocket] Connection closed. Total connections: {len(active_connections)}")
+        pass
     except Exception as e:
         print(f"[WebSocket] Error: {e}")
+    finally:
         async with active_connections_lock:
-            active_connections.discard(websocket)
+            active_connections.pop(websocket, None)
+        print(f"[WebSocket] Connection closed. Total connections: {len(active_connections)}")
 
 # --- Функция для отправки уведомлений о новых новостях ---
 async def broadcast_new_news(news_items: List[dict]):
-    """Отправляет уведомление о новых новостях всем подключенным клиентам"""
+    """Отправляет уведомление о новых новостях всем подключенным клиентам с учетом их параметров"""
     if not active_connections:
         return
-    message = {
-        "type": "new_news",
-        "timestamp": datetime.now().isoformat(),
-        "count": len(news_items),
-        "news": [  # Отправляем только основную информацию для уведомления
-            {
-                "news_id": item.get("news_id"),
-                "title": item.get("original_title", "")[:100] + "..." if item.get("original_title", "") else "Без заголовка",
-                "category": item.get("category", "Без категории"),
-                "published_at": item.get("published_at")
-            }
-            for item in news_items[:5]  # Ограничиваем 5 новостями для уведомления
-        ]
-    }
     disconnected = []
     async with active_connections_lock:
-        connections_snapshot = list(active_connections)
-    for connection in connections_snapshot:
-        try:
-            await connection.send_text(json.dumps(message, ensure_ascii=False))
-        except WebSocketDisconnect:
-            disconnected.append(connection)
-        except Exception as e:
-            print(f"[WebSocket] Error sending to connection: {e}")
-            disconnected.append(connection)
+        connections_snapshot = list(active_connections.items())  # list of (ws, params)
+    for ws, params in connections_snapshot:
+        # Фильтруем новости по original_language
+        filtered_items = []
+        for item in news_items:
+            if params.get("original_language") and item.get("original_language") != params["original_language"]:
+                continue
+            # Определяем title
+            title = item.get("original_title", "")[:100] + "..." if item.get("original_title", "") else "Без заголовка"
+            if params.get("use_translations", False) and params.get("display_language"):
+                trans = item.get("translations", {}).get(params["display_language"], {})
+                if trans.get("title"):
+                    title = trans["title"][:100] + "..." if len(trans["title"]) > 100 else trans["title"]
+            filtered_items.append({
+                "news_id": item.get("news_id"),
+                "title": title,
+                "category": item.get("category", "Без категории"),
+                "published_at": item.get("published_at")
+            })
+        if filtered_items:
+            message = {
+                "type": "new_news",
+                "timestamp": datetime.now().isoformat(),
+                "count": len(filtered_items),
+                "news": filtered_items[:5]  # Ограничиваем 5 новостями для уведомления
+            }
+            try:
+                await ws.send_text(json.dumps(message, ensure_ascii=False))
+            except WebSocketDisconnect:
+                disconnected.append(ws)
+            except Exception as e:
+                print(f"[WebSocket] Error sending to connection: {e}")
+                disconnected.append(ws)
     if disconnected:
         async with active_connections_lock:
             for conn in disconnected:
-                active_connections.discard(conn)
+                active_connections.pop(conn, None)
         print(f"[WebSocket] Removed {len(disconnected)} disconnected clients")
 
 # --- Фоновая задача для проверки новых новостей ---
