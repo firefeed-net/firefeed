@@ -654,15 +654,6 @@ class RSSManager:
                         completed_count += 1
                         print(f"[RSS] [PROGRESS] Завершено {completed_count}/{len(tasks)} лент.")
 
-                        # Если мы уже собрали достаточно RSS-элементов, останавливаемся
-                        if len(all_news) >= MAX_TOTAL_NEWS:
-                            print(f"[RSS] [LIMIT] Достигнут лимит в {MAX_TOTAL_NEWS} элементов. Остановка.")
-                            # Отменяем оставшиеся задачи
-                            for task in tasks:
-                                if not task.done():
-                                    task.cancel()
-                            break
-
                     except asyncio.CancelledError:
                         print(f"[RSS] [TASK] Одна из задач была отменена.")
                         continue # Продолжаем обработку других завершенных задач
@@ -827,6 +818,12 @@ class RSSManager:
                 print(f"[DB] [save_translations_to_db] Получено соединение из пула для элемента {short_news_id}.")
                 async with conn.cursor() as cur:
                     print(f"[DB] [save_translations_to_db] Получен курсор для элемента {short_news_id}.")
+                    # Получаем оригинальный язык новости
+                    await cur.execute("SELECT original_language FROM published_news_data WHERE news_id = %s", (news_id,))
+                    row = await cur.fetchone()
+                    original_language = row[0] if row else 'en'
+                    print(f"[DB] [save_translations_to_db] Оригинальный язык новости: {original_language}")
+
                     translation_count = 0
                     for lang, data in translations.items():
                         translation_count += 1
@@ -837,12 +834,17 @@ class RSSManager:
                         title = data.get('title', '')
                         description = data.get('description', '')  # описание хранится под ключом 'description'
 
+                        # Пропускаем оригинальный язык и пустые переводы
+                        if lang == original_language or (not title and not description):
+                            print(f"[DB] [save_translations_to_db] [{translation_count}] Пропуск сохранения для '{lang}' ({short_news_id})")
+                            continue
+
                         # Подготавливаем SQL-запрос для вставки или обновления перевода
                         insert_query = """
                         INSERT INTO news_translations (news_id, language, translated_title, translated_content, created_at, updated_at)
                         VALUES (%s, %s, %s, %s, NOW(), NOW())
-                        ON CONFLICT (news_id, language) 
-                        DO UPDATE SET 
+                        ON CONFLICT (news_id, language)
+                        DO UPDATE SET
                             translated_title = EXCLUDED.translated_title,
                             translated_content = EXCLUDED.translated_content,
                             updated_at = NOW()

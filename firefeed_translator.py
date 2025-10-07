@@ -1,33 +1,25 @@
-from transformers import MarianMTModel, MarianTokenizer
-from firefeed_utils import clean_html
+import os
 import asyncio
 import torch
-import nltk
-import os
+import spacy
 import time
 import re
-from config import CHANNEL_IDS, NLTK_DATA_DIR
+from config import CHANNEL_IDS, CT2_MODELS_DIR
 import threading
 from concurrent.futures import ThreadPoolExecutor
 import traceback
 import gc
 import psutil
+import ctranslate2
 from collections import OrderedDict
+from firefeed_utils import clean_html
+from sentence_transformers import SentenceTransformer
+from sklearn.metrics.pairwise import cosine_similarity
+import numpy as np
+from transformers import AutoTokenizer
 
-# Установка пути для данных NLTK
-nltk_data_path = NLTK_DATA_DIR
-os.environ['NLTK_DATA'] = nltk_data_path
-
-# Скачивание необходимых ресурсов
-try:
-    nltk.data.find('tokenizers/punkt')
-except LookupError:
-    nltk.download('punkt', download_dir=nltk_data_path)
-
-try:
-    nltk.data.find('tokenizers/punkt_tab')
-except LookupError:
-    nltk.download('punkt_tab', download_dir=nltk_data_path)
+# Импортируем терминологический словарь
+from firefeed_translator_terminology_dict import TERMINOLOGY_DICT
 
 class CachedModel:
     """Класс для хранения модели с метаданными"""
@@ -38,11 +30,6 @@ class CachedModel:
         self.last_used = timestamp
 
 class FireFeedTranslator:
-    # Языковые пары, требующие каскадного перевода через английский
-    CASCADE_TRANSLATIONS = {
-        ('ru', 'de'): ('ru', 'en', 'de')
-    }
-
     def __init__(self, device="cpu", max_workers=4, max_concurrent_translations=3, max_cached_models=15):
         """
         Инициализация переводчика
@@ -61,6 +48,17 @@ class FireFeedTranslator:
         self.executor = ThreadPoolExecutor(max_workers=max_workers)
         self.translation_semaphore = asyncio.Semaphore(max_concurrent_translations)
         
+        # Кэш для spacy моделей
+        self.spacy_models = {}
+        
+        # Терминологический словарь (из внешнего файла)
+        self.terminology_dict = TERMINOLOGY_DICT
+        
+        # Загрузка модели для семантической проверки
+        print("[SEMANTIC] Загрузка модели для семантической проверки...")
+        self.semantic_model = SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2', device=device)
+        print("[SEMANTIC] Модель загружена")
+        
         # Статистика использования
         self.stats = {
             'models_loaded': 0,
@@ -74,6 +72,144 @@ class FireFeedTranslator:
         print(f"[TRANSLATOR] Пул потоков: {max_workers} workers")
         print(f"[TRANSLATOR] Максимум одновременных переводов: {max_concurrent_translations}")
         print(f"[TRANSLATOR] Максимум моделей в кэше: {max_cached_models}")
+
+    def _get_spacy_model(self, lang_code):
+        """Получает spacy модель для языка. Потокобезопасна."""
+        if lang_code in self.spacy_models:
+            return self.spacy_models[lang_code]
+        
+        with self.model_load_lock:
+            if lang_code in self.spacy_models:
+                return self.spacy_models[lang_code]
+            
+            # Сопоставление языкового кода с моделью spacy
+            spacy_model_map = {
+                'en': 'en_core_web_sm',
+                'ru': 'ru_core_news_sm',
+                'de': 'de_core_news_sm',
+                'fr': 'fr_core_news_sm',
+            }
+            
+            model_name = spacy_model_map.get(lang_code)
+            if not model_name:
+                print(f"[SPACY] Языковая модель для '{lang_code}' не найдена, используем 'en_core_web_sm'")
+                model_name = 'en_core_web_sm'
+            
+            try:
+                nlp = spacy.load(model_name)
+                self.spacy_models[lang_code] = nlp
+                print(f"[SPACY] Загружена модель для языка '{lang_code}': {model_name}")
+                return nlp
+            except OSError:
+                print(f"[SPACY] Модель '{model_name}' не найдена. Установите её командой:")
+                print(f"python -m spacy download {model_name}")
+                return None
+
+    def _postprocess_text(self, text, target_lang='ru'):
+        """Пост-обработка переведённого текста"""
+        # 1. Очистка лишних пробелов
+        text = re.sub(r'\s+', ' ', text).strip()
+
+        # 2. Удаление последовательных повторений слов
+        words = text.split()
+        if words:
+            deduped_words = [words[0]]
+            for word in words[1:]:
+                if word.lower() != deduped_words[-1].lower():
+                    deduped_words.append(word)
+            text = ' '.join(deduped_words)
+
+        # 3. Удаление слишком коротких слов (кроме предлогов)
+        short_words = {'a', 'an', 'the', 'to', 'of', 'in', 'on', 'at', 'by', 'for', 'with', 'as', 'is', 'are', 'was', 'were', 'be', 'been', 'has', 'have', 'had', 'do', 'does', 'did', 'will', 'would', 'can', 'could', 'may', 'might', 'must', 'shall', 'should', 'и', 'в', 'на', 'с', 'по', 'из', 'к', 'от', 'у', 'о', 'а', 'но', 'да', 'или', 'что', 'как', 'где', 'когда', 'почему', 'der', 'die', 'das', 'und', 'mit', 'auf', 'für', 'von', 'zu', 'im', 'am', 'le', 'la', 'les', 'et', 'avec', 'pour', 'dans'}
+        filtered_words = []
+        for word in text.split():
+            if len(word) >= 3 or word.lower() in short_words:
+                filtered_words.append(word)
+        text = ' '.join(filtered_words)
+
+        # 4. Удаление последовательностей одинаковых символов (более 3 подряд)
+        text = re.sub(r'(.)\1{3,}', r'\1\1\1', text)
+
+        # 5. Исправление заглавных букв в начале предложения
+        sentences = re.split(r'([.!?]+)', text)
+        processed = []
+        for i, part in enumerate(sentences):
+            if part.strip() and part[0].isalpha():
+                processed.append(part[0].upper() + part[1:])
+            else:
+                processed.append(part)
+        text = ''.join(processed)
+
+        # 6. Удаление дубликатов предложений
+        lines = text.split('. ')
+        unique_lines = []
+        seen = set()
+        for line in lines:
+            line_clean = re.sub(r'\W+', '', line.lower())
+            if line_clean not in seen and len(line_clean) > 5:  # Игнорировать слишком короткие
+                seen.add(line_clean)
+                unique_lines.append(line)
+        text = '. '.join(unique_lines)
+
+        # 7. Замена терминов (регистронезависимо)
+        for eng, translated in self.terminology_dict.items():
+            text = re.sub(r'\b' + re.escape(eng) + r'\b', translated, text, flags=re.IGNORECASE)
+
+        # 8. Удаление лишних символов в конце
+        text = text.strip(' .,;')
+
+        # 9. Финальная проверка: если текст слишком короткий или содержит мало букв, вернуть пустую строку
+        if len(text) < 10 or len(re.findall(r'[a-zA-Zа-яА-Я]', text)) < len(text) * 0.5:
+            return ""
+
+        return text
+
+    def _is_broken_translation(self, text, max_repeats=15):
+        """Проверяет, содержит ли текст подозрительные повторы или мусор"""
+        words = text.split()
+        if len(words) < 5:
+            return False
+        # Проверяем, нет ли 15 подряд одинаковых слов
+        for i in range(len(words) - max_repeats + 1):
+            chunk = words[i:i + max_repeats]
+            if len(set(chunk)) == 1:
+                return True
+        # Проверяем на слишком много повторяющихся символов
+        if re.search(r'(.)\1{10,}', text):
+            return True
+        # Проверяем на отсутствие пробелов (сплошной текст)
+        if len(text) > 50 and ' ' not in text:
+            return True
+        # Проверяем на слишком мало уникальных слов
+        unique_words = set(words)
+        if len(unique_words) < len(words) * 0.3 and len(words) > 10:
+            return True
+        return False
+
+    def _semantic_check(self, original_text, translated_text):
+        """Проверяет семантическое сходство оригинала и перевода с динамическим threshold"""
+        try:
+            if self._is_broken_translation(translated_text):
+                print("[SEMANTIC] Обнаружен битый перевод (повторы слов)")
+                return False
+
+            # Динамический threshold в зависимости от длины текста
+            text_length = len(original_text.split())
+            if text_length < 5:
+                threshold = 0.4  # Мягкий для коротких текстов
+            elif text_length < 20:
+                threshold = 0.5  # Средний для средних
+            else:
+                threshold = 0.6  # Жёсткий для длинных
+
+            # Создаём эмбеддинги
+            embeddings = self.semantic_model.encode([original_text, translated_text])
+            # Считаем косинусное сходство
+            similarity = cosine_similarity([embeddings[0]], [embeddings[1]])[0][0]
+            print(f"[SEMANTIC] similarity = {similarity}, threshold = {threshold}, original_text = {original_text}, translated_text = {translated_text}")
+            return similarity >= threshold
+        except Exception:
+            return True  # Если ошибка — считаем, что всё ок
 
     def _check_memory_usage(self):
         """Проверка использования памяти"""
@@ -104,11 +240,14 @@ class FireFeedTranslator:
             self.tokenizer_cache.pop(old_key, None)
             print(f"[CACHE] Удалена старая модель из кэша: {old_key}")
 
-    def _get_model(self, src_lang, tgt_lang):
-        """Получает модель и токенизатор для перевода. Потокобезопасна."""
-        cache_key = f"{src_lang}-{tgt_lang}"
+    def _get_model(self, direction):
+        """
+        Получает модель и токенизатор для перевода.
+        direction: 'en-mul'
+        """
+        cache_key = direction
         current_time = time.time()
-        
+
         # Проверяем наличие в кэше
         if cache_key in self.model_cache:
             cached = self.model_cache[cache_key]
@@ -126,7 +265,7 @@ class FireFeedTranslator:
                 self.tokenizer_cache.move_to_end(cache_key)
                 self.stats['cache_hits'] += 1
                 return cached.model, cached.tokenizer
-        
+
         # Загружаем новую модель
         with self.model_load_lock:
             # Повторная проверка после получения лока
@@ -135,41 +274,45 @@ class FireFeedTranslator:
                 cached.last_used = current_time
                 self.stats['cache_hits'] += 1
                 return cached.model, cached.tokenizer
-            
+
             # Ограничиваем размер кэша
             self._enforce_cache_limit()
-            
+
             try:
-                model_name = f'Helsinki-NLP/opus-mt-{src_lang}-{tgt_lang}'
-                print(f"[TRANSLATOR] [{time.time():.3f}] Начало загрузки модели {model_name}...")
-                
-                # Оптимизированная загрузка модели
-                model = MarianMTModel.from_pretrained(
-                    model_name,
-                    torch_dtype=torch.float16 if self.device != "cpu" else torch.float32,
-                    low_cpu_mem_usage=True
+                if direction == 'en-mul':
+                    model_path = os.path.join(CT2_MODELS_DIR, "opus-mt-en-mul")
+                    tokenizer_path = os.path.join(CT2_MODELS_DIR, "opus-mt-en-mul_hf")
+                else:
+                    raise ValueError(f"Неизвестное направление: {direction}")
+
+                print(f"[TRANSLATOR] [{time.time():.3f}] Начало загрузки модели {model_path} через CTranslate2...")
+
+                # Загрузка токенизатора
+                tokenizer = AutoTokenizer.from_pretrained(tokenizer_path)
+
+                # Загрузка модели через CTranslate2
+                model = ctranslate2.Translator(
+                    model_path,
+                    device=self.device,
+                    compute_type="auto"  # Автоматический выбор типа вычислений
                 )
-                
-                tokenizer = MarianTokenizer.from_pretrained(model_name)
-                
-                # Явно перемещаем модель на выбранное устройство
-                model = model.to(self.device)
-                print(f"[TRANSLATOR] [{time.time():.3f}] Модель {model_name} загружена и перемещена на {self.device}.")
-                
+
+                print(f"[TRANSLATOR] [{time.time():.3f}] Модель {model_path} загружена через CTranslate2 на {self.device}.")
+
                 # Сохраняем в кэш
                 cached_model = CachedModel(model, tokenizer, current_time)
                 self.model_cache[cache_key] = cached_model
                 self.tokenizer_cache[cache_key] = tokenizer
                 self.stats['models_loaded'] += 1
                 self.stats['cache_misses'] += 1
-                
+
                 # Проверяем память и очищаем при необходимости
                 self._cleanup_old_models()
-                
+
                 return model, tokenizer
-                
+
             except Exception as e:
-                print(f"[ERROR] [TRANSLATOR] [{time.time():.3f}] Ошибка загрузки модели {model_name}: {e}")
+                print(f"[ERROR] [TRANSLATOR] [{time.time():.3f}] Ошибка загрузки модели {model_path}: {e}")
                 traceback.print_exc()
                 return None, None
 
@@ -179,46 +322,10 @@ class FireFeedTranslator:
         """
         print(f"[TRANSLATOR] [{time.time():.3f}] _translate_with_context_sync: {source_lang} -> {target_lang}, {len(texts)} предложений")
         
-        # Проверяем, нужен ли каскадный перевод
-        cascade_key = (source_lang, target_lang)
-        if cascade_key in self.CASCADE_TRANSLATIONS:
-            # Используем каскадный перевод через английский
-            src_lang, intermediate_lang, tgt_lang = self.CASCADE_TRANSLATIONS[cascade_key]
-            print(f"[TRANSLATOR] [{time.time():.3f}] Каскадный перевод: {src_lang} -> {intermediate_lang} -> {tgt_lang}")
-            # Переводим на промежуточный язык (английский)
-            intermediate_texts = self._translate_with_context_sync(texts, src_lang, intermediate_lang, context_window)
-            
-            # Переводим с промежуточного на целевой язык
-            return self._translate_with_context_sync(intermediate_texts, intermediate_lang, tgt_lang, context_window)
-        
-        model, tokenizer = self._get_model(source_lang, target_lang)
-        if model is None or tokenizer is None:
-            print(f"[TRANSLATOR] [{time.time():.3f}] Модель не найдена, возврат исходного текста.")
-            return texts  # Если модель не найдена, возвращаем исходный текст
-        
-        translated = []
-        
-        for i in range(len(texts)):
-            context = " ".join(texts[max(0, i-context_window):i])
-            current_text = texts[i]
-            
-            combined = f"{context} {current_text}" if context else current_text
-            
-            inputs = tokenizer(combined, return_tensors="pt", truncation=True, max_length=512)
-
-            # Перемещаем inputs на то же устройство, что и модель
-            inputs = {k: v.to(self.device) for k, v in inputs.items()} # Перемещаем тензоры
-
-            with torch.no_grad():
-                outputs = model.generate(**inputs)
-            translated_text = tokenizer.decode(outputs[0], skip_special_tokens=True)
-            
-            # Удаляем контекст из результата (если нужно)
-            if context:
-                # Это упрощённый подход - в реальности может потребоваться более сложная постобработка
-                translated_text = translated_text.replace(self._translate_text_sync(context, source_lang, target_lang), "").strip()
-            
-            translated.append(translated_text)
+        # Для OPUS-MT нужно указать языковые токены в тексте
+        # Используем промежуточный перевод через английский
+        intermediate_texts = self._translate_batch_sync(texts, source_lang, 'en', context_window)
+        translated = self._translate_batch_sync(intermediate_texts, 'en', target_lang, context_window)
         
         print(f"[TRANSLATOR] [{time.time():.3f}] _translate_with_context_sync завершена.")
         return translated
@@ -246,39 +353,28 @@ class FireFeedTranslator:
             print(f"[TRANSLATOR] [{end_time:.3f}] Результат найден в кэше. Время выполнения: {end_time - start_time:.3f} сек")
             return cached_result
 
-        # Проверяем, нужен ли каскадный перевод
-        cascade_key = (source_lang, target_lang)
-        if cascade_key in self.CASCADE_TRANSLATIONS:
-            print(f"[TRANSLATOR] [{time.time():.3f}] Используется каскадный перевод для {source_lang} -> {target_lang}")
-            # Используем каскадный перевод через английский
-            src_lang, intermediate_lang, tgt_lang = self.CASCADE_TRANSLATIONS[cascade_key]
-            
-            # Переводим на промежуточный язык (английский)
-            print(f"[TRANSLATOR] [{time.time():.3f}] Этап 1: Перевод {src_lang} -> {intermediate_lang}")
-            intermediate_start = time.time()
-            intermediate_text = self._translate_text_sync(text, src_lang, intermediate_lang, context_window)
-            intermediate_time = time.time() - intermediate_start
-            print(f"[TRANSLATOR] [{time.time():.3f}] Этап 1 завершен за {intermediate_time:.3f} сек")
-            
-            # Переводим с промежуточного на целевой язык
-            print(f"[TRANSLATOR] [{time.time():.3f}] Этап 2: Перевод {intermediate_lang} -> {tgt_lang}")
-            final_start = time.time()
-            result = self._translate_text_sync(intermediate_text, intermediate_lang, tgt_lang, context_window)
-            final_time = time.time() - final_start
-            print(f"[TRANSLATOR] [{time.time():.3f}] Этап 2 завершен за {final_time:.3f} сек")
+        print(f"[TRANSLATOR] [{time.time():.3f}] Прямой перевод {source_lang} -> {target_lang}")
+        print(f"[TRANSLATOR] [{time.time():.3f}] Токенизация текста...")
+
+        # Используем spacy для разбиения на предложения
+        nlp = self._get_spacy_model(source_lang)
+        if nlp is None:
+            sentences = [text]  # Если модель не найдена, не разбиваем
         else:
-            print(f"[TRANSLATOR] [{time.time():.3f}] Прямой перевод {source_lang} -> {target_lang}")
-            print(f"[TRANSLATOR] [{time.time():.3f}] Токенизация текста...")
-            sentences = nltk.sent_tokenize(text)
-            print(f"[TRANSLATOR] [{time.time():.3f}] Получено {len(sentences)} предложений")
-            
-            print(f"[TRANSLATOR] [{time.time():.3f}] Начало перевода с контекстом (окно: {context_window})")
-            translate_start = time.time()
-            translated = " ".join(self._translate_with_context_sync(sentences, source_lang, target_lang, context_window))
-            translate_time = time.time() - translate_start
-            print(f"[TRANSLATOR] [{time.time():.3f}] Перевод завершен за {translate_time:.3f} сек")
-            
-            result = clean_html(translated)
+            doc = nlp(text)
+            sentences = [sent.text.strip() for sent in doc.sents]
+        
+        print(f"[TRANSLATOR] [{time.time():.3f}] Получено {len(sentences)} предложений")
+        
+        print(f"[TRANSLATOR] [{time.time():.3f}] Начало перевода с контекстом (окно: {context_window})")
+        translate_start = time.time()
+        translated = " ".join(self._translate_with_context_sync(sentences, source_lang, target_lang, context_window))
+        translate_time = time.time() - translate_start
+        print(f"[TRANSLATOR] [{time.time():.3f}] Перевод завершен за {translate_time:.3f} сек")
+
+        # Применяем пост-обработку
+        result = self._postprocess_text(translated, target_lang)
+        result = clean_html(result)
 
         self.translation_cache[cache_key] = result
         end_time = time.time()
@@ -302,126 +398,112 @@ class FireFeedTranslator:
         except:
             return 8  # значение по умолчанию
 
-    def _translate_batch_sync(self, texts, source_lang='en', target_lang='ru', context_window=2):
+    def _translate_batch_sync(self, texts, source_lang='en', target_lang='ru', context_window=2, beam_size=None):
         """Синхронная версия translate_batch для использования в пуле потоков"""
         if not texts:
             return []
-        
+
         print(f"[TRANSLATOR] [BATCH] Начало пакетного перевода: {source_lang} -> {target_lang}, {len(texts)} текстов")
-        
-        # Проверяем, нужен ли каскадный перевод
-        cascade_key = (source_lang, target_lang)
-        if cascade_key in self.CASCADE_TRANSLATIONS:
-            src_lang, intermediate_lang, tgt_lang = self.CASCADE_TRANSLATIONS[cascade_key]
-            intermediate_texts = self._translate_batch_sync(texts, src_lang, intermediate_lang, context_window)
-            return self._translate_batch_sync(intermediate_texts, intermediate_lang, tgt_lang, context_window)
-        
-        model, tokenizer = self._get_model(source_lang, target_lang)
+
+        # Используем мультиязычную модель en-mul
+        model, tokenizer = self._get_model('en-mul')
         if model is None or tokenizer is None:
-            print(f"[TRANSLATOR] [BATCH] Модель не найдена, возврат исходных текстов.")
+            print(f"[TRANSLATOR] [BATCH] Модель en-mul не найдена, возврат исходных текстов.")
             return texts
-        
-        # Разбиваем тексты на предложения
-        all_sentences = []
-        text_indices = []  # Для отслеживания, к какому тексту относится предложение
-        sentence_counts = [] # Для отслеживания количества предложений в каждом тексте
-        
-        for i, text in enumerate(texts):
-            sentences = nltk.sent_tokenize(text)
-            sentence_counts.append(len(sentences))
-            all_sentences.extend(sentences)
-            text_indices.extend([i] * len(sentences))
-        
+
+        # Используем spacy для разбиения текстов на предложения
+        nlp = self._get_spacy_model(source_lang)
+        if nlp is None:
+            # Если модель не найдена, не разбиваем
+            all_sentences = texts
+            text_indices = list(range(len(texts)))
+            sentence_counts = [1] * len(texts)
+        else:
+            all_sentences = []
+            text_indices = []
+            sentence_counts = []
+            for i, text in enumerate(texts):
+                doc = nlp(text)
+                sentences = [sent.text.strip() for sent in doc.sents]
+                sentence_counts.append(len(sentences))
+                all_sentences.extend(sentences)
+                text_indices.extend([i] * len(sentences))
+
         if not all_sentences:
             return texts
-        
+
         print(f"[TRANSLATOR] [BATCH] Всего предложений для перевода: {len(all_sentences)}")
-        
+
         # Переводим все предложения пакетно
         print(f"[TRANSLATOR] [BATCH] Используемое устройство: {self.device}")
-        
+
         # Определяем оптимальный размер батча
         batch_size = self._get_optimal_batch_size()
         print(f"[TRANSLATOR] [BATCH] Оптимальный размер батча: {batch_size}")
-        
+
         translated_batches = []
-        
+
         for i in range(0, len(all_sentences), batch_size):
             batch_sentences = all_sentences[i:i + batch_size]
             print(f"[TRANSLATOR] [BATCH] Перевод батча {i//batch_size + 1}/{(len(all_sentences)-1)//batch_size + 1}: {len(batch_sentences)} предложений")
-            
-            # Токенизация батча
-            inputs = tokenizer(
-                batch_sentences, 
-                return_tensors="pt", 
-                truncation=True, 
-                max_length=512,
-                padding=True  # Важно для батчей
+
+            # Токенизация с указанием целевого языка
+            batch_tokenized = [tokenizer.tokenize(text, tgt_lang=target_lang) for text in batch_sentences]
+            # Перевод через CTranslate2
+            results = model.translate_batch(
+                batch_tokenized,
+                max_batch_size=batch_size,
+                beam_size=beam_size or 10,
+                max_decoding_length=256,
+                length_penalty=0.8,
+                repetition_penalty=1.5,
+                return_scores=False
             )
-            
-            inputs = {k: v.to(self.device) for k, v in inputs.items()}
-            
-            with torch.no_grad():
-                outputs = model.generate(**inputs)
-            
+            # Декодирование
             batch_translations = [
-                tokenizer.decode(output, skip_special_tokens=True) 
-                for output in outputs
+                tokenizer.convert_tokens_to_string(res.hypotheses[0])
+                for res in results
             ]
+
             translated_batches.extend(batch_translations)
-        
+
         # Группируем переводы по исходным текстам
         result_texts = [''] * len(texts)
         current_pos = 0
-        
+
         for i, (text, sent_count) in enumerate(zip(texts, sentence_counts)):
             if sent_count > 0:
                 translated_sentences = translated_batches[current_pos:current_pos + sent_count]
-                result_texts[i] = ' '.join(translated_sentences)
+                result_text = ' '.join(translated_sentences)
+                # Применяем пост-обработку
+                result_text = self._postprocess_text(result_text, target_lang)
+                result_texts[i] = result_text
                 current_pos += sent_count
             else:
                 result_texts[i] = text # Пустой текст остается пустым
-        
+
         cleaned_results = [clean_html(text) for text in result_texts]
         print(f"[TRANSLATOR] [BATCH] Пакетный перевод завершен. Переведено {len(cleaned_results)} текстов")
         return cleaned_results
 
-    @staticmethod
-    def is_broken_translation(text: str, max_repeats: int = 5) -> bool:
-        """
-        Проверяет, содержит ли текст подозрительное количество повторяющихся символов подряд.
-        Например: "......." или "........." или ". . . . ." или "abc abc abc abc abc"
-        """
-        if not text:
-            return True
-        
-        # Проверяем повторение одного символа (как было)
-        if re.search(r'(.)\1{' + str(max_repeats) + ',}', text):
-            return True
-        
-        # Проверяем повторение любых 2 символов подряд
-        if re.search(r'(..)\1{' + str(max_repeats-1) + ',}', text):
-            return True
-        
-        return False
-
-    async def translate_async(self, texts, source_lang, target_lang, context_window=2):
+    async def translate_async(self, texts, source_lang, target_lang, context_window=2, beam_size=None):
         print(f"[TRANSLATOR] [ASYNC] Начало translate_async для задачи")
         """Асинхронный метод перевода с использованием пула потоков"""
         loop = asyncio.get_event_loop()
-        
+
         async with self.translation_semaphore:
             try:
                 # Создаем Future из run_in_executor
                 future = loop.run_in_executor(
-                    self.executor, 
-                    self._translate_batch_sync, 
-                    texts, 
-                    source_lang, 
-                    target_lang, 
-                    context_window
+                    self.executor,
+                    self._translate_batch_sync,
+                    texts,
+                    source_lang,
+                    target_lang,
+                    context_window,
+                    beam_size
                 )
-                
+
                 # Ждем его с таймаутом
                 result = await asyncio.wait_for(future, timeout=120.0)
                 self.stats['translations_processed'] += len(texts)
@@ -520,13 +602,27 @@ class FireFeedTranslator:
                     else: # description
                         original_text = clean_description
 
-                    if self.is_broken_translation(translated_text):
+                    # Семантическая проверка только для title и description
+                    if field_type == 'category':
+                        # Для category не проверяем, всегда используем перевод
+                        lang_translations[field_type] = translated_text
+                        valid_fields += 1
+                    elif not self._semantic_check(original_text, translated_text):
                         warn_msg = (
-                            f"[WARN] [TRANSLATOR] Битый перевод на '{target_lang}' "
+                            f"[SEMANTIC] [TRANSLATOR] Семантическая проверка не пройдена на '{target_lang}' "
                             f"для поля '{field_type}': '{translated_text[:50]}...'"
                         )
                         print(warn_msg)
-                        lang_translations[field_type] = original_text
+                        # Попытка fallback: перевод с beam_size=1
+                        fallback_texts = await self.translate_async([original_text], src_lang, tgt_lang, context_window=0, beam_size=1)
+                        fallback_text = fallback_texts[0] if fallback_texts else ""
+                        if fallback_text and self._semantic_check(original_text, fallback_text):
+                            print(f"[FALLBACK] Fallback перевод успешен для '{field_type}'")
+                            lang_translations[field_type] = fallback_text
+                            valid_fields += 1
+                        else:
+                            # Не добавляем поле, если перевод неудачный
+                            pass
                     else:
                         lang_translations[field_type] = translated_text
                         valid_fields += 1
@@ -619,17 +715,14 @@ class FireFeedTranslator:
         print("[TRANSLATOR] Все кэши очищены")
 
     def preload_popular_models(self):
-        """Предзагрузка самых популярных моделей"""
-        popular_pairs = [('en', 'ru'), ('ru', 'en'), ('en', 'de'), ('en', 'fr'), ('en', 'es')]
-        loaded_count = 0
-        for src, tgt in popular_pairs:
-            try:
-                self._get_model(src, tgt)
-                loaded_count += 1
-                print(f"[PRELOAD] Модель {src}-{tgt} загружена")
-            except Exception as e:
-                print(f"[PRELOAD] Ошибка загрузки {src}-{tgt}: {e}")
-        print(f"[PRELOAD] Загружено {loaded_count} моделей из {len(popular_pairs)}")
+        """Предзагрузка мультиязычной модели"""
+        try:
+            print("[PRELOAD] Загрузка мультиязычной модели opus-mt-en-mul через CTranslate2...")
+            # Загружаем модель
+            self._get_model('en-mul')
+            print("[PRELOAD] Модель загружена и готова к использованию")
+        except Exception as e:
+            print(f"[PRELOAD] Ошибка при загрузке модели: {e}")
 
     def shutdown(self):
         """Корректное завершение работы переводчика"""

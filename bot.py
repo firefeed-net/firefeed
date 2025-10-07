@@ -2,15 +2,14 @@
 import os
 import sys
 import asyncio
-import time
 import aiohttp
 import re
 import html
 import logging
 from telegram import Bot, Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
-from telegram.error import NetworkError, BadRequest, TelegramError, RetryAfter
+from telegram.error import NetworkError, BadRequest, RetryAfter
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes, MessageHandler, filters
-from config import WEBHOOK_CONFIG, BOT_TOKEN, CHANNEL_IDS, CHANNEL_CATEGORIES, IMAGES_ROOT_DIR, get_shared_db_pool
+from config import WEBHOOK_CONFIG, BOT_TOKEN, CHANNEL_IDS, CHANNEL_CATEGORIES, get_shared_db_pool
 from user_manager import UserManager
 from tenacity import retry, stop_after_attempt, wait_exponential
 from firefeed_translations import get_message, LANG_NAMES, TRANSLATED_FROM_LABELS, READ_MORE_LABELS
@@ -22,7 +21,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 # --- Конфигурация API ---
-API_BASE_URL = "http://localhost:8000/api/v1" # Обновленный базовый URL
+API_BASE_URL = "http://localhost:8000/api/v1"
 
 # --- Глобальные переменные ---
 USER_STATES = {}
@@ -35,7 +34,7 @@ user_manager = None
 http_session = None  # Глобальная сессия для HTTP-запросов
 
 @dataclass
-class PreparedRSSItem: # Переименовано
+class PreparedRSSItem:
     """Структура для хранения подготовленного RSS-элемента."""
     original_data: Dict[str, Any]
     translations: Dict[str, Dict[str, str]]
@@ -103,16 +102,15 @@ async def api_get(endpoint: str, params: dict = None) -> dict:
         logger.error(f"Failed to call {endpoint}: {e}")
         return {}
 
-# --- Обновленные функции API с новыми эндпоинтами ---
-async def get_rss_items_list(display_language: str, **filters) -> dict: # Переименовано
+async def get_rss_items_list(display_language: str, **filters) -> dict:
     """Получает список RSS-элементов."""
     params = {"display_language": display_language, **filters}
-    return await api_get("/rss-items/", params) # Обновленный эндпоинт
+    return await api_get("/rss-items/", params)
 
-async def get_rss_item_by_id(rss_item_id: str, display_language: str = "en") -> dict: # Переименовано
+async def get_rss_item_by_id(rss_item_id: str, display_language: str = "en") -> dict:
     """Получает RSS-элемент по ID."""
     params = {"display_language": display_language}
-    return await api_get(f"/rss-items/{rss_item_id}", params) # Обновленный эндпоинт
+    return await api_get(f"/rss-items/{rss_item_id}", params)
 
 async def get_categories() -> list:
     """Получает список категорий."""
@@ -370,7 +368,7 @@ def clean_html(text):
     return html.escape(text)
 
 @retry(stop=stop_after_attempt(5), wait=wait_exponential(multiplier=1, min=2, max=30))
-async def send_personal_news(bot, prepared_rss_item: PreparedRSSItem): # Переименовано
+async def send_personal_news(bot, prepared_rss_item: PreparedRSSItem):
     """Отправляет персональные RSS-элементы подписчикам."""
     global user_manager
     news_id = prepared_rss_item.original_data.get('id')
@@ -467,7 +465,7 @@ async def send_personal_news(bot, prepared_rss_item: PreparedRSSItem): # Пер�
             logger.error(f"Ошибка отправки персонального RSS-элемента пользователю {user.get('id', 'Unknown ID')}: {e}")
 
 @retry(stop=stop_after_attempt(5), wait=wait_exponential(multiplier=1, min=2, max=30))
-async def post_to_channel(bot, prepared_rss_item: PreparedRSSItem): # Переименовано
+async def post_to_channel(bot, prepared_rss_item: PreparedRSSItem):
     """Публикует RSS-элемент в Telegram-каналы."""
     original_title = prepared_rss_item.original_data['title']
     news_id = prepared_rss_item.original_data.get('id')
@@ -551,7 +549,7 @@ async def post_to_channel(bot, prepared_rss_item: PreparedRSSItem): # Переи
             logger.error(f"Ошибка отправки в {channel_id}: {e}")
 
 # --- Основная логика обработки RSS-элементов ---
-async def process_rss_item(context, rss_item_from_api): # Переименовано
+async def process_rss_item(context, rss_item_from_api):
     """Обрабатывает RSS-элемент, полученный из API."""
     async with NEWS_PROCESSING_SEMAPHORE:
         news_id = rss_item_from_api.get('news_id') # ID остается news_id для совместимости
@@ -583,7 +581,7 @@ async def process_rss_item(context, rss_item_from_api): # Переименова
         
         logger.debug(f"Подготовка RSS-элемента {news_id} завершена.")
         
-        prepared_rss_item = PreparedRSSItem( # Переименовано
+        prepared_rss_item = PreparedRSSItem(
             original_data=original_data,
             translations=translations,
             image_filename=original_data.get('image_url') # потому что так возвращает API
@@ -591,11 +589,11 @@ async def process_rss_item(context, rss_item_from_api): # Переименова
         
         async def limited_post_to_channel():
             async with SEND_SEMAPHORE:
-                await post_to_channel(context.bot, prepared_rss_item) # Переименовано
+                await post_to_channel(context.bot, prepared_rss_item)
 
         async def limited_send_personal_news():
             async with SEND_SEMAPHORE:
-                await send_personal_news(context.bot, prepared_rss_item) # Переименовано
+                await send_personal_news(context.bot, prepared_rss_item)
 
         tasks_to_await = []
         if rss_item_from_api.get('category') in CHANNEL_CATEGORIES:
@@ -615,16 +613,16 @@ async def process_rss_item(context, rss_item_from_api): # Переименова
         logger.debug(f"Завершение обработки RSS-элемента {news_id}")
         return True
 
-async def monitor_news_task(context: ContextTypes.DEFAULT_TYPE): # Имя функции оставлено для совместимости, но комментарии обновлены
+async def monitor_news_task(context: ContextTypes.DEFAULT_TYPE):
     logger.info("Запуск задачи мониторинга RSS-элементов")
     try:
         # Получаем необработанные RSS-элементы через API
-        rss_response = await get_rss_items_list(display_language="en", limit=10, telegram_published="false") # Переименовано
+        rss_response = await get_rss_items_list(display_language="en", limit=10, telegram_published="false", include_all_translations="true")
         if not isinstance(rss_response, dict):
             logger.error(f"Неверный формат ответа от API: {type(rss_response)}")
             return
             
-        unprocessed_rss_list = rss_response.get("results", []) # Переименовано
+        unprocessed_rss_list = rss_response.get("results", [])
         logger.info(f"Получено {len(unprocessed_rss_list)} RSS-элементов из API")
         
         if not unprocessed_rss_list:
@@ -632,7 +630,7 @@ async def monitor_news_task(context: ContextTypes.DEFAULT_TYPE): # Имя фун
              return
 
         processing_tasks = [
-            process_rss_item(context, rss_item) # Переименовано
+            process_rss_item(context, rss_item)
             for rss_item in unprocessed_rss_list
         ]
         
