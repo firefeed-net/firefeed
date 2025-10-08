@@ -478,31 +478,16 @@ async def post_to_channel(bot, prepared_rss_item: PreparedRSSItem):
     translations_cache = prepared_rss_item.translations
     channels_list = list(CHANNEL_IDS.items())
     
-    for i, (target_lang, channel_id) in enumerate(channels_list):
+    # Отправляем только в канал, соответствующий оригинальному языку
+    for target_lang, channel_id in channels_list:
+        if target_lang != original_lang:
+            continue
         try:
-            # Проверяем, есть ли у элемента контент на языке канала
-            title = None
-            description = None
-            
-            # Если язык канала совпадает с языком оригинала элемента
-            if target_lang == original_lang:
-                title = original_title
-                description = original_description
-            # Иначе ищем перевод на язык канала
-            elif target_lang in translations_cache and translations_cache[target_lang]:
-                translation_data = translations_cache[target_lang]
-                title = translation_data.get('title', '')
-                description = translation_data.get('description', '')
-                
-            # Если нет подходящего контента, пропускаем канал
-            if not title or not title.strip():
-                logger.debug(f"Пропуск канала {channel_id} - нет контента на языке {target_lang}")
-                continue
-                
-            if i > 0:
-                await asyncio.sleep(1.0)
-            
-            lang_note = f"\n🌐 {TRANSLATED_FROM_LABELS.get(target_lang, 'Translated from')} {original_lang.upper()}\n" if original_lang != target_lang else ""
+            # Используем оригинальный текст
+            title = original_title
+            description = original_description
+
+            lang_note = ""  # Нет перевода, так как оригинал
             hashtags = f"\n#{category} #{original_source}"
             content_text = f"<b>{title}</b>\n"
             if description and description.strip():
@@ -516,7 +501,7 @@ async def post_to_channel(bot, prepared_rss_item: PreparedRSSItem):
 
                 if not valid_image_url:
                     logger.warning(f"Недопустимый URL изображения для Telegram: {image_filename}")
-                    return # Выходим из текущей итерации
+                    return
 
                 caption = content_text
                 if len(caption) > 1024:
@@ -545,6 +530,7 @@ async def post_to_channel(bot, prepared_rss_item: PreparedRSSItem):
                 except Exception as e:
                     logger.error(f"Ошибка отправки сообщения в канал {channel_id}: {e}")
             logger.info(f"Опубликовано в {channel_id}: {title[:50]}...")
+            break  # Отправлено в нужный канал, выходим
         except Exception as e:
             logger.error(f"Ошибка отправки в {channel_id}: {e}")
 
@@ -617,7 +603,7 @@ async def monitor_news_task(context: ContextTypes.DEFAULT_TYPE):
     logger.info("Запуск задачи мониторинга RSS-элементов")
     try:
         # Получаем необработанные RSS-элементы через API
-        rss_response = await get_rss_items_list(display_language="en", limit=10, telegram_published="false", include_all_translations="true")
+        rss_response = await get_rss_items_list(display_language="en", limit=20, telegram_published="false")
         if not isinstance(rss_response, dict):
             logger.error(f"Неверный формат ответа от API: {type(rss_response)}")
             return

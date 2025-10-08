@@ -818,10 +818,12 @@ class RSSManager:
                 print(f"[DB] [save_translations_to_db] Получено соединение из пула для элемента {short_news_id}.")
                 async with conn.cursor() as cur:
                     print(f"[DB] [save_translations_to_db] Получен курсор для элемента {short_news_id}.")
-                    # Получаем оригинальный язык новости
-                    await cur.execute("SELECT original_language FROM published_news_data WHERE news_id = %s", (news_id,))
+                    # Получаем оригинальный язык и тексты новости
+                    await cur.execute("SELECT original_language, original_title, original_content FROM published_news_data WHERE news_id = %s", (news_id,))
                     row = await cur.fetchone()
                     original_language = row[0] if row else 'en'
+                    original_title = row[1] if row else ''
+                    original_content = row[2] if row else ''
                     print(f"[DB] [save_translations_to_db] Оригинальный язык новости: {original_language}")
 
                     translation_count = 0
@@ -837,6 +839,11 @@ class RSSManager:
                         # Пропускаем оригинальный язык и пустые переводы
                         if lang == original_language or (not title and not description):
                             print(f"[DB] [save_translations_to_db] [{translation_count}] Пропуск сохранения для '{lang}' ({short_news_id})")
+                            continue
+
+                        # Пропускаем, если перевод идентичен оригиналу
+                        if title == original_title and description == original_content:
+                            print(f"[DB] [save_translations_to_db] [{translation_count}] Пропуск сохранения идентичного оригиналу перевода для '{lang}' ({short_news_id})")
                             continue
 
                         # Подготавливаем SQL-запрос для вставки или обновления перевода

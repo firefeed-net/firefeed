@@ -602,6 +602,11 @@ class FireFeedTranslator:
                     else: # description
                         original_text = clean_description
 
+                    # Проверяем, что перевод отличается от оригинала
+                    if translated_text.strip() == original_text.strip():
+                        print(f"[TRANSLATOR] Перевод идентичен оригиналу для '{field_type}' на '{target_lang}', пропуск")
+                        continue
+
                     # Семантическая проверка только для title и description
                     if field_type == 'category':
                         # Для category не проверяем, всегда используем перевод
@@ -616,7 +621,7 @@ class FireFeedTranslator:
                         # Попытка fallback: перевод с beam_size=1
                         fallback_texts = await self.translate_async([original_text], src_lang, tgt_lang, context_window=0, beam_size=1)
                         fallback_text = fallback_texts[0] if fallback_texts else ""
-                        if fallback_text and self._semantic_check(original_text, fallback_text):
+                        if fallback_text and fallback_text.strip() != original_text.strip() and self._semantic_check(original_text, fallback_text):
                             print(f"[FALLBACK] Fallback перевод успешен для '{field_type}'")
                             lang_translations[field_type] = fallback_text
                             valid_fields += 1
