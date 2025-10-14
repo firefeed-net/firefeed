@@ -396,6 +396,27 @@ class RSSManager:
             return True
         except Exception as e:
             print(f"[RSS] [VALIDATE] Ошибка валидации RSS {url}: {e}")
+            # Если ошибка связана с типом данных, попробуем получить сырой контент
+            if "expected string or bytes-like object, got 'dict'" in str(e):
+                try:
+                    print(f"[RSS] [VALIDATE] Попытка получить сырой контент для {url}")
+                    timeout = aiohttp.ClientTimeout(total=15)
+                    async with aiohttp.ClientSession(timeout=timeout) as session:
+                        async with session.get(url, headers=headers) as response:
+                            raw_content = await response.text()
+                            loop = asyncio.get_event_loop()
+                            feed = await loop.run_in_executor(None, feedparser.parse, raw_content)
+                            if feed.bozo:
+                                print(f"[RSS] [VALIDATE] Ошибка парсинга сырого контента RSS {url}: {feed.bozo_exception}")
+                                return False
+                            if not hasattr(feed, 'entries') or len(feed.entries) == 0:
+                                print(f"[RSS] [VALIDATE] RSS {url} не содержит записей после парсинга сырого контента")
+                                return False
+                            print(f"[RSS] [VALIDATE] RSS {url} валиден после парсинга сырого контента, содержит {len(feed.entries)} записей")
+                            return True
+                except Exception as raw_e:
+                    print(f"[RSS] [VALIDATE] Ошибка валидации сырого контента RSS {url}: {raw_e}")
+                    return False
             return False
 
     async def fetch_single_feed(self, feed_info, headers):

@@ -10,7 +10,7 @@ from firefeed_utils import clean_html
 logger = logging.getLogger(__name__)
 
 class FireFeedEmbeddingsProcessor:
-    def __init__(self, model_name: str = 'paraphrase-multilingual-mpnet-base-v2', device: str = 'cpu'):
+    def __init__(self, model_name: str = 'paraphrase-multilingual-MiniLM-L12-v2', device: str = 'cpu'):
         """
         Инициализация процессора эмбеддингов
 
