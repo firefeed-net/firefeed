@@ -296,7 +296,7 @@ class FireFeedTranslator:
             threshold = self.embeddings_processor.get_dynamic_threshold(text_length, 'content')
 
             # Снижаем threshold для более мягкой проверки
-            threshold = max(0.3, threshold - 0.1)  # Минимум 0.3, снижаем на 0.1
+            threshold = max(0.2, threshold - 0.2)  # Минимум 0.2, снижаем на 0.2
 
             # Генерируем эмбеддинги через процессор
             original_embedding = self.embeddings_processor.generate_embedding(original_text, lang_code)
@@ -602,9 +602,7 @@ class FireFeedTranslator:
                 forced_bos_token_id=tokenizer.get_lang_id(target_lang),
                 max_length=256,
                 num_beams=adapted_beam_size,
-                repetition_penalty=adapted_repetition_penalty,
-                length_penalty=adapted_length_penalty,
-                early_stopping=True
+                repetition_penalty=adapted_repetition_penalty
             )
 
             # Декодирование
@@ -621,9 +619,7 @@ class FireFeedTranslator:
                         forced_bos_token_id=tokenizer.get_lang_id(target_lang),
                         max_length=256,
                         num_beams=1,
-                        repetition_penalty=2.0,
-                        length_penalty=1.0,
-                        early_stopping=True
+                        repetition_penalty=2.0
                     )
                     fallback_translation = tokenizer.batch_decode(fallback_tokens, skip_special_tokens=True)[0]
                     if not self._is_broken_translation(fallback_translation):

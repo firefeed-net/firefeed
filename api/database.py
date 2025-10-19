@@ -818,9 +818,9 @@ async def get_all_rss_items_list(
                 if telegram_published is not None:
                     telegram_published_value = bool(str(telegram_published).lower() == 'true') if isinstance(telegram_published, str) else bool(telegram_published)
                     if telegram_published_value:
-                        query += " AND nd.telegram_published_at IS NOT NULL"
+                        query += " AND EXISTS (SELECT 1 FROM rss_items_telegram_published rtp WHERE rtp.translation_id = nt_display.id)"
                     else:
-                        query += " AND nd.telegram_published_at IS NULL"
+                        query += " AND NOT EXISTS (SELECT 1 FROM rss_items_telegram_published rtp WHERE rtp.translation_id = nt_display.id)"
 
                 if from_date is not None:
                     query += " AND nd.created_at > %s"
@@ -852,9 +852,10 @@ async def get_all_rss_items_list(
                 SELECT COUNT(*)
                 FROM published_news_data nd
                 LEFT JOIN rss_feeds rf ON nd.rss_feed_id = rf.id
+                LEFT JOIN news_translations nt_display ON nd.news_id = nt_display.news_id AND nt_display.language = %s
                 WHERE 1=1
                 """
-                count_params = []
+                count_params = [display_language]
 
                 if original_language:
                     count_query += " AND nd.original_language = %s"
@@ -877,20 +878,14 @@ async def get_all_rss_items_list(
                         count_params.extend(source_id)
                 if telegram_published is not None:
                     if telegram_published_value:
-                        count_query += " AND nd.telegram_published_at IS NOT NULL"
+                        count_query += " AND EXISTS (SELECT 1 FROM rss_items_telegram_published rtp WHERE rtp.translation_id = nt_display.id)"
                     else:
-                        count_query += " AND nd.telegram_published_at IS NULL"
+                        count_query += " AND NOT EXISTS (SELECT 1 FROM rss_items_telegram_published rtp WHERE rtp.translation_id = nt_display.id)"
                 if from_date is not None:
                     count_query += " AND nd.created_at > %s"
                     count_params.append(from_date)
 
                 if phrase:
-                    # Требуется join с nt_display
-                    count_query = count_query.replace(
-                        "WHERE 1=1",
-                        "LEFT JOIN news_translations nt_display ON nd.news_id = nt_display.news_id AND nt_display.language = %s WHERE 1=1"
-                    )
-                    count_params.insert(0, display_language)
                     count_query += " AND ((nt_display.translated_title ILIKE %s OR nt_display.translated_content ILIKE %s) OR (nd.original_title ILIKE %s OR nd.original_content ILIKE %s))"
                     count_params.extend([phrase, phrase, phrase, phrase])
 

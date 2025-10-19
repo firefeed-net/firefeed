@@ -42,29 +42,45 @@ class PreparedRSSItem:
     image_filename: Optional[str]
 
 # --- Функции для работы с БД ---
-async def mark_news_as_published(news_id: str):
-    """Помечает RSS-элемент как опубликованный в Telegram, устанавливая текущую дату в telegram_published_at."""
+async def mark_translation_as_published(translation_id: int, channel_id: int, message_id: int = None):
+    """Помечает перевод как опубликованный в Telegram-канале."""
     try:
         # Получаем общий пул подключений
         db_pool = await get_shared_db_pool()
         async with db_pool.acquire() as connection:
             async with connection.cursor() as cursor:
                 query = """
-                    UPDATE published_news_data 
-                    SET telegram_published_at = NOW() 
-                    WHERE news_id = %s
+                    INSERT INTO rss_items_telegram_published
+                    (translation_id, channel_id, message_id, published_at)
+                    VALUES (%s, %s, %s, NOW())
+                    ON CONFLICT (translation_id, channel_id)
+                    DO UPDATE SET
+                        message_id = EXCLUDED.message_id,
+                        published_at = NOW()
                 """
-                await cursor.execute(query, (news_id,))
-                updated_rows = cursor.rowcount
-                if updated_rows > 0:
-                    logger.info(f"RSS-элемент {news_id} помечен как опубликованный в Telegram")
-                    return True
-                else:
-                    logger.warning(f"Не удалось пометить RSS-элемент {news_id} как опубликованный (запись не найдена)")
-                    return False
+                await cursor.execute(query, (translation_id, channel_id, message_id))
+                logger.info(f"Перевод {translation_id} помечен как опубликованный в канале {channel_id}")
+                return True
     except Exception as e:
-        logger.error(f"Ошибка при пометке RSS-элемента {news_id} как опубликованного: {e}")
+        logger.error(f"Ошибка при пометке перевода {translation_id} как опубликованного: {e}")
         return False
+
+async def get_translation_id(news_id: str, language: str) -> int:
+    """Получает ID перевода из таблицы news_translations."""
+    try:
+        db_pool = await get_shared_db_pool()
+        async with db_pool.acquire() as connection:
+            async with connection.cursor() as cursor:
+                query = """
+                    SELECT id FROM news_translations
+                    WHERE news_id = %s AND language = %s
+                """
+                await cursor.execute(query, (news_id, language))
+                result = await cursor.fetchone()
+                return result[0] if result else None
+    except Exception as e:
+        logger.error(f"Ошибка при получении ID перевода для {news_id} на {language}: {e}")
+        return None
 
 # --- Функции для работы с API ---
 async def api_get(endpoint: str, params: dict = None) -> dict:
@@ -532,12 +548,18 @@ async def post_to_channel(bot, prepared_rss_item: PreparedRSSItem):
                 title = original_title
                 content = original_content
                 lang_note = ""
+                translation_id = None  # Для оригинального языка нет перевода
             elif target_lang in translations_cache and translations_cache[target_lang]:
                 # Есть перевод
                 translation_data = translations_cache[target_lang]
                 title = translation_data.get('title', original_title)
-                content = translation_data.get('description', original_content)
+                content = translation_data.get('content', original_content)
                 lang_note = f"\n{TRANSLATED_FROM_LABELS.get(target_lang, '[AI] Translated from')} {original_lang.upper()}\n"
+                # Получаем ID перевода для отслеживания публикации
+                translation_id = await get_translation_id(news_id, target_lang)
+                if not translation_id:
+                    logger.warning(f"Не найден ID перевода для {news_id} на {target_lang}, пропускаем публикацию")
+                    continue
             else:
                 # Нет перевода, пропускаем
                 continue
@@ -566,22 +588,33 @@ async def post_to_channel(bot, prepared_rss_item: PreparedRSSItem):
                     else:
                         caption = caption[:1021] + "..."
                 try:
-                    await bot.send_photo(chat_id=channel_id, photo=image_filename, caption=caption, parse_mode='HTML')
+                    message = await bot.send_photo(chat_id=channel_id, photo=image_filename, caption=caption, parse_mode='HTML')
+                    message_id = message.message_id
                 except RetryAfter as e:
                     logger.warning(f"Flood control для канала {channel_id}, ждем {e.retry_after} секунд")
                     await asyncio.sleep(e.retry_after + 1)
-                    await bot.send_photo(chat_id=channel_id, photo=image_filename, caption=caption, parse_mode='HTML')
+                    message = await bot.send_photo(chat_id=channel_id, photo=image_filename, caption=caption, parse_mode='HTML')
+                    message_id = message.message_id
                 except Exception as e:
                     logger.error(f"Ошибка отправки фото в канал {channel_id}: {e}")
+                    continue
             else:
                 try:
-                    await bot.send_message(chat_id=channel_id, text=content_text, parse_mode='HTML', disable_web_page_preview=True)
+                    message = await bot.send_message(chat_id=channel_id, text=content_text, parse_mode='HTML', disable_web_page_preview=True)
+                    message_id = message.message_id
                 except RetryAfter as e:
                     logger.warning(f"Flood control для канала {channel_id}, ждем {e.retry_after} секунд")
                     await asyncio.sleep(e.retry_after + 1)
-                    await bot.send_message(chat_id=channel_id, text=content_text, parse_mode='HTML', disable_web_page_preview=True)
+                    message = await bot.send_message(chat_id=channel_id, text=content_text, parse_mode='HTML', disable_web_page_preview=True)
+                    message_id = message.message_id
                 except Exception as e:
                     logger.error(f"Ошибка отправки сообщения в канал {channel_id}: {e}")
+                    continue
+
+            # Помечаем перевод как опубликованный (только если это был перевод, не оригинал)
+            if translation_id:
+                await mark_translation_as_published(translation_id, channel_id, message_id)
+
             logger.info(f"Опубликовано в {channel_id}: {title[:50]}...")
             # Не выходим, продолжаем для других каналов, где есть переводы
         except Exception as e:
@@ -614,7 +647,7 @@ async def process_rss_item(context, rss_item_from_api):
             for lang, translation_data in rss_item_from_api['translations'].items():
                 translations[lang] = {
                     'title': translation_data.get('title', ''),
-                    'description': translation_data.get('content', ''), # Контент в API теперь content
+                    'content': translation_data.get('content', ''), # Контент в API теперь content
                     'category': translation_data.get('category', '')
                 }
         
@@ -647,7 +680,9 @@ async def process_rss_item(context, rss_item_from_api):
              await asyncio.gather(*tasks_to_await, return_exceptions=True)
 
         # Помечаем RSS-элемент как опубликованный в Telegram
-        await mark_news_as_published(news_id)
+        # Для каналов публикация уже отмечена в post_to_channel
+        # Для персональных отправок не нужно отмечать публикацию в БД
+        pass
 
         logger.debug(f"Завершение обработки RSS-элемента {news_id}")
         return True
