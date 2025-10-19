@@ -1,10 +1,13 @@
 # database.py
 import os
 import sys
+import logging
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import config
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any, List, Set, Tuple
+
+logger = logging.getLogger(__name__)
 
 async def get_db_pool():
     """Получает общий пул подключений к базе данных."""
@@ -12,16 +15,16 @@ async def get_db_pool():
         pool = await config.get_shared_db_pool()
         return pool
     except Exception as e:
-        print(f"[DB] Ошибка при получении пула подключений к PostgreSQL: {e}")
+        logger.info(f"[DB] Ошибка при получении пула подключений к PostgreSQL: {e}")
         return None
 
 async def close_db_pool():
     """Закрывает общий пул подключений к базе данных."""
     try:
         await config.close_shared_db_pool()
-        print("[DB] Общий пул подключений к PostgreSQL закрыт.")
+        logger.info("[DB] Общий пул подключений к PostgreSQL закрыт.")
     except Exception as e:
-        print(f"[DB] Ошибка при закрытии пула подключений к PostgreSQL: {e}")
+        logger.info(f"[DB] Ошибка при закрытии пула подключений к PostgreSQL: {e}")
 
 # --- Функции для работы с пользователями ---
 
@@ -43,7 +46,7 @@ async def create_user(pool, email: str, password_hash: str, language: str) -> Op
                     return dict(zip(columns, result))
                 return None
             except Exception as e:
-                print(f"[DB] Error creating user: {e}")
+                logger.info(f"[DB] Error creating user: {e}")
                 return None
 
 async def get_user_by_email(pool, email: str) -> Optional[Dict[str, Any]]:
@@ -62,7 +65,7 @@ async def get_user_by_email(pool, email: str) -> Optional[Dict[str, Any]]:
                     return dict(zip(columns, result))
                 return None
             except Exception as e:
-                print(f"[DB] Error getting user by email: {e}")
+                logger.info(f"[DB] Error getting user by email: {e}")
                 return None
 
 async def get_user_by_id(pool, user_id: int) -> Optional[Dict[str, Any]]:
@@ -81,7 +84,7 @@ async def get_user_by_id(pool, user_id: int) -> Optional[Dict[str, Any]]:
                     return dict(zip(columns, result))
                 return None
             except Exception as e:
-                print(f"[DB] Error getting user by id: {e}")
+                logger.info(f"[DB] Error getting user by id: {e}")
                 return None
 
 async def update_user(pool, user_id: int, update_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -113,7 +116,7 @@ async def update_user(pool, user_id: int, update_data: Dict[str, Any]) -> Option
                     return dict(zip(columns, result))
                 return None
             except Exception as e:
-                print(f"[DB] Error updating user: {e}")
+                logger.info(f"[DB] Error updating user: {e}")
                 return None
 
 async def delete_user(pool, user_id: int) -> bool:
@@ -129,7 +132,7 @@ async def delete_user(pool, user_id: int) -> bool:
                     return True
                 return False
             except Exception as e:
-                print(f"[DB] Error deleting user: {e}")
+                logger.info(f"[DB] Error deleting user: {e}")
                 return False
 
 async def activate_user(pool, user_id: int) -> bool:
@@ -143,7 +146,7 @@ async def activate_user(pool, user_id: int) -> bool:
                     return True
                 return False
             except Exception as e:
-                print(f"[DB] Error activating user: {e}")
+                logger.info(f"[DB] Error activating user: {e}")
                 return False
 
 async def update_user_password(pool, user_id: int, new_hashed_password: str) -> bool:
@@ -157,7 +160,7 @@ async def update_user_password(pool, user_id: int, new_hashed_password: str) -> 
                     return True
                 return False
             except Exception as e:
-                print(f"[DB] Error updating user password: {e}")
+                logger.info(f"[DB] Error updating user password: {e}")
                 return False
 
 # --- Функции для работы с кодами верификации ---
@@ -178,7 +181,7 @@ async def save_verification_code(pool, user_id: int, code: str) -> bool:
                 await cur.execute(query, (user_id, code, expires_at, datetime.utcnow()))
                 return True
             except Exception as e:
-                print(f"[DB] Error saving verification code: {e}")
+                logger.info(f"[DB] Error saving verification code: {e}")
                 return False
 
 async def verify_user_email(pool, email: str, code: str) -> Optional[int]:
@@ -198,7 +201,7 @@ async def verify_user_email(pool, email: str, code: str) -> Optional[int]:
                     return result[0] # Возвращаем user_id
                 return None
             except Exception as e:
-                print(f"[DB] Error verifying user email: {e}")
+                logger.info(f"[DB] Error verifying user email: {e}")
                 return None
 
 # --- Функции для работы с токенами сброса пароля ---
@@ -218,7 +221,7 @@ async def save_password_reset_token(pool, user_id: int, token: str, expires_at: 
                 await cur.execute(query, (user_id, token, expires_at, datetime.utcnow()))
                 return True
             except Exception as e:
-                print(f"[DB] Error saving password reset token: {e}")
+                logger.info(f"[DB] Error saving password reset token: {e}")
                 return False
 
 async def get_password_reset_token(pool, token: str) -> Optional[Dict[str, Any]]:
@@ -236,7 +239,7 @@ async def get_password_reset_token(pool, token: str) -> Optional[Dict[str, Any]]
                     return {"user_id": result[0], "expires_at": result[1]}
                 return None
             except Exception as e:
-                print(f"[DB] Error getting password reset token: {e}")
+                logger.info(f"[DB] Error getting password reset token: {e}")
                 return None
 
 async def delete_password_reset_token(pool, token: str) -> bool:
@@ -247,7 +250,7 @@ async def delete_password_reset_token(pool, token: str) -> bool:
                 await cur.execute("DELETE FROM password_reset_tokens WHERE token = %s", (token,))
                 return True
             except Exception as e:
-                print(f"[DB] Error deleting password reset token: {e}")
+                logger.info(f"[DB] Error deleting password reset token: {e}")
                 return False
 
 # --- Функции для работы с пользовательскими категориями ---
@@ -276,7 +279,7 @@ async def update_user_categories(pool, user_id: int, category_ids: Set[int]) -> 
                 return True
             except Exception as e:
                 await cur.execute("ROLLBACK")
-                print(f"[DB] Error updating user categories: {e}")
+                logger.info(f"[DB] Error updating user categories: {e}")
                 return False
 
 async def get_user_categories(
@@ -307,7 +310,7 @@ async def get_user_categories(
                     results.append({"id": row[0], "name": row[1]})
                 return results
             except Exception as e:
-                print(f"[DB] Error getting user categories: {e}")
+                logger.info(f"[DB] Error getting user categories: {e}")
                 return []
 
 # --- Функции для работы с пользовательскими RSS-лентами ---
@@ -330,7 +333,7 @@ async def create_user_rss_feed(pool, user_id: int, url: str, name: str, category
                     return dict(zip(columns, result))
                 return None
             except Exception as e:
-                print(f"[DB] Error creating user RSS feed: {e}")
+                logger.info(f"[DB] Error creating user RSS feed: {e}")
                 return None
 
 async def get_user_rss_feeds(pool, user_id: int, limit: int, offset: int) -> List[Dict[str, Any]]:
@@ -352,7 +355,7 @@ async def get_user_rss_feeds(pool, user_id: int, limit: int, offset: int) -> Lis
                     results.append(dict(zip(columns, row)))
                 return results
             except Exception as e:
-                print(f"[DB] Error getting user RSS feeds: {e}")
+                logger.info(f"[DB] Error getting user RSS feeds: {e}")
                 return []
 
 async def get_user_rss_feed_by_id(pool, user_id: int, feed_id: int) -> Optional[Dict[str, Any]]:
@@ -372,7 +375,7 @@ async def get_user_rss_feed_by_id(pool, user_id: int, feed_id: int) -> Optional[
                     return dict(zip(columns, result))
                 return None
             except Exception as e:
-                print(f"[DB] Error getting user RSS feed by ID: {e}")
+                logger.info(f"[DB] Error getting user RSS feed by ID: {e}")
                 return None
 
 async def update_user_rss_feed(pool, user_id: int, feed_id: int, update_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -405,7 +408,7 @@ async def update_user_rss_feed(pool, user_id: int, feed_id: int, update_data: Di
                     return dict(zip(columns, result))
                 return None
             except Exception as e:
-                print(f"[DB] Error updating user RSS feed: {e}")
+                logger.info(f"[DB] Error updating user RSS feed: {e}")
                 return None
 
 async def delete_user_rss_feed(pool, user_id: int, feed_id: int) -> bool:
@@ -419,7 +422,7 @@ async def delete_user_rss_feed(pool, user_id: int, feed_id: int) -> bool:
                     return True
                 return False
             except Exception as e:
-                print(f"[DB] Error deleting user RSS feed: {e}")
+                logger.info(f"[DB] Error deleting user RSS feed: {e}")
                 return False
 
 # --- Функции для получения RSS-элементов ---
@@ -532,7 +535,7 @@ async def get_user_rss_items_list(
                 return total_count, results, columns
 
             except Exception as e:
-                print(f"[DB] Error in get_user_rss_items_list: {e}")
+                logger.info(f"[DB] Error in get_user_rss_items_list: {e}")
                 raise # Перебрасываем исключение, чтобы обработать его в API
 
 async def get_user_rss_items_list_by_feed(
@@ -636,7 +639,7 @@ async def get_user_rss_items_list_by_feed(
                 return total_count, results, columns
 
             except Exception as e:
-                print(f"[DB] Error in get_user_rss_items_list_by_feed: {e}")
+                logger.info(f"[DB] Error in get_user_rss_items_list_by_feed: {e}")
                 raise # Перебрасываем исключение, чтобы обработать его в API
 
 # --- Перенесено: функция get_rss_item_by_id ---
@@ -678,7 +681,7 @@ async def get_rss_item_by_id(pool, news_id: str) -> Optional[Tuple]:
                 result = await cur.fetchone()
                 return result
             except Exception as e:
-                print(f"[DB] Ошибка при получении RSS-элемента по ID: {e}")
+                logger.info(f"[DB] Ошибка при получении RSS-элемента по ID: {e}")
                 raise
 
 # --- Добавлено: обертка для get_rss_item_by_id, возвращающая row и columns ---
@@ -718,7 +721,7 @@ async def get_rss_item_by_id_full(pool, news_id: str) -> Tuple[Optional[Tuple], 
                 columns = [desc[0] for desc in cur.description]
                 return result, columns
             except Exception as e:
-                print(f"[DB] Ошибка при получении RSS-элемента по ID (full): {e}")
+                logger.info(f"[DB] Ошибка при получении RSS-элемента по ID (full): {e}")
                 return None, []
 
 async def get_all_rss_items_list(
@@ -897,7 +900,7 @@ async def get_all_rss_items_list(
 
                 return total_count, results, columns
             except Exception as e:
-                print(f"[DB] Ошибка при выполнении запроса в get_all_rss_items_list: {e}")
+                logger.info(f"[DB] Ошибка при выполнении запроса в get_all_rss_items_list: {e}")
                 raise
 
 async def get_all_categories_list(
@@ -949,7 +952,7 @@ async def get_all_categories_list(
 
                 return total_count, results
             except Exception as e:
-                print(f"[DB] Ошибка при выполнении запроса в get_all_categories_list: {e}")
+                logger.info(f"[DB] Ошибка при выполнении запроса в get_all_categories_list: {e}")
                 raise
 
 async def get_all_sources_list(
@@ -1009,7 +1012,7 @@ async def get_all_sources_list(
 
                 return total_count, results
             except Exception as e:
-                print(f"[DB] Ошибка при выполнении запроса в get_all_sources_list: {e}")
+                logger.info(f"[DB] Ошибка при выполнении запроса в get_all_sources_list: {e}")
                 raise
 
 async def get_recent_news_for_broadcast(pool, last_check_time: datetime) -> List[Dict[str, Any]]:
@@ -1072,5 +1075,5 @@ async def get_recent_news_for_broadcast(pool, last_check_time: datetime) -> List
                     })
                 return news_items
             except Exception as e:
-                print(f"[DB] Error in get_recent_news_for_broadcast: {e}")
+                logger.info(f"[DB] Error in get_recent_news_for_broadcast: {e}")
                 return [] # Возвращаем пустой список в случае ошибки, чтобы не прерывать фоновую задачу

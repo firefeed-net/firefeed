@@ -1,14 +1,16 @@
 import re
 import html
-import requests
+import aiohttp
 import asyncio
 import os
 import hashlib
+import logging
 from bs4 import BeautifulSoup
 from urllib.parse import urlparse, urljoin
-from functools import partial
 from config import IMAGES_ROOT_DIR, IMAGE_FILE_EXTENSIONS
 from datetime import datetime
+
+logger = logging.getLogger(__name__)
 
 def clean_html(raw_html):
     """Удаляет все HTML-теги и преобразует HTML-сущности"""
@@ -42,27 +44,25 @@ async def download_and_save_image(url, news_id, save_directory=IMAGES_ROOT_DIR):
     """
     Скачивает изображение и сохраняет его локально с именем файла на основе news_id.
     Сохраняет по пути: save_directory/YYYY/MM/DD/{news_id}{ext}
-    
+
     :param url: URL изображения
     :param news_id: уникальный ID новости для БД
     :param save_directory: директория для сохранения изображений
     :return: путь к сохраненному файлу или None
     """
     if not url or not news_id:
-        print(f"[DEBUG] Пропущено сохранение изображения: нет URL ({url}) или news_id ({news_id})")
+        logger.debug(f"[DEBUG] Пропущено сохранение изображения: нет URL ({url}) или news_id ({news_id})")
         return None
-        
+
     try:
         # Используем текущее время для формирования пути
         created_at = datetime.now()
         date_path = created_at.strftime("%Y/%m/%d")
         full_save_directory = os.path.join(save_directory, date_path)
 
-        print(f"[DEBUG] Начинаем сохранять изображение из {url} в {full_save_directory}")
+        logger.debug(f"[DEBUG] Начинаем сохранять изображение из {url} в {full_save_directory}")
         os.makedirs(full_save_directory, exist_ok=True)
-        
-        loop = asyncio.get_event_loop()
-        
+
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
@@ -71,51 +71,53 @@ async def download_and_save_image(url, news_id, save_directory=IMAGES_ROOT_DIR):
             'Connection': 'keep-alive',
         }
 
-        # Используем partial для передачи kwargs
-        response = await loop.run_in_executor(
-            None,
-            partial(requests.get, url, headers=headers, timeout=30)
-        )
+        # Используем aiohttp для асинхронного скачивания
+        timeout = aiohttp.ClientTimeout(total=10)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.get(url, headers=headers) as response:
+                response.raise_for_status()
 
-        response.raise_for_status()
+                content_type = response.headers.get('Content-Type', '').lower()
+                content_lower = content_type.lower()
+                extension = '.jpg'
 
-        content_type = response.headers.get('content-type', '').lower()
-        content_lower = content_type.lower()
-        extension = '.jpg'
+                # Проверяем content_type
+                for ext in IMAGE_FILE_EXTENSIONS:
+                    if ext[1:] in content_lower:
+                        extension = ext
+                        break
+                else:
+                    # Проверяем URL
+                    parsed_url = urlparse(url)
+                    path = parsed_url.path
+                    if path.lower().endswith(tuple(IMAGE_FILE_EXTENSIONS)):
+                        extension = os.path.splitext(path)[1].lower()
 
-        # Проверяем content_type
-        for ext in IMAGE_FILE_EXTENSIONS:
-            if ext[1:] in content_lower:
-                extension = ext
-                break
-        else:
-            # Проверяем URL
-            parsed_url = urlparse(url)
-            path = parsed_url.path
-            if path.lower().endswith(tuple(IMAGE_FILE_EXTENSIONS)):
-                extension = os.path.splitext(path)[1].lower()
+                safe_news_id = "".join(c for c in str(news_id) if c.isalnum() or c in ('-', '_')).rstrip()
+                if not safe_news_id:
+                    safe_news_id = hashlib.md5(url.encode()).hexdigest()
 
-        safe_news_id = "".join(c for c in str(news_id) if c.isalnum() or c in ('-', '_')).rstrip()
-        if not safe_news_id:
-            safe_news_id = hashlib.md5(url.encode()).hexdigest()
+                filename = f"{safe_news_id}{extension}"
+                file_path = os.path.join(full_save_directory, filename)
 
-        filename = f"{safe_news_id}{extension}"
-        file_path = os.path.join(full_save_directory, filename)
+                # Читаем контент асинхронно
+                content = await response.read()
 
-        with open(file_path, 'wb') as f:
-            f.write(response.content)
+                # Сохраняем файл асинхронно
+                with open(file_path, 'wb') as f:
+                    f.write(content)
 
-        print(f"[LOG] Изображение успешно сохранено: {file_path}")
+        logger.info(f"[LOG] Изображение успешно сохранено: {file_path}")
         return file_path
 
-    except requests.exceptions.RequestException as e:
-        print(f"[WARN] Ошибка сети при скачивании изображения {url}: {e}")
+    except aiohttp.ClientError as e:
+        logger.warning(f"[WARN] Ошибка сети при скачивании изображения {url}: {e}")
         return None
     except OSError as e:
-        print(f"[WARN] Ошибка файловой системы при сохранении изображения {url} в {full_save_directory}: {e}")
+        logger.warning(f"[WARN] Ошибка файловой системы при сохранении изображения {url} в {full_save_directory}: {e}")
         return None
     except Exception as e:
-        print(f"[WARN] Неожиданная ошибка при скачивании/сохранении изображения {url}: {e}")
+        logger.warning(f"[WARN] Неожиданная ошибка при скачивании/сохранении изображения {url}: {e}")
         return None
 
 async def extract_image_from_preview(url):
@@ -173,5 +175,5 @@ async def extract_image_from_preview(url):
         
         return None
     except Exception as e:
-        print(f"[WARN] Ошибка при извлечении изображения из {url}: {e}")
+        logger.warning(f"[WARN] Ошибка при извлечении изображения из {url}: {e}")
         return None

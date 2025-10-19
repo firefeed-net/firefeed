@@ -4,6 +4,7 @@ import torch
 import spacy
 import time
 import re
+import logging
 from config import CHANNEL_IDS
 import threading
 from concurrent.futures import ThreadPoolExecutor
@@ -17,6 +18,8 @@ from firefeed_embeddings_processor import FireFeedEmbeddingsProcessor
 
 # Импортируем терминологический словарь
 from firefeed_translator_terminology_dict import TERMINOLOGY_DICT
+
+logger = logging.getLogger(__name__)
 
 class CachedModel:
     """Класс для хранения модели с метаданными"""
@@ -45,16 +48,18 @@ class FireFeedTranslator:
         self.executor = ThreadPoolExecutor(max_workers=max_workers)
         self.translation_semaphore = asyncio.Semaphore(max_concurrent_translations)
         
-        # Кэш для spacy моделей
+        # Кэш для spacy моделей с ограничением
         self.spacy_models = {}
+        self.max_spacy_cache = 3  # Максимум 3 модели в кэше
+        self.spacy_usage_order = []  # Для LRU
         
         # Терминологический словарь (из внешнего файла)
         self.terminology_dict = TERMINOLOGY_DICT
         
         # Загрузка процессора эмбеддингов для семантической проверки
-        print("[SEMANTIC] Загрузка процессора эмбеддингов для семантической проверки...")
+        logger.info("[SEMANTIC] Загрузка процессора эмбеддингов для семантической проверки...")
         self.embeddings_processor = FireFeedEmbeddingsProcessor('paraphrase-multilingual-mpnet-base-v2', device)
-        print("[SEMANTIC] Процессор загружен")
+        logger.info("[SEMANTIC] Процессор загружен")
         
         # Статистика использования
         self.stats = {
@@ -65,21 +70,29 @@ class FireFeedTranslator:
             'total_translation_time': 0
         }
         
-        print(f"[TRANSLATOR] Инициализация FireFeedTranslator на устройстве: {self.device}")
-        print(f"[TRANSLATOR] Пул потоков: {max_workers} workers")
-        print(f"[TRANSLATOR] Максимум одновременных переводов: {max_concurrent_translations}")
-        print(f"[TRANSLATOR] Максимум моделей в кэше: {max_cached_models}")
+        logger.info(f"[TRANSLATOR] Инициализация FireFeedTranslator на устройстве: {self.device}")
+        logger.info(f"[TRANSLATOR] Пул потоков: {max_workers} workers")
+        logger.info(f"[TRANSLATOR] Максимум одновременных переводов: {max_concurrent_translations}")
+        logger.info(f"[TRANSLATOR] Максимум моделей в кэше: {max_cached_models}")
 
         # Запуск фоновой задачи для выгрузки неиспользуемых моделей
         asyncio.create_task(self._model_cleanup_task())
 
     def _get_spacy_model(self, lang_code):
-        """Получает spacy модель для языка. Потокобезопасна. Использует executor для асинхронности."""
+        """Получает spacy модель для языка с LRU кэшированием. Потокобезопасна."""
         if lang_code in self.spacy_models:
+            # Обновляем порядок использования (LRU)
+            if lang_code in self.spacy_usage_order:
+                self.spacy_usage_order.remove(lang_code)
+            self.spacy_usage_order.append(lang_code)
             return self.spacy_models[lang_code]
 
         with self.model_load_lock:
             if lang_code in self.spacy_models:
+                # Обновляем порядок использования
+                if lang_code in self.spacy_usage_order:
+                    self.spacy_usage_order.remove(lang_code)
+                self.spacy_usage_order.append(lang_code)
                 return self.spacy_models[lang_code]
 
             # Сопоставление языкового кода с моделью spacy
@@ -92,7 +105,7 @@ class FireFeedTranslator:
 
             model_name = spacy_model_map.get(lang_code)
             if not model_name:
-                print(f"[SPACY] Языковая модель для '{lang_code}' не найдена, используем 'en_core_web_sm'")
+                logger.warning(f"[SPACY] Языковая модель для '{lang_code}' не найдена, используем 'en_core_web_sm'")
                 model_name = 'en_core_web_sm'
 
             try:
@@ -100,11 +113,20 @@ class FireFeedTranslator:
                 future = self.executor.submit(spacy.load, model_name)
                 nlp = future.result()  # Синхронно ждем
                 self.spacy_models[lang_code] = nlp
-                print(f"[SPACY] Загружена модель для языка '{lang_code}': {model_name}")
+                self.spacy_usage_order.append(lang_code)
+
+                # Очищаем кэш если превышен лимит
+                if len(self.spacy_models) > self.max_spacy_cache:
+                    # Удаляем наименее недавно использованную модель
+                    oldest_lang = self.spacy_usage_order.pop(0)
+                    del self.spacy_models[oldest_lang]
+                    logger.info(f"[SPACY] Очищена spacy модель для языка '{oldest_lang}' (превышен лимит кэша)")
+
+                logger.info(f"[SPACY] Загружена модель для языка '{lang_code}': {model_name}")
                 return nlp
             except OSError:
-                print(f"[SPACY] Модель '{model_name}' не найдена. Установите её командой:")
-                print(f"python -m spacy download {model_name}")
+                logger.error(f"[SPACY] Модель '{model_name}' не найдена. Установите её командой:")
+                logger.error(f"python -m spacy download {model_name}")
                 return None
 
     def _preprocess_text_with_terminology(self, text, target_lang):
@@ -262,11 +284,11 @@ class FireFeedTranslator:
         try:
             # Если перевод идентичен оригиналу, считаем плохим
             if original_text.strip() == translated_text.strip():
-                print("[SEMANTIC] Перевод идентичен оригиналу")
+                logger.warning("[SEMANTIC] Перевод идентичен оригиналу")
                 return False
 
             if self._is_broken_translation(translated_text):
-                print("[SEMANTIC] Обнаружен битый перевод (повторы слов)")
+                logger.warning("[SEMANTIC] Обнаружен битый перевод (повторы слов)")
                 return False
 
             # Длина текста для динамического threshold
@@ -282,10 +304,10 @@ class FireFeedTranslator:
 
             # Считаем сходство
             similarity = self.embeddings_processor.calculate_similarity(original_embedding, translated_embedding)
-            print(f"[SEMANTIC] similarity = {similarity:.4f}, threshold = {threshold:.4f}, original_text = {original_text[:50]}..., translated_text = {translated_text[:50]}...")
+            logger.debug(f"[SEMANTIC] similarity = {similarity:.4f}, threshold = {threshold:.4f}, original_text = {original_text[:50]}..., translated_text = {translated_text[:50]}...")
             return similarity >= threshold
         except Exception as e:
-            print(f"[SEMANTIC] Ошибка в семантической проверке: {e}")
+            logger.error(f"[SEMANTIC] Ошибка в семантической проверке: {e}")
             return True  # Если ошибка — считаем, что всё ок
 
     def _check_memory_usage(self):
@@ -300,7 +322,7 @@ class FireFeedTranslator:
         """Очистка старых моделей при высоком использовании памяти"""
         memory_percent = self._check_memory_usage()
         if memory_percent > 85:  # Если памяти > 85%
-            print(f"[MEMORY] Высокое использование памяти: {memory_percent}%. Очистка кэша моделей...")
+            logger.warning(f"[MEMORY] Высокое использование памяти: {memory_percent}%. Очистка кэша моделей...")
             # Очищаем половину кэша
             models_to_remove = len(self.model_cache) // 2
             for _ in range(models_to_remove):
@@ -308,14 +330,14 @@ class FireFeedTranslator:
                     old_key, _ = self.model_cache.popitem(last=False)
                     self.tokenizer_cache.pop(old_key, None)
             gc.collect()
-            print(f"[MEMORY] Очищено {models_to_remove} моделей из кэша")
+            logger.info(f"[MEMORY] Очищено {models_to_remove} моделей из кэша")
 
     def _enforce_cache_limit(self):
         """Принудительное ограничение размера кэша"""
         while len(self.model_cache) >= self.max_cached_models:
             old_key, _ = self.model_cache.popitem(last=False)
             self.tokenizer_cache.pop(old_key, None)
-            print(f"[CACHE] Удалена старая модель из кэша: {old_key}")
+            logger.info(f"[CACHE] Удалена старая модель из кэша: {old_key}")
 
     def _unload_unused_models(self):
         """Выгрузка моделей, не использовавшихся более 30 минут"""
@@ -330,11 +352,11 @@ class FireFeedTranslator:
         for cache_key in models_to_remove:
             del self.model_cache[cache_key]
             self.tokenizer_cache.pop(cache_key, None)
-            print(f"[MEMORY] Выгружена неиспользуемая модель: {cache_key}")
+            logger.info(f"[MEMORY] Выгружена неиспользуемая модель: {cache_key}")
 
         if models_to_remove:
             gc.collect()
-            print(f"[MEMORY] Выгружено {len(models_to_remove)} неиспользуемых моделей")
+            logger.info(f"[MEMORY] Выгружено {len(models_to_remove)} неиспользуемых моделей")
 
     async def _model_cleanup_task(self):
         """Фоновая задача для периодической выгрузки неиспользуемых моделей"""
@@ -343,7 +365,7 @@ class FireFeedTranslator:
             try:
                 self._unload_unused_models()
             except Exception as e:
-                print(f"[MEMORY] Ошибка в задаче очистки моделей: {e}")
+                logger.error(f"[MEMORY] Ошибка в задаче очистки моделей: {e}")
 
     def _get_model(self, direction):
         """
@@ -362,7 +384,7 @@ class FireFeedTranslator:
                 del self.model_cache[cache_key]
                 self.tokenizer_cache.pop(cache_key, None)
                 gc.collect()
-                print(f"[MODEL] Удалена устаревшая модель: {cache_key}")
+                logger.info(f"[MODEL] Удалена устаревшая модель: {cache_key}")
             else:
                 # Обновляем время последнего использования (LRU)
                 cached.last_used = current_time
@@ -389,18 +411,18 @@ class FireFeedTranslator:
                 else:
                     raise ValueError(f"Неизвестное направление: {direction}")
 
-                print(f"[TRANSLATOR] [{time.time():.3f}] Начало загрузки модели {model_name} через Transformers...")
+                logger.info(f"[TRANSLATOR] [{time.time():.3f}] Начало загрузки модели {model_name} через Transformers...")
 
                 # Загрузка токенизатора и модели через Transformers
                 tokenizer = M2M100Tokenizer.from_pretrained(model_name)
                 model = M2M100ForConditionalGeneration.from_pretrained(model_name).to(self.device)
 
-                print(f"[TRANSLATOR] [{time.time():.3f}] Модель {model_name} загружена через Transformers на {self.device}.")
+                logger.info(f"[TRANSLATOR] [{time.time():.3f}] Модель {model_name} загружена через Transformers на {self.device}.")
 
                 # Валидация модели: тест на простом переводе
                 test_result = self._validate_model(model, tokenizer)
                 if not test_result:
-                    print(f"[MODEL] Валидация модели {model_name} провалилась, модель может быть повреждена")
+                    logger.error(f"[MODEL] Валидация модели {model_name} провалилась, модель может быть повреждена")
                     return None, None
 
                 # Сохраняем в кэш
@@ -416,7 +438,7 @@ class FireFeedTranslator:
                 return model, tokenizer
 
             except Exception as e:
-                print(f"[ERROR] [TRANSLATOR] [{time.time():.3f}] Ошибка загрузки модели {model_name}: {e}")
+                logger.error(f"[ERROR] [TRANSLATOR] [{time.time():.3f}] Ошибка загрузки модели {model_name}: {e}")
                 traceback.print_exc()
                 return None, None
 
@@ -442,25 +464,25 @@ class FireFeedTranslator:
                 if any(char in 'абвгдеёжзийклмнопрстуфхцчшщъыьэюя' for char in translation.lower()):
                     return True
                 else:
-                    print(f"[MODEL] Валидация: перевод не содержит русских букв '{translation}'")
+                    logger.warning(f"[MODEL] Валидация: перевод не содержит русских букв '{translation}'")
                     return False
             else:
-                print(f"[MODEL] Валидация провалилась: пустой или слишком короткий перевод '{translation}'")
+                logger.warning(f"[MODEL] Валидация провалилась: пустой или слишком короткий перевод '{translation}'")
                 return False
         except Exception as e:
-            print(f"[MODEL] Ошибка валидации модели: {e}")
+            logger.error(f"[MODEL] Ошибка валидации модели: {e}")
             return False
 
     def _translate_with_context_sync(self, texts, source_lang='en', target_lang='ru', context_window=2):
         """
         Синхронная версия translate_with_context для использования в пуле потоков
         """
-        print(f"[TRANSLATOR] [{time.time():.3f}] _translate_with_context_sync: {source_lang} -> {target_lang}, {len(texts)} предложений")
+        logger.debug(f"[TRANSLATOR] [{time.time():.3f}] _translate_with_context_sync: {source_lang} -> {target_lang}, {len(texts)} предложений")
 
         # Прямой перевод с M2M100
         translated = self._translate_batch_sync(texts, source_lang, target_lang, context_window)
 
-        print(f"[TRANSLATOR] [{time.time():.3f}] _translate_with_context_sync завершена.")
+        logger.debug(f"[TRANSLATOR] [{time.time():.3f}] _translate_with_context_sync завершена.")
         return translated
 
     def _translate_text_sync(self, text, source_lang='en', target_lang='ru', context_window=2):
@@ -470,12 +492,12 @@ class FireFeedTranslator:
             context_window = 0
 
         start_time = time.time()
-        print(f"[TRANSLATOR] [{start_time:.3f}] Начало перевода: {source_lang} -> {target_lang}, текст длиной {len(text)} символов, слов: {len(text.split())}")
-        
+        logger.debug(f"[TRANSLATOR] [{start_time:.3f}] Начало перевода: {source_lang} -> {target_lang}, текст длиной {len(text)} символов, слов: {len(text.split())}")
+
         if source_lang == target_lang:
             result = clean_html(text)
             end_time = time.time()
-            print(f"[TRANSLATOR] [{end_time:.3f}] Языки совпадают, возврат без перевода. Время выполнения: {end_time - start_time:.3f} сек")
+            logger.debug(f"[TRANSLATOR] [{end_time:.3f}] Языки совпадают, возврат без перевода. Время выполнения: {end_time - start_time:.3f} сек")
             return result
 
         # Используем более надежный ключ для кэширования
@@ -483,14 +505,14 @@ class FireFeedTranslator:
         if cache_key in self.translation_cache:
             cached_result = self.translation_cache[cache_key]
             end_time = time.time()
-            print(f"[TRANSLATOR] [{end_time:.3f}] Результат найден в кэше. Время выполнения: {end_time - start_time:.3f} сек")
+            logger.debug(f"[TRANSLATOR] [{end_time:.3f}] Результат найден в кэше. Время выполнения: {end_time - start_time:.3f} сек")
             return cached_result
 
         # Предварительная обработка: замена терминов на переводы
         text = self._preprocess_text_with_terminology(text, target_lang)
 
-        print(f"[TRANSLATOR] [{time.time():.3f}] Прямой перевод {source_lang} -> {target_lang}")
-        print(f"[TRANSLATOR] [{time.time():.3f}] Токенизация текста...")
+        logger.debug(f"[TRANSLATOR] [{time.time():.3f}] Прямой перевод {source_lang} -> {target_lang}")
+        logger.debug(f"[TRANSLATOR] [{time.time():.3f}] Токенизация текста...")
 
         # Используем spacy для разбиения на предложения
         nlp = self._get_spacy_model(source_lang)
@@ -499,14 +521,14 @@ class FireFeedTranslator:
         else:
             doc = nlp(text)
             sentences = [sent.text.strip() for sent in doc.sents]
-        
-        print(f"[TRANSLATOR] [{time.time():.3f}] Получено {len(sentences)} предложений")
-        
-        print(f"[TRANSLATOR] [{time.time():.3f}] Начало перевода с контекстом (окно: {context_window})")
+
+        logger.debug(f"[TRANSLATOR] [{time.time():.3f}] Получено {len(sentences)} предложений")
+
+        logger.debug(f"[TRANSLATOR] [{time.time():.3f}] Начало перевода с контекстом (окно: {context_window})")
         translate_start = time.time()
         translated = " ".join(self._translate_with_context_sync(sentences, source_lang, target_lang, context_window))
         translate_time = time.time() - translate_start
-        print(f"[TRANSLATOR] [{time.time():.3f}] Перевод завершен за {translate_time:.3f} сек")
+        logger.debug(f"[TRANSLATOR] [{time.time():.3f}] Перевод завершен за {translate_time:.3f} сек")
 
         # Применяем пост-обработку
         result = self._postprocess_text(translated, target_lang)
@@ -516,7 +538,7 @@ class FireFeedTranslator:
         end_time = time.time()
         total_time = end_time - start_time
         self.stats['total_translation_time'] += total_time
-        print(f"[TRANSLATOR] [{end_time:.3f}] Перевод завершен. Общее время выполнения: {total_time:.3f} сек")
+        logger.debug(f"[TRANSLATOR] [{end_time:.3f}] Перевод завершен. Общее время выполнения: {total_time:.3f} сек")
         return result
 
     def _get_optimal_batch_size(self):
@@ -557,7 +579,7 @@ class FireFeedTranslator:
         translated_batches = []
         for i in range(0, len(sentences), batch_size):
             batch_sentences = sentences[i:i + batch_size]
-            print(f"[TRANSLATOR] [BATCH] Перевод батча {i//batch_size + 1}/{(len(sentences)-1)//batch_size + 1}: {len(batch_sentences)} предложений")
+            logger.debug(f"[TRANSLATOR] [BATCH] Перевод батча {i//batch_size + 1}/{(len(sentences)-1)//batch_size + 1}: {len(batch_sentences)} предложений")
 
             # Адаптируем параметры в зависимости от длины текста
             text_length = len(' '.join(batch_sentences).split())
@@ -591,7 +613,7 @@ class FireFeedTranslator:
             # Проверяем каждую трансляцию на gibberish и заменяем на fallback если нужно
             for j in range(len(batch_translations)):
                 if self._is_broken_translation(batch_translations[j]):
-                    print(f"[GIBBERISH] Обнаружен gibberish в батче, пробуем fallback для: '{batch_sentences[j][:50]}...'")
+                    logger.warning(f"[GIBBERISH] Обнаружен gibberish в батче, пробуем fallback для: '{batch_sentences[j][:50]}...'")
                     # Fallback: перевод с beam_size=1
                     fallback_encoded = tokenizer([batch_sentences[j]], return_tensors="pt").to(self.device)
                     fallback_tokens = model.generate(
@@ -606,9 +628,9 @@ class FireFeedTranslator:
                     fallback_translation = tokenizer.batch_decode(fallback_tokens, skip_special_tokens=True)[0]
                     if not self._is_broken_translation(fallback_translation):
                         batch_translations[j] = fallback_translation
-                        print(f"[FALLBACK] Fallback успешен")
+                        logger.info(f"[FALLBACK] Fallback успешен")
                     else:
-                        print(f"[FALLBACK] Fallback тоже плохой, оставляем оригинал")
+                        logger.warning(f"[FALLBACK] Fallback тоже плохой, оставляем оригинал")
 
             translated_batches.extend(batch_translations)
         return translated_batches
@@ -634,7 +656,7 @@ class FireFeedTranslator:
         if not texts:
             return []
 
-        print(f"[TRANSLATOR] [BATCH] Начало пакетного перевода: {source_lang} -> {target_lang}, {len(texts)} текстов")
+        logger.debug(f"[TRANSLATOR] [BATCH] Начало пакетного перевода: {source_lang} -> {target_lang}, {len(texts)} текстов")
 
         # Предварительная обработка: замена терминов на переводы
         texts = [self._preprocess_text_with_terminology(t, target_lang) for t in texts]
@@ -642,7 +664,7 @@ class FireFeedTranslator:
         # Используем мультиязычную модель m2m100
         model, tokenizer = self._get_model('m2m100')
         if model is None or tokenizer is None:
-            print(f"[TRANSLATOR] [BATCH] Модель m2m100 не найдена или повреждена, возврат исходных текстов.")
+            logger.error(f"[TRANSLATOR] [BATCH] Модель m2m100 не найдена или повреждена, возврат исходных текстов.")
             return texts
 
         # Подготавливаем предложения
@@ -650,23 +672,23 @@ class FireFeedTranslator:
         if not all_sentences:
             return texts
 
-        print(f"[TRANSLATOR] [BATCH] Всего предложений для перевода: {len(all_sentences)}")
-        print(f"[TRANSLATOR] [BATCH] Используемое устройство: {self.device}")
+        logger.debug(f"[TRANSLATOR] [BATCH] Всего предложений для перевода: {len(all_sentences)}")
+        logger.debug(f"[TRANSLATOR] [BATCH] Используемое устройство: {self.device}")
 
         # Определяем оптимальный размер батча
         batch_size = self._get_optimal_batch_size()
-        print(f"[TRANSLATOR] [BATCH] Оптимальный размер батча: {batch_size}")
+        logger.debug(f"[TRANSLATOR] [BATCH] Оптимальный размер батча: {batch_size}")
 
         # Переводим предложения батчами
         translated_batches = self._translate_sentence_batches(all_sentences, model, tokenizer, source_lang, target_lang, batch_size, beam_size)
 
         # Собираем результаты
         cleaned_results = self._assemble_translated_texts(texts, translated_batches, sentence_counts, target_lang)
-        print(f"[TRANSLATOR] [BATCH] Пакетный перевод завершен. Переведено {len(cleaned_results)} текстов")
+        logger.debug(f"[TRANSLATOR] [BATCH] Пакетный перевод завершен. Переведено {len(cleaned_results)} текстов")
         return cleaned_results
 
     async def translate_async(self, texts, source_lang, target_lang, context_window=2, beam_size=None):
-        print(f"[TRANSLATOR] [ASYNC] Начало translate_async для задачи")
+        logger.debug(f"[TRANSLATOR] [ASYNC] Начало translate_async для задачи")
         """Асинхронный метод перевода с использованием пула потоков"""
         loop = asyncio.get_event_loop()
 
@@ -688,30 +710,30 @@ class FireFeedTranslator:
                 self.stats['translations_processed'] += len(texts)
                 return result
             except asyncio.TimeoutError:
-                print(f"[ERROR] [TRANSLATOR] ТАЙМАУТ (120 сек) для '{source_lang}' -> '{target_lang}'!")
+                logger.error(f"[ERROR] [TRANSLATOR] ТАЙМАУТ (120 сек) для '{source_lang}' -> '{target_lang}'!")
                 return texts
             except Exception as e:
-                print(f"[ERROR] [TRANSLATOR] Ошибка при переводе '{source_lang}' -> '{target_lang}': {e}")
+                logger.error(f"[ERROR] [TRANSLATOR] Ошибка при переводе '{source_lang}' -> '{target_lang}': {e}")
                 traceback.print_exc()
                 return texts
     
     async def prepare_translations(self, title: str, content: str, original_lang: str, callback=None, error_callback=None, task_id=None) -> dict:
         """Подготавливает переводы заголовка, содержания и категории на все целевые языки."""
         start_time = time.time()
-        print(f"[TRANSLATOR] prepare_translations начата для языка '{original_lang}' для задачи: {task_id[:20] if task_id else 'Unknown'}")
+        logger.info(f"[TRANSLATOR] prepare_translations начата для языка '{original_lang}' для задачи: {task_id[:20] if task_id else 'Unknown'}")
 
         try:
             translations = {}
             target_languages = list(CHANNEL_IDS.keys())
 
-            print(f"[TRANSLATOR] Целевые языки для перевода: {target_languages}")
+            logger.debug(f"[TRANSLATOR] Целевые языки для перевода: {target_languages}")
             clean_title = clean_html(title)
             clean_content = clean_html(content)
 
             # - Обработка оригинального языка -
             # Всегда включаем оригинальный язык в словарь переводов
             translations[original_lang] = {'title': clean_title, 'content': clean_content}
-            print(f"[TRANSLATOR] Оригинальный язык '{original_lang}' включен в результаты без перевода.")
+            logger.debug(f"[TRANSLATOR] Оригинальный язык '{original_lang}' включен в результаты без перевода.")
 
             # - Подготовка и выполнение переводов -
             translation_results = {}
@@ -725,21 +747,21 @@ class FireFeedTranslator:
                 ]
                 lang_pairs.append((original_lang, target_lang, pairs))
 
-            print(f"[TRANSLATOR] [BATCH] Подготовлено {len(lang_pairs)} языковых пар для перевода.")
+            logger.debug(f"[TRANSLATOR] [BATCH] Подготовлено {len(lang_pairs)} языковых пар для перевода.")
 
             # Выполняем переводы для каждой языковой пары
             for i, (src_lang, tgt_lang, texts_to_process) in enumerate(lang_pairs):
-                print(f"[TRANSLATOR] [BATCH] [{i+1}/{len(lang_pairs)}] Перевод '{src_lang}' -> '{tgt_lang}': {len(texts_to_process)} текстов")
+                logger.debug(f"[TRANSLATOR] [BATCH] [{i+1}/{len(lang_pairs)}] Перевод '{src_lang}' -> '{tgt_lang}': {len(texts_to_process)} текстов")
                 group_start_time = time.time()
                 try:
                     # Извлекаем только тексты для перевода
                     texts_only = [text for _, _, text, _ in texts_to_process]
-                    
+
                     # Выполняем асинхронный перевод
                     translated_texts = await self.translate_async(texts_only, src_lang, tgt_lang)
-                    
+
                     group_duration = time.time() - group_start_time
-                    print(f"[TRANSLATOR] [BATCH] [{i+1}/{len(lang_pairs)}] Группа '{src_lang}' -> '{tgt_lang}' обработана за {group_duration:.2f} сек.")
+                    logger.debug(f"[TRANSLATOR] [BATCH] [{i+1}/{len(lang_pairs)}] Группа '{src_lang}' -> '{tgt_lang}' обработана за {group_duration:.2f} сек.")
 
                     # Сохраняем результаты
                     translation_results[(src_lang, tgt_lang)] = list(zip(
@@ -753,16 +775,16 @@ class FireFeedTranslator:
                         f"Критическая ошибка для группы '{src_lang}' -> '{tgt_lang}' "
                         f"за {group_duration:.2f} сек: {e}"
                     )
-                    print(error_msg)
+                    logger.error(error_msg)
                     traceback.print_exc()
                     # В случае критической ошибки используем оригинальные тексты
                     translation_results[(src_lang, tgt_lang)] = [
-                        (field_type, original_text) 
+                        (field_type, original_text)
                         for _, _, original_text, field_type in texts_to_process
                     ]
 
             # - Компоновка финальных результатов -
-            print("[TRANSLATOR] Начата компоновка финальных результатов переводов.")
+            logger.debug("[TRANSLATOR] Начата компоновка финальных результатов переводов.")
             for target_lang in target_languages:
                 if original_lang == target_lang:
                     continue
@@ -779,12 +801,12 @@ class FireFeedTranslator:
 
                     # Проверяем, что перевод отличается от оригинала
                     if translated_text.strip() == original_text.strip():
-                        print(f"[TRANSLATOR] Перевод идентичен оригиналу для '{field_type}' на '{target_lang}', пропуск")
+                        logger.warning(f"[TRANSLATOR] Перевод идентичен оригиналу для '{field_type}' на '{target_lang}', пропуск")
                         continue
 
                     # Проверяем, что перевод на правильном языке (содержит символы целевого языка)
                     if not self._check_translation_language(translated_text, target_lang):
-                        print(f"[LANG_CHECK] Перевод не на '{target_lang}' для '{field_type}': '{translated_text[:50]}...', пропуск")
+                        logger.warning(f"[LANG_CHECK] Перевод не на '{target_lang}' для '{field_type}': '{translated_text[:50]}...', пропуск")
                         continue
 
                     # Семантическая проверка для title и content
@@ -793,21 +815,21 @@ class FireFeedTranslator:
                             f"[SEMANTIC] [TRANSLATOR] Семантическая проверка не пройдена на '{target_lang}' "
                             f"для поля '{field_type}': '{translated_text[:50]}...'"
                         )
-                        print(warn_msg)
+                        logger.warning(warn_msg)
                         # Попытка fallback: перевод с beam_size=1
                         fallback_texts = await self.translate_async([original_text], src_lang, tgt_lang, context_window=0, beam_size=1)
                         fallback_text = fallback_texts[0] if fallback_texts else ""
                         if fallback_text and fallback_text.strip() != original_text.strip() and self._check_translation_language(fallback_text, target_lang) and self._semantic_check(original_text, fallback_text):
-                            print(f"[FALLBACK] Fallback перевод успешен для '{field_type}'")
+                            logger.info(f"[FALLBACK] Fallback перевод успешен для '{field_type}'")
                             lang_translations[field_type] = fallback_text
                         else:
                             # Дополнительный fallback: если gibberish, пробуем beam_size=20 для лучшего качества
                             if self._is_broken_translation(translated_text):
-                                print(f"[GIBBERISH] Обнаружен gibberish, пробуем beam_size=20 для '{field_type}'")
+                                logger.warning(f"[GIBBERISH] Обнаружен gibberish, пробуем beam_size=20 для '{field_type}'")
                                 fallback_texts_2 = await self.translate_async([original_text], src_lang, tgt_lang, context_window=0, beam_size=20)
                                 fallback_text_2 = fallback_texts_2[0] if fallback_texts_2 else ""
                                 if fallback_text_2 and fallback_text_2.strip() != original_text.strip() and self._check_translation_language(fallback_text_2, target_lang) and self._semantic_check(original_text, fallback_text_2) and not self._is_broken_translation(fallback_text_2):
-                                    print(f"[FALLBACK2] Второй fallback успешен для '{field_type}'")
+                                    logger.info(f"[FALLBACK2] Второй fallback успешен для '{field_type}'")
                                     lang_translations[field_type] = fallback_text_2
                                 else:
                                     # Не добавляем поле, если перевод неудачный
@@ -820,13 +842,13 @@ class FireFeedTranslator:
 
                 if 'title' in lang_translations and 'content' in lang_translations:
                     translations[target_lang] = lang_translations
-                    print(f"[TRANSLATOR] Перевод на '{target_lang}' успешно добавлен в результаты ({len(lang_translations)} полей).")
+                    logger.info(f"[TRANSLATOR] Перевод на '{target_lang}' успешно добавлен в результаты ({len(lang_translations)} полей).")
                 else:
                     warn_msg = (
                         f"[WARN] Перевод на '{target_lang}' не добавлен. "
                         f"Нет заголовка или содержания."
                     )
-                    print(warn_msg)
+                    logger.warning(warn_msg)
 
             # Удалить языки с одинаковыми переводами (чтобы не сохранять дубликаты битых переводов)
             seen_titles = set()
@@ -834,7 +856,7 @@ class FireFeedTranslator:
             for lang, data in translations.items():
                 title = data.get('title', '')
                 if title in seen_titles:
-                    print(f"[TRANSLATOR] Удален дубликат перевода для языка '{lang}' (одинаковый title)")
+                    logger.warning(f"[TRANSLATOR] Удален дубликат перевода для языка '{lang}' (одинаковый title)")
                     to_remove.append(lang)
                 else:
                     seen_titles.add(title)
@@ -842,14 +864,14 @@ class FireFeedTranslator:
                 del translations[lang]
 
             total_duration = time.time() - start_time
-            print(f"[TRANSLATOR] prepare_translations завершена за {total_duration:.2f} сек. Всего переводов: {len(translations)}")
+            logger.info(f"[TRANSLATOR] prepare_translations завершена за {total_duration:.2f} сек. Всего переводов: {len(translations)}")
             # - ДОПОЛНИТЕЛЬНОЕ ЛОГИРОВАНИЕ ПЕРЕД ВОЗВРАТОМ -
-            print(f"[TRANSLATOR] Подготовленный словарь переводов будет возвращен. Размер: {len(translations)} языков.")
+            logger.debug(f"[TRANSLATOR] Подготовленный словарь переводов будет возвращен. Размер: {len(translations)} языков.")
             
             # --- ВЫЗОВ CALLBACK ---
             # Если передан callback, вызываем его с результатом
             if callback:
-                print(f"[TRANSLATOR] Вызов пользовательского callback для задачи: {task_id[:20] if task_id else 'Unknown'}")
+                logger.debug(f"[TRANSLATOR] Вызов пользовательского callback для задачи: {task_id[:20] if task_id else 'Unknown'}")
                 try:
                     # Проверяем, является ли callback корутиной (async def)
                     if asyncio.iscoroutinefunction(callback):
@@ -857,9 +879,9 @@ class FireFeedTranslator:
                     else:
                         # Если это обычная функция, просто вызываем
                         callback(translations, task_id=task_id)
-                    print(f"[TRANSLATOR] Пользовательский callback успешно выполнен для задачи: {task_id[:20] if task_id else 'Unknown'}")
+                    logger.debug(f"[TRANSLATOR] Пользовательский callback успешно выполнен для задачи: {task_id[:20] if task_id else 'Unknown'}")
                 except Exception as cb_error:
-                    print(f"[TRANSLATOR] [ERROR] Ошибка в пользовательском callback для задачи {task_id[:20] if task_id else 'Unknown'}: {cb_error}")
+                    logger.error(f"[TRANSLATOR] [ERROR] Ошибка в пользовательском callback для задачи {task_id[:20] if task_id else 'Unknown'}: {cb_error}")
                     traceback.print_exc()
                     # Если есть error_callback, уведомляем об ошибке в callback
                     if error_callback:
@@ -870,7 +892,7 @@ class FireFeedTranslator:
                             else:
                                 error_callback(error_data)
                         except Exception as ec_error:
-                            print(f"[TRANSLATOR] [ERROR] Ошибка в error_callback при обработке ошибки callback: {ec_error}")
+                            logger.error(f"[TRANSLATOR] [ERROR] Ошибка в error_callback при обработке ошибки callback: {ec_error}")
                             traceback.print_exc()
             # -----------------------
 
@@ -879,21 +901,21 @@ class FireFeedTranslator:
         except Exception as e:
             # --- ОБРАБОТКА ОШИБОК prepare_translations ---
             error_msg = f"[TRANSLATOR] [CRITICAL ERROR] Критическая ошибка в prepare_translations для задачи {task_id[:20] if task_id else 'Unknown'}: {e}"
-            print(error_msg)
+            logger.error(error_msg)
             traceback.print_exc()
-            
+
             # Вызываем error_callback, если он передан
             if error_callback:
-                print(f"[TRANSLATOR] Вызов пользовательского error_callback для задачи: {task_id[:20] if task_id else 'Unknown'}")
+                logger.debug(f"[TRANSLATOR] Вызов пользовательского error_callback для задачи: {task_id[:20] if task_id else 'Unknown'}")
                 try:
                     error_data = {'error': str(e), 'task_id': task_id}
                     if asyncio.iscoroutinefunction(error_callback):
                         await error_callback(error_data)
                     else:
                         error_callback(error_data)
-                    print(f"[TRANSLATOR] Пользовательский error_callback успешно выполнен для задачи: {task_id[:20] if task_id else 'Unknown'}")
+                    logger.debug(f"[TRANSLATOR] Пользовательский error_callback успешно выполнен для задачи: {task_id[:20] if task_id else 'Unknown'}")
                 except Exception as ec_error:
-                    print(f"[TRANSLATOR] [ERROR] Ошибка в error_callback: {ec_error}")
+                    logger.error(f"[TRANSLATOR] [ERROR] Ошибка в error_callback: {ec_error}")
                     traceback.print_exc()
             # ---------------------------------------------
             # Возвращаем пустой словарь в случае ошибки
@@ -916,20 +938,20 @@ class FireFeedTranslator:
         self.tokenizer_cache.clear()
         self.translation_cache.clear()
         gc.collect()
-        print("[TRANSLATOR] Все кэши очищены")
+        logger.info("[TRANSLATOR] Все кэши очищены")
 
     def preload_popular_models(self):
         """Предзагрузка мультиязычной модели"""
         try:
-            print("[PRELOAD] Загрузка мультиязычной модели m2m100_418M через Transformers...")
+            logger.info("[PRELOAD] Загрузка мультиязычной модели m2m100_418M через Transformers...")
             # Загружаем модель
             self._get_model('m2m100')
-            print("[PRELOAD] Модель загружена и готова к использованию")
+            logger.info("[PRELOAD] Модель загружена и готова к использованию")
         except Exception as e:
-            print(f"[PRELOAD] Ошибка при загрузке модели: {e}")
+            logger.error(f"[PRELOAD] Ошибка при загрузке модели: {e}")
 
     def shutdown(self):
         """Корректное завершение работы переводчика"""
         self.executor.shutdown(wait=True)
         self.clear_cache()
-        print("[TRANSLATOR] Переводчик корректно завершил работу")
+        logger.info("[TRANSLATOR] Переводчик корректно завершил работу")

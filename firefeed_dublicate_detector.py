@@ -231,6 +231,35 @@ class FireFeedDuplicateDetector:
         except Exception as e:
             logger.error(f"[DUBLICATE_DETECTOR] Ошибка при проверке дубликата: {e}")
             raise
+
+    async def is_duplicate_strict(self, title: str, content: str, link: str, lang_code: str = 'en') -> Tuple[bool, Optional[Dict[str, Any]]]:
+        """Строгая проверка на дубликаты с учетом ссылки"""
+
+        # Сначала проверяем по эмбеддингам
+        is_dup, dup_info = await self.is_duplicate("temp", title, content, lang_code)
+        if is_dup:
+            return True, dup_info
+
+        # Дополнительно проверяем по ссылке (если ссылка совпадает - точно дубликат)
+        try:
+            pool = await self.get_pool()
+            async with pool.acquire() as conn:
+                async with conn.cursor() as cur:
+                    await cur.execute("""
+                        SELECT news_id, original_title
+                        FROM published_news_data
+                        WHERE source_url = %s AND source_url IS NOT NULL
+                        LIMIT 1
+                    """, (link,))
+
+                    result = await cur.fetchone()
+                    if result:
+                        return True, {'news_id': result[0], 'title': result[1], 'reason': 'same_url'}
+
+        except Exception as e:
+            logger.error(f"Ошибка при проверке по URL: {e}")
+
+        return False, None
     
     async def process_news(self, news_id: str, title: str, content: str, lang_code: str = 'en') -> bool:
         """

@@ -10,20 +10,23 @@ from firefeed_utils import clean_html
 logger = logging.getLogger(__name__)
 
 class FireFeedEmbeddingsProcessor:
-    def __init__(self, model_name: str = 'paraphrase-multilingual-MiniLM-L12-v2', device: str = 'cpu'):
+    def __init__(self, model_name: str = 'paraphrase-multilingual-MiniLM-L12-v2', device: str = 'cpu', max_spacy_cache: int = 3):
         """
         Инициализация процессора эмбеддингов
 
         Args:
             model_name: Название модели sentence-transformers
             device: Устройство для модели (cpu/cuda)
+            max_spacy_cache: Максимальное количество кэшированных spacy моделей
         """
         self.model = SentenceTransformer(model_name, device=device)
         self.device = device
         self.embedding_dim = self._get_embedding_dimension()
+        self.max_spacy_cache = max_spacy_cache
 
-        # Кэш для spacy моделей
+        # Кэш для spacy моделей с LRU логикой
         self.spacy_models = {}
+        self.spacy_usage_order = []  # Для LRU: последний использованный в конце
 
     def _get_embedding_dimension(self) -> int:
         """Получение размерности эмбеддинга модели"""
@@ -32,8 +35,12 @@ class FireFeedEmbeddingsProcessor:
         return len(embedding)
 
     def _get_spacy_model(self, lang_code: str) -> Optional[spacy.Language]:
-        """Получает spacy модель для языка"""
+        """Получает spacy модель для языка с LRU кэшированием"""
         if lang_code in self.spacy_models:
+            # Обновляем порядок использования (LRU)
+            if lang_code in self.spacy_usage_order:
+                self.spacy_usage_order.remove(lang_code)
+            self.spacy_usage_order.append(lang_code)
             return self.spacy_models[lang_code]
 
         spacy_model_map = {
@@ -51,6 +58,15 @@ class FireFeedEmbeddingsProcessor:
         try:
             nlp = spacy.load(model_name)
             self.spacy_models[lang_code] = nlp
+            self.spacy_usage_order.append(lang_code)
+
+            # Очищаем кэш если превышен лимит
+            if len(self.spacy_models) > self.max_spacy_cache:
+                # Удаляем наименее недавно использованную модель
+                oldest_lang = self.spacy_usage_order.pop(0)
+                del self.spacy_models[oldest_lang]
+                logger.info(f"[EMBEDDINGS] Очищена spacy модель для языка '{oldest_lang}' (превышен лимит кэша)")
+
             logger.info(f"[EMBEDDINGS] Загружена spacy модель для языка '{lang_code}': {model_name}")
             return nlp
         except OSError:

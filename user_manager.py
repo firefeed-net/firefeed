@@ -1,9 +1,12 @@
 import aiopg
 import asyncio
 import json
+import logging
 from datetime import datetime
 from typing import Optional, Dict, Any
 from config import DB_CONFIG, get_shared_db_pool
+
+logger = logging.getLogger(__name__)
 
 class UserManager:
     def __init__(self):
@@ -28,18 +31,18 @@ class UserManager:
 
                     if result:
                         subscriptions = json.loads(result[0]) if result[0] else []
-                        print(f"[DB] [UserManager] Получены настройки для пользователя {user_id}: subscriptions={subscriptions}, language={result[1]}")
+                        logger.debug(f"[DB] [UserManager] Получены настройки для пользователя {user_id}: subscriptions={subscriptions}, language={result[1]}")
                         return {
                             "subscriptions": subscriptions,
                             "language": result[1]
                         }
-                    print(f"[DB] [UserManager] Настройки для пользователя {user_id} не найдены, возвращаем по умолчанию")
+                    logger.debug(f"[DB] [UserManager] Настройки для пользователя {user_id} не найдены, возвращаем по умолчанию")
                     return {
                         "subscriptions": [],
                         "language": "en"
                     }
         except Exception as e:
-            print(f"[DB] [UserManager] Ошибка получения настроек пользователя {user_id}: {e}")
+            logger.error(f"[DB] [UserManager] Ошибка получения настроек пользователя {user_id}: {e}")
             return {"subscriptions": [], "language": "en"}
 
     async def _save_user_settings(self, user_id, subscriptions, language):
@@ -71,10 +74,10 @@ class UserManager:
                         ''', (user_id, json.dumps(subscriptions), language))
 
                     # В aiopg транзакции управляются автоматически, commit не нужен
-                    print(f"[DB] [UserManager] Сохранены настройки для пользователя {user_id}: subscriptions={subscriptions}, language={language}")
+                    logger.debug(f"[DB] [UserManager] Сохранены настройки для пользователя {user_id}: subscriptions={subscriptions}, language={language}")
                     return True
         except Exception as e:
-            print(f"[DB] [UserManager] Ошибка сохранения настроек пользователя {user_id}: {e}")
+            logger.error(f"[DB] [UserManager] Ошибка сохранения настроек пользователя {user_id}: {e}")
             import traceback
             traceback.print_exc()
             return False
@@ -93,7 +96,7 @@ class UserManager:
                     
                     return True
         except Exception as e:
-            print(f"[DB] [UserManager] Ошибка установки языка пользователя {user_id}: {e}")
+            logger.error(f"[DB] [UserManager] Ошибка установки языка пользователя {user_id}: {e}")
             return False
 
     async def _get_subscribers_for_category(self, category):
@@ -122,12 +125,12 @@ class UserManager:
                                 subscribers.append(user)
                                 
                         except json.JSONDecodeError:
-                            print(f"[DB] [UserManager] Invalid JSON for user {user_id}: {subscriptions_json}")
+                            logger.warning(f"[DB] [UserManager] Invalid JSON for user {user_id}: {subscriptions_json}")
                             continue
                     
                     return subscribers
         except Exception as e:
-            print(f"[DB] [UserManager] Ошибка получения подписчиков для категории {category}: {e}")
+            logger.error(f"[DB] [UserManager] Ошибка получения подписчиков для категории {category}: {e}")
             return []
 
     async def _get_all_users(self):
@@ -142,7 +145,7 @@ class UserManager:
                         user_ids.append(row[0])
                     return user_ids
         except Exception as e:
-            print(f"[DB] [UserManager] Ошибка получения списка пользователей: {e}")
+            logger.error(f"[DB] [UserManager] Ошибка получения списка пользователей: {e}")
             return []
 
     # --- Публичные асинхронные методы ---
@@ -199,7 +202,7 @@ class UserManager:
                     ''', (user_id, link_code, datetime.utcnow()))
                     return link_code
         except Exception as e:
-            print(f"[DB] [UserManager] Ошибка генерации кода привязки для {user_id}: {e}")
+            logger.error(f"[DB] [UserManager] Ошибка генерации кода привязки для {user_id}: {e}")
             return None
 
     async def confirm_telegram_link(self, telegram_id: int, link_code: str) -> bool:
@@ -235,7 +238,7 @@ class UserManager:
 
                     return True
         except Exception as e:
-            print(f"[DB] [UserManager] Ошибка подтверждения привязки: {e}")
+            logger.error(f"[DB] [UserManager] Ошибка подтверждения привязки: {e}")
             return False
 
     async def get_user_by_telegram_id(self, telegram_id: int) -> Optional[Dict[str, Any]]:
@@ -256,7 +259,7 @@ class UserManager:
                         return dict(zip(columns, result))
                     return None
         except Exception as e:
-            print(f"[DB] [UserManager] Ошибка получения пользователя по Telegram ID {telegram_id}: {e}")
+            logger.error(f"[DB] [UserManager] Ошибка получения пользователя по Telegram ID {telegram_id}: {e}")
             return None
 
     async def unlink_telegram(self, user_id: int) -> bool:
@@ -268,5 +271,5 @@ class UserManager:
                     await cur.execute("UPDATE user_telegram_links SET linked_at = NULL, telegram_id = NULL WHERE user_id = %s", (user_id,))
                     return cur.rowcount > 0
         except Exception as e:
-            print(f"[DB] [UserManager] Ошибка отвязки Telegram для {user_id}: {e}")
+            logger.error(f"[DB] [UserManager] Ошибка отвязки Telegram для {user_id}: {e}")
             return False

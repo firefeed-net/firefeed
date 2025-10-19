@@ -21,12 +21,13 @@ import random
 from api import database, models
 
 from email_service.sender import send_verification_email, send_password_reset_email
+from logging_config import setup_logging
 import config
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import StreamingResponse
 
+setup_logging()
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG) # Установите INFO в продакшене
 
 # --- Настройки JWT ---
 SECRET_KEY = getattr(config, 'JWT_SECRET_KEY', 'your-secret-key-change-in-production')
@@ -54,8 +55,7 @@ class ForceUTF8ResponseMiddleware(BaseHTTPMiddleware):
                     response.headers["content-type"] = new_content_type
             return response
         except Exception as e:
-            print(f"[Middleware Error] ForceUTF8: {e}")
-            traceback.print_exc()
+            logger.error(f"[Middleware Error] ForceUTF8: {e}")
             return await call_next(request)
 
 # --- Функции для работы с JWT ---
@@ -201,7 +201,7 @@ async def websocket_endpoint(websocket: WebSocket):
         }
         async with active_connections_lock:
             active_connections[websocket] = params
-        print(f"[WebSocket] New connection with params: {params}. Total connections: {len(active_connections)}")
+        logger.info(f"[WebSocket] New connection with params: {params}. Total connections: {len(active_connections)}")
     except asyncio.TimeoutError:
         await websocket.send_text(json.dumps({"error": "Subscribe timeout"}))
         await websocket.close()
@@ -211,7 +211,7 @@ async def websocket_endpoint(websocket: WebSocket):
         await websocket.close()
         return
     except Exception as e:
-        print(f"[WebSocket] Error during subscribe: {e}")
+        logger.error(f"[WebSocket] Error during subscribe: {e}")
         await websocket.close()
         return
 
@@ -244,11 +244,11 @@ async def websocket_endpoint(websocket: WebSocket):
     except WebSocketDisconnect:
         pass
     except Exception as e:
-        print(f"[WebSocket] Error: {e}")
+        logger.error(f"[WebSocket] Error: {e}")
     finally:
         async with active_connections_lock:
             active_connections.pop(websocket, None)
-        print(f"[WebSocket] Connection closed. Total connections: {len(active_connections)}")
+        logger.info(f"[WebSocket] Connection closed. Total connections: {len(active_connections)}")
 
 # --- Функция для отправки уведомлений о новых новостях ---
 async def broadcast_new_news(news_items: List[dict]):
@@ -288,13 +288,13 @@ async def broadcast_new_news(news_items: List[dict]):
             except WebSocketDisconnect:
                 disconnected.append(ws)
             except Exception as e:
-                print(f"[WebSocket] Error sending to connection: {e}")
+                logger.error(f"[WebSocket] Error sending to connection: {e}")
                 disconnected.append(ws)
     if disconnected:
         async with active_connections_lock:
             for conn in disconnected:
                 active_connections.pop(conn, None)
-        print(f"[WebSocket] Removed {len(disconnected)} disconnected clients")
+        logger.info(f"[WebSocket] Removed {len(disconnected)} disconnected clients")
 
 # --- Фоновая задача для проверки новых новостей ---
 last_check_time = datetime.now()
@@ -304,7 +304,7 @@ async def check_for_new_news():
     global last_check_time
     pool = await database.get_db_pool()
     if pool is None:
-        print("[News Check] Database pool is not available.")
+        logger.error("[News Check] Database pool is not available.")
         return
     while True:
         await asyncio.sleep(config.NEWS_CHECK_INTERVAL_SECONDS) # Ждем указанный интервал
@@ -314,7 +314,7 @@ async def check_for_new_news():
                 await broadcast_new_news(news_items)
             last_check_time = datetime.now()
         except Exception as e:
-            print(f"[News Check] Error checking for new news: {e}")
+            logger.error(f"[News Check] Error checking for new news: {e}")
 
 # - Запуск фоновой задачи при старте приложения -
 @app.on_event("startup")
@@ -322,16 +322,16 @@ async def startup_event():
     """Запускает фоновые задачи при старте приложения"""
     # Запускаем задачу проверки новых новостей
     asyncio.create_task(check_for_new_news())
-    print("[Startup] News checking task started")
+    logger.info("[Startup] News checking task started")
 
 @app.on_event("shutdown")
 async def shutdown_event():
     """Корректно закрывает общий пул соединений с БД при остановке приложения."""
     try:
         await database.close_db_pool()
-        print("[Shutdown] Database pool closed")
+        logger.info("[Shutdown] Database pool closed")
     except Exception as e:
-        print(f"[Shutdown] Error closing DB pool: {e}")
+        logger.error(f"[Shutdown] Error closing DB pool: {e}")
 
 # --- Endpoints для новостей ---
 @app.get("/api/v1/rss-items/", summary="Получить список новостей")
@@ -451,8 +451,7 @@ async def get_news_by_id(rss_item_id: str):
             "translations": build_translations_dict(row_dict)
         }
     except Exception as e:
-        print(f"[API] Ошибка при выполнении запроса в get_news_by_id: {e}")
-        traceback.print_exc()
+        logger.error(f"[API] Ошибка при выполнении запроса в get_news_by_id: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Внутренняя ошибка сервера")
     return models.RSSItem(**item_data)
 
@@ -473,8 +472,7 @@ async def get_categories(
     try:
         total_count, results = await database.get_all_categories_list(pool, limit, offset, source_ids)
     except Exception as e:
-        print(f"[API] Ошибка при выполнении запроса в get_categories: {e}")
-        traceback.print_exc()
+        logger.error(f"[API] Ошибка при выполнении запроса в get_categories: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Внутренняя ошибка сервера")
 
     return {"count": total_count, "results": results}
@@ -496,8 +494,7 @@ async def get_sources(
     try:
         total_count, results = await database.get_all_sources_list(pool, limit, offset, category_id)
     except Exception as e:
-        print(f"[API] Ошибка при выполнении запроса в get_sources: {e}")
-        traceback.print_exc()
+        logger.error(f"[API] Ошибка при выполнении запроса в get_sources: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Внутренняя ошибка сервера")
 
     return {"count": total_count, "results": results}
@@ -526,7 +523,7 @@ async def health_check():
         db_status = "error"
         pool_total = 0
         pool_free = 0
-        print(f"[Healthcheck] Database connection error: {e}")
+        logger.error(f"[Healthcheck] Database connection error: {e}")
     return {
         "status": "ok",
         "database": db_status,
@@ -694,22 +691,58 @@ async def confirm_password_reset(request: models.PasswordResetConfirm):
     pool = await database.get_db_pool()
     if pool is None:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Database error")
-    # Получаем токен
-    reset_token = await database.get_password_reset_token(pool, request.token)
-    if not reset_token:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired token")
-    # Проверяем, не истек ли токен
-    if reset_token["expires_at"] < datetime.utcnow():
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Token has expired")
-    # Хэшируем новый пароль
-    new_password_hash = get_password_hash(request.new_password)
-    # Обновляем пароль пользователя
-    success = await database.update_user_password(pool, reset_token["user_id"], new_password_hash)
-    if not success:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to update password")
-    # Помечаем токен как использованный
-    await database.delete_password_reset_token(pool, request.token)
-    return {"message": "Password successfully reset"}
+
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            try:
+                # Начинаем транзакцию
+                await cur.execute("BEGIN")
+
+                # Получаем токен и блокируем его для предотвращения race conditions
+                await cur.execute("""
+                    SELECT user_id, expires_at FROM password_reset_tokens
+                    WHERE token = %s AND expires_at > %s AND used_at IS NULL
+                    FOR UPDATE
+                """, (request.token, datetime.utcnow()))
+
+                token_record = await cur.fetchone()
+                if not token_record:
+                    await cur.execute("ROLLBACK")
+                    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired token")
+
+                user_id, expires_at = token_record
+
+                # Проверяем, не истек ли токен (дополнительная проверка)
+                if expires_at < datetime.utcnow():
+                    await cur.execute("ROLLBACK")
+                    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Token has expired")
+
+                # Хэшируем новый пароль
+                new_password_hash = get_password_hash(request.new_password)
+
+                # Обновляем пароль пользователя
+                await cur.execute(
+                    "UPDATE users SET password_hash = %s, updated_at = %s WHERE id = %s",
+                    (new_password_hash, datetime.utcnow(), user_id)
+                )
+
+                # Помечаем токен как использованный (удаляем его)
+                await cur.execute("DELETE FROM password_reset_tokens WHERE token = %s", (request.token,))
+
+                # Проверяем, что обновление прошло успешно
+                if cur.rowcount == 0:
+                    await cur.execute("ROLLBACK")
+                    raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to update password")
+
+                # Коммитим транзакцию
+                await cur.execute("COMMIT")
+
+                return {"message": "Password successfully reset"}
+
+            except Exception as e:
+                await cur.execute("ROLLBACK")
+                logger.error(f"Error in password reset confirmation: {e}")
+                raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to reset password")
 
 # --- User endpoints ---
 user_router = APIRouter(prefix="/api/v1/users", tags=["users"])

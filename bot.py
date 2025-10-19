@@ -17,7 +17,8 @@ from dataclasses import dataclass
 from typing import Dict, Any, Optional
 
 # Настройка логирования
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+from logging_config import setup_logging
+setup_logging()
 logger = logging.getLogger(__name__)
 
 # --- Конфигурация API ---
@@ -85,7 +86,7 @@ async def api_get(endpoint: str, params: dict = None) -> dict:
         else:
             processed_params = params
             
-        timeout = aiohttp.ClientTimeout(total=30)  # Таймаут 30 секунд
+        timeout = aiohttp.ClientTimeout(total=10, connect=5)  # Таймаут 10 секунд для API запросов
         async with http_session.get(url, params=processed_params, timeout=timeout) as response:
             if response.status == 200:
                 return await response.json()
@@ -695,7 +696,7 @@ async def initialize_http_session():
             keepalive_timeout=30,
             enable_cleanup_closed=True
         )
-        timeout = aiohttp.ClientTimeout(total=30, connect=10)
+        timeout = aiohttp.ClientTimeout(total=15, connect=5)
         http_session = aiohttp.ClientSession(
             connector=connector,
             timeout=timeout,
