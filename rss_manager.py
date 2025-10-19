@@ -385,7 +385,7 @@ class RSSManager:
 
             # Пробуем спарсить небольшую часть
             loop = asyncio.get_event_loop()
-            feed = await loop.run_in_executor(None, feedparser.parse, url, headers)
+            feed = await loop.run_in_executor(None, feedparser.parse, url)
             if feed.bozo:
                 print(f"[RSS] [VALIDATE] Ошибка парсинга RSS {url}: {feed.bozo_exception}")
                 return False
@@ -466,7 +466,7 @@ class RSSManager:
                 print(f"[RSS] Парсинг ленты: {feed_info['name']} ({feed_info['url']})")
                 # Парсим RSS асинхронно
                 loop = asyncio.get_event_loop()
-                feed = await loop.run_in_executor(None, feedparser.parse, feed_info['url'], headers)
+                feed = await loop.run_in_executor(None, feedparser.parse, feed_info['url'])
                 # Альтернативная попытка с использованием aiohttp для получения сырого содержимого
                 if not feed.entries and feed.bozo:
                     print(f"[RSS] [DEBUG] feedparser не смог распарсить {feed_info['url']}. Пробуем aiohttp...")
@@ -519,7 +519,7 @@ class RSSManager:
                     news_item = {
                         'id': news_id, # Добавляем ID сразу
                         'title': title,
-                        'description': description,
+                        'content': content,
                         'link': link,
                         'lang': feed_info['lang'],
                         'category': feed_info['category'], # Теперь берется из feed_info
@@ -618,7 +618,7 @@ class RSSManager:
                             # Добавляем задачу перевода в очередь корректным способом
                             await self.translator_queue.add_task(
                                 title=news_item['title'],
-                                description=news_item['description'],
+                                content=news_item['content'],
                                 original_lang=news_item['lang'],
                                 callback=success_cb,
                                 error_callback=error_cb,
@@ -768,7 +768,7 @@ class RSSManager:
 
                     # 2. Подготавливаем данные
                     title = news_item['title'][:255] # Ограничиваем длину заголовка
-                    content = news_item['description'] # Полное описание
+                    content = news_item['content'] # Полное описание
                     original_language = news_item['lang']
                     image_filename = news_item['image_filename']
                     category_name = news_item['category']
@@ -859,15 +859,15 @@ class RSSManager:
                             continue
 
                         title = data.get('title', '')
-                        description = data.get('description', '')  # описание хранится под ключом 'description'
+                        content = data.get('content', '')  # содержание хранится под ключом 'content'
 
                         # Пропускаем оригинальный язык и пустые переводы
-                        if lang == original_language or (not title and not description):
+                        if lang == original_language or (not title and not content):
                             print(f"[DB] [save_translations_to_db] [{translation_count}] Пропуск сохранения для '{lang}' ({short_news_id})")
                             continue
 
                         # Пропускаем, если перевод идентичен оригиналу
-                        if title == original_title and description == original_content:
+                        if title == original_title and content == original_content:
                             print(f"[DB] [save_translations_to_db] [{translation_count}] Пропуск сохранения идентичного оригиналу перевода для '{lang}' ({short_news_id})")
                             continue
 
@@ -883,7 +883,7 @@ class RSSManager:
                         """
                         print(f"[DB] [save_translations_to_db] [{translation_count}] Подготовка SQL-запроса для '{lang}' ({short_news_id})...")
                         try:
-                            await cur.execute(insert_query, (news_id, lang, title, description))
+                            await cur.execute(insert_query, (news_id, lang, title, content))
                             print(f"[DB] [save_translations_to_db] [{translation_count}] Перевод на '{lang}' для {short_news_id} сохранен/обновлен.")
                         except Exception as execute_error:
                             error_msg = f"[DB] [save_translations_to_db] [{translation_count}] ❌ ОШИБКА SQL-запроса для '{lang}' ({short_news_id}): {execute_error}"

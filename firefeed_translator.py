@@ -4,16 +4,15 @@ import torch
 import spacy
 import time
 import re
-from config import CHANNEL_IDS, CT2_MODELS_DIR
+from config import CHANNEL_IDS
 import threading
 from concurrent.futures import ThreadPoolExecutor
 import traceback
 import gc
 import psutil
-import ctranslate2
 from collections import OrderedDict
 from firefeed_utils import clean_html
-from transformers import M2M100Tokenizer
+from transformers import M2M100Tokenizer, M2M100ForConditionalGeneration
 from firefeed_embeddings_processor import FireFeedEmbeddingsProcessor
 
 # Импортируем терминологический словарь
@@ -125,12 +124,13 @@ class FireFeedTranslator:
         # 1. Очистка лишних пробелов
         text = re.sub(r'\s+', ' ', text).strip()
 
-        # 2. Удаление последовательных повторений слов
+        # 2. Удаление последовательных повторений слов (улучшенная версия)
         words = text.split()
         if words:
             deduped_words = [words[0]]
             for word in words[1:]:
-                if word.lower() != deduped_words[-1].lower():
+                # Проверяем не только точное совпадение, но и частичное (для слов типа "five-year" -> "five")
+                if word.lower() != deduped_words[-1].lower() and not word.lower().startswith(deduped_words[-1].lower()[:3]):
                     deduped_words.append(word)
             text = ' '.join(deduped_words)
 
@@ -186,21 +186,48 @@ class FireFeedTranslator:
         words = text.split()
         if len(words) < 5:
             return False
+
         # Проверяем, нет ли 15 подряд одинаковых слов
         for i in range(len(words) - max_repeats + 1):
             chunk = words[i:i + max_repeats]
             if len(set(chunk)) == 1:
                 return True
+
         # Проверяем на слишком много повторяющихся символов
         if re.search(r'(.)\1{10,}', text):
             return True
+
         # Проверяем на отсутствие пробелов (сплошной текст)
         if len(text) > 50 and ' ' not in text:
             return True
+
         # Проверяем на слишком мало уникальных слов
         unique_words = set(words)
         if len(unique_words) < len(words) * 0.3 and len(words) > 10:
             return True
+
+        # Дополнительная проверка на gibberish: слишком много слов начинающихся одинаково
+        word_starts = [word[:3].lower() for word in words if len(word) >= 3]
+        if word_starts:
+            most_common_start = max(set(word_starts), key=word_starts.count)
+            if word_starts.count(most_common_start) > len(word_starts) * 0.6:
+                return True
+
+        # Новая проверка: слишком много слов с цифрами или странными символами
+        alphanumeric_ratio = len(re.findall(r'[a-zA-Zа-яА-Я0-9]', text)) / len(text) if text else 0
+        if alphanumeric_ratio < 0.7:
+            return True
+
+        # Проверка на слишком короткие слова подряд
+        short_words_count = sum(1 for word in words if len(word) < 3)
+        if len(words) > 5 and short_words_count > len(words) * 0.8:
+            return True
+
+        # Проверка на повторяющиеся паттерны типа "five-year five"
+        for i in range(len(words) - 1):
+            if words[i] in words[i+1] and len(words[i]) > 3:
+                return True
+
         return False
 
     def _check_translation_language(self, translated_text, target_lang):
@@ -209,7 +236,12 @@ class FireFeedTranslator:
             translated_lower = translated_text.lower()
             if target_lang == 'en':
                 # Для английского: не должен содержать русские, немецкие или французские символы
-                return not bool(re.search(r'[а-яёäöüßàâäéèêëïîôöùûüÿç]', translated_lower))
+                # Ослабляем проверку: допускаем небольшое количество чужих символов
+                foreign_chars = len(re.findall(r'[а-яёäöüßàâäéèêëïîôöùûüÿç]', translated_lower))
+                total_chars = len(re.findall(r'[a-zA-Z]', translated_lower))
+                if total_chars == 0:
+                    return False  # Нет английских букв вообще
+                return foreign_chars / total_chars < 0.1  # Менее 10% чужих символов
             elif target_lang == 'ru':
                 # Должен содержать русские буквы
                 return bool(re.search(r'[а-яё]', translated_lower))
@@ -240,6 +272,9 @@ class FireFeedTranslator:
             # Длина текста для динамического threshold
             text_length = len(original_text)
             threshold = self.embeddings_processor.get_dynamic_threshold(text_length, 'content')
+
+            # Снижаем threshold для более мягкой проверки
+            threshold = max(0.3, threshold - 0.1)  # Минимум 0.3, снижаем на 0.1
 
             # Генерируем эмбеддинги через процессор
             original_embedding = self.embeddings_processor.generate_embedding(original_text, lang_code)
@@ -350,24 +385,23 @@ class FireFeedTranslator:
 
             try:
                 if direction == 'm2m100':
-                    model_path = os.path.join(CT2_MODELS_DIR, "m2m100_418M")
-                    tokenizer_path = os.path.join(CT2_MODELS_DIR, "m2m100_418M_hf")
+                    model_name = "facebook/m2m100_418M"
                 else:
                     raise ValueError(f"Неизвестное направление: {direction}")
 
-                print(f"[TRANSLATOR] [{time.time():.3f}] Начало загрузки модели {model_path} через CTranslate2...")
+                print(f"[TRANSLATOR] [{time.time():.3f}] Начало загрузки модели {model_name} через Transformers...")
 
-                # Загрузка токенизатора
-                tokenizer = M2M100Tokenizer.from_pretrained(tokenizer_path)
+                # Загрузка токенизатора и модели через Transformers
+                tokenizer = M2M100Tokenizer.from_pretrained(model_name)
+                model = M2M100ForConditionalGeneration.from_pretrained(model_name).to(self.device)
 
-                # Загрузка модели через CTranslate2
-                model = ctranslate2.Translator(
-                    model_path,
-                    device=self.device,
-                    compute_type="auto"  # Автоматический выбор типа вычислений
-                )
+                print(f"[TRANSLATOR] [{time.time():.3f}] Модель {model_name} загружена через Transformers на {self.device}.")
 
-                print(f"[TRANSLATOR] [{time.time():.3f}] Модель {model_path} загружена через CTranslate2 на {self.device}.")
+                # Валидация модели: тест на простом переводе
+                test_result = self._validate_model(model, tokenizer)
+                if not test_result:
+                    print(f"[MODEL] Валидация модели {model_name} провалилась, модель может быть повреждена")
+                    return None, None
 
                 # Сохраняем в кэш
                 cached_model = CachedModel(model, tokenizer, current_time)
@@ -382,9 +416,40 @@ class FireFeedTranslator:
                 return model, tokenizer
 
             except Exception as e:
-                print(f"[ERROR] [TRANSLATOR] [{time.time():.3f}] Ошибка загрузки модели {model_path}: {e}")
+                print(f"[ERROR] [TRANSLATOR] [{time.time():.3f}] Ошибка загрузки модели {model_name}: {e}")
                 traceback.print_exc()
                 return None, None
+
+    def _validate_model(self, model, tokenizer):
+        """Валидирует модель на простом тестовом переводе"""
+        try:
+            test_text = "Hello world"
+            tokenizer.src_lang = "en"
+            encoded = tokenizer(test_text, return_tensors="pt").to(self.device)
+            # Переводим с английского на русский для проверки работоспособности
+            generated_tokens = model.generate(
+                **encoded,
+                forced_bos_token_id=tokenizer.get_lang_id("ru"),
+                max_length=50,
+                num_beams=5,
+                repetition_penalty=2.0
+            )
+            translation = tokenizer.batch_decode(generated_tokens, skip_special_tokens=True)[0]
+
+            # Для M2M100 модель может давать повторения, проверяем только базовую функциональность
+            if translation and len(translation.strip()) > 0 and len(translation.split()) >= 1:
+                # Проверяем что перевод содержит русские буквы (поскольку переводим на русский)
+                if any(char in 'абвгдеёжзийклмнопрстуфхцчшщъыьэюя' for char in translation.lower()):
+                    return True
+                else:
+                    print(f"[MODEL] Валидация: перевод не содержит русских букв '{translation}'")
+                    return False
+            else:
+                print(f"[MODEL] Валидация провалилась: пустой или слишком короткий перевод '{translation}'")
+                return False
+        except Exception as e:
+            print(f"[MODEL] Ошибка валидации модели: {e}")
+            return False
 
     def _translate_with_context_sync(self, texts, source_lang='en', target_lang='ru', context_window=2):
         """
@@ -405,7 +470,7 @@ class FireFeedTranslator:
             context_window = 0
 
         start_time = time.time()
-        print(f"[TRANSLATOR] [{start_time:.3f}] Начало перевода: {source_lang} -> {target_lang}, текст длиной {len(text)} символов")
+        print(f"[TRANSLATOR] [{start_time:.3f}] Начало перевода: {source_lang} -> {target_lang}, текст длиной {len(text)} символов, слов: {len(text.split())}")
         
         if source_lang == target_lang:
             result = clean_html(text)
@@ -494,23 +559,57 @@ class FireFeedTranslator:
             batch_sentences = sentences[i:i + batch_size]
             print(f"[TRANSLATOR] [BATCH] Перевод батча {i//batch_size + 1}/{(len(sentences)-1)//batch_size + 1}: {len(batch_sentences)} предложений")
 
-            # Токенизация с указанием исходного и целевого языков
-            batch_tokenized = [tokenizer(text, src_lang=source_lang, tgt_lang=target_lang)['input_ids'] for text in batch_sentences]
-            # Перевод через CTranslate2
-            results = model.translate_batch(
-                batch_tokenized,
-                max_batch_size=batch_size,
-                beam_size=beam_size or 10,
-                max_decoding_length=256,
-                length_penalty=0.8,
-                repetition_penalty=1.5,
-                return_scores=False
+            # Адаптируем параметры в зависимости от длины текста
+            text_length = len(' '.join(batch_sentences).split())
+            if text_length < 20:  # Короткие тексты
+                adapted_beam_size = min(beam_size or 5, 3)  # Меньше beam_size для коротких
+                adapted_repetition_penalty = 1.5  # Меньше penalty для коротких
+                adapted_length_penalty = 0.8  # Меньше length_penalty для коротких
+            else:  # Длинные тексты
+                adapted_beam_size = beam_size or 5
+                adapted_repetition_penalty = 2.0
+                adapted_length_penalty = 1.0
+
+            # Токенизация через Transformers
+            tokenizer.src_lang = source_lang
+            encoded = tokenizer(batch_sentences, return_tensors="pt", padding=True, truncation=True).to(self.device)
+
+            # Перевод через Transformers с target_prefix для M2M100
+            generated_tokens = model.generate(
+                **encoded,
+                forced_bos_token_id=tokenizer.get_lang_id(target_lang),
+                max_length=256,
+                num_beams=adapted_beam_size,
+                repetition_penalty=adapted_repetition_penalty,
+                length_penalty=adapted_length_penalty,
+                early_stopping=True
             )
+
             # Декодирование
-            batch_translations = [
-                tokenizer.convert_tokens_to_string(res.hypotheses[0])
-                for res in results
-            ]
+            batch_translations = tokenizer.batch_decode(generated_tokens, skip_special_tokens=True)
+
+            # Проверяем каждую трансляцию на gibberish и заменяем на fallback если нужно
+            for j in range(len(batch_translations)):
+                if self._is_broken_translation(batch_translations[j]):
+                    print(f"[GIBBERISH] Обнаружен gibberish в батче, пробуем fallback для: '{batch_sentences[j][:50]}...'")
+                    # Fallback: перевод с beam_size=1
+                    fallback_encoded = tokenizer([batch_sentences[j]], return_tensors="pt").to(self.device)
+                    fallback_tokens = model.generate(
+                        **fallback_encoded,
+                        forced_bos_token_id=tokenizer.get_lang_id(target_lang),
+                        max_length=256,
+                        num_beams=1,
+                        repetition_penalty=2.0,
+                        length_penalty=1.0,
+                        early_stopping=True
+                    )
+                    fallback_translation = tokenizer.batch_decode(fallback_tokens, skip_special_tokens=True)[0]
+                    if not self._is_broken_translation(fallback_translation):
+                        batch_translations[j] = fallback_translation
+                        print(f"[FALLBACK] Fallback успешен")
+                    else:
+                        print(f"[FALLBACK] Fallback тоже плохой, оставляем оригинал")
+
             translated_batches.extend(batch_translations)
         return translated_batches
 
@@ -543,7 +642,7 @@ class FireFeedTranslator:
         # Используем мультиязычную модель m2m100
         model, tokenizer = self._get_model('m2m100')
         if model is None or tokenizer is None:
-            print(f"[TRANSLATOR] [BATCH] Модель m2m100 не найдена, возврат исходных текстов.")
+            print(f"[TRANSLATOR] [BATCH] Модель m2m100 не найдена или повреждена, возврат исходных текстов.")
             return texts
 
         # Подготавливаем предложения
@@ -596,8 +695,8 @@ class FireFeedTranslator:
                 traceback.print_exc()
                 return texts
     
-    async def prepare_translations(self, title: str, description: str, original_lang: str, callback=None, error_callback=None, task_id=None) -> dict:
-        """Подготавливает переводы заголовка, описания и категории на все целевые языки."""
+    async def prepare_translations(self, title: str, content: str, original_lang: str, callback=None, error_callback=None, task_id=None) -> dict:
+        """Подготавливает переводы заголовка, содержания и категории на все целевые языки."""
         start_time = time.time()
         print(f"[TRANSLATOR] prepare_translations начата для языка '{original_lang}' для задачи: {task_id[:20] if task_id else 'Unknown'}")
 
@@ -607,12 +706,12 @@ class FireFeedTranslator:
 
             print(f"[TRANSLATOR] Целевые языки для перевода: {target_languages}")
             clean_title = clean_html(title)
-            clean_description = clean_html(description)
+            clean_content = clean_html(content)
 
             # - Обработка оригинального языка -
-            if original_lang in target_languages:
-                translations[original_lang] = {'title': clean_title, 'description': clean_description}
-                print(f"[TRANSLATOR] Оригинальный язык '{original_lang}' включен в результаты без перевода.")
+            # Всегда включаем оригинальный язык в словарь переводов
+            translations[original_lang] = {'title': clean_title, 'content': clean_content}
+            print(f"[TRANSLATOR] Оригинальный язык '{original_lang}' включен в результаты без перевода.")
 
             # - Подготовка и выполнение переводов -
             translation_results = {}
@@ -622,7 +721,7 @@ class FireFeedTranslator:
                     continue
                 pairs = [
                     (original_lang, target_lang, clean_title, 'title'),
-                    (original_lang, target_lang, clean_description, 'description')
+                    (original_lang, target_lang, clean_content, 'content')
                 ]
                 lang_pairs.append((original_lang, target_lang, pairs))
 
@@ -675,8 +774,8 @@ class FireFeedTranslator:
                 for field_type, translated_text in results:
                     if field_type == 'title':
                         original_text = clean_title
-                    else: # description
-                        original_text = clean_description
+                    else: # content
+                        original_text = clean_content
 
                     # Проверяем, что перевод отличается от оригинала
                     if translated_text.strip() == original_text.strip():
@@ -688,7 +787,7 @@ class FireFeedTranslator:
                         print(f"[LANG_CHECK] Перевод не на '{target_lang}' для '{field_type}': '{translated_text[:50]}...', пропуск")
                         continue
 
-                    # Семантическая проверка для title и description
+                    # Семантическая проверка для title и content
                     if not self._semantic_check(original_text, translated_text):
                         warn_msg = (
                             f"[SEMANTIC] [TRANSLATOR] Семантическая проверка не пройдена на '{target_lang}' "
@@ -702,18 +801,30 @@ class FireFeedTranslator:
                             print(f"[FALLBACK] Fallback перевод успешен для '{field_type}'")
                             lang_translations[field_type] = fallback_text
                         else:
-                            # Не добавляем поле, если перевод неудачный
-                            pass
+                            # Дополнительный fallback: если gibberish, пробуем beam_size=20 для лучшего качества
+                            if self._is_broken_translation(translated_text):
+                                print(f"[GIBBERISH] Обнаружен gibberish, пробуем beam_size=20 для '{field_type}'")
+                                fallback_texts_2 = await self.translate_async([original_text], src_lang, tgt_lang, context_window=0, beam_size=20)
+                                fallback_text_2 = fallback_texts_2[0] if fallback_texts_2 else ""
+                                if fallback_text_2 and fallback_text_2.strip() != original_text.strip() and self._check_translation_language(fallback_text_2, target_lang) and self._semantic_check(original_text, fallback_text_2) and not self._is_broken_translation(fallback_text_2):
+                                    print(f"[FALLBACK2] Второй fallback успешен для '{field_type}'")
+                                    lang_translations[field_type] = fallback_text_2
+                                else:
+                                    # Не добавляем поле, если перевод неудачный
+                                    pass
+                            else:
+                                # Не добавляем поле, если перевод неудачный
+                                pass
                     else:
                         lang_translations[field_type] = translated_text
 
-                if 'title' in lang_translations and 'description' in lang_translations:
+                if 'title' in lang_translations and 'content' in lang_translations:
                     translations[target_lang] = lang_translations
                     print(f"[TRANSLATOR] Перевод на '{target_lang}' успешно добавлен в результаты ({len(lang_translations)} полей).")
                 else:
                     warn_msg = (
                         f"[WARN] Перевод на '{target_lang}' не добавлен. "
-                        f"Нет заголовка или описания."
+                        f"Нет заголовка или содержания."
                     )
                     print(warn_msg)
 
@@ -810,7 +921,7 @@ class FireFeedTranslator:
     def preload_popular_models(self):
         """Предзагрузка мультиязычной модели"""
         try:
-            print("[PRELOAD] Загрузка мультиязычной модели m2m100_418M через CTranslate2...")
+            print("[PRELOAD] Загрузка мультиязычной модели m2m100_418M через Transformers...")
             # Загружаем модель
             self._get_model('m2m100')
             print("[PRELOAD] Модель загружена и готова к использованию")

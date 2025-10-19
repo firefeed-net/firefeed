@@ -129,3 +129,14 @@ class UserCategoriesUpdate(BaseModel):
 
 class UserCategoriesResponse(BaseModel):
     category_ids: List[int]
+
+# --- Модели для привязки Telegram ---
+
+class TelegramLinkResponse(BaseModel):
+    link_code: str
+    instructions: str
+
+class TelegramLinkStatusResponse(BaseModel):
+    is_linked: bool
+    telegram_id: Optional[int] = None
+    linked_at: Optional[str] = None

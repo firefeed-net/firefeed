@@ -393,6 +393,18 @@ async def get_news(
     for row in results:
         # Создаем словарь из результата
         row_dict = dict(zip(columns, row))
+        translations = build_translations_dict(row_dict)
+        # Фильтрация: если display_language и original_language переданы и различаются,
+        # то включаем только новости с непустыми переводами на display_language
+        if display_language and original_language and display_language != original_language:
+            if not translations or display_language not in translations:
+                continue
+        # Если указаны оба параметра, добавляем оригинальный текст в translations
+        if display_language and original_language:
+            translations[original_language] = {
+                "title": row_dict['original_title'],
+                "content": row_dict['original_content']
+            }
         # Используем category_name и source_name из результата запроса
         item_data = {
             "news_id": row_dict['news_id'],
@@ -404,12 +416,12 @@ async def get_news(
             "source": row_dict['source_name'],
             "source_url": row_dict['source_url'],
             "published_at": format_datetime(row_dict['published_at']),
-            "translations": build_translations_dict(row_dict)
+            "translations": translations
         }
         news_list.append(models.RSSItem(**item_data))
 
-    # Возвращаем данные в формате с count и results
-    return {"count": total_count, "results": news_list}
+    # Возвращаем данные в формате с count и results (count пересчитывается после фильтрации)
+    return {"count": len(news_list), "results": news_list}
 
 @app.get("/api/v1/rss-items/{rss_item_id}", response_model=models.RSSItem, summary="Получить новость по ID")
 async def get_news_by_id(rss_item_id: str):
@@ -787,32 +799,84 @@ async def update_user_categories(
 ):
     """Обновление списка пользовательских категорий"""
     category_ids = category_update.category_ids  # Извлекаем Set[int] из модели
-    
+
     pool = await database.get_db_pool()
     if pool is None:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Database error")
-    
+
     # Проверяем, что все указанные категории существуют
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
             # Получаем все существующие категории
             await cur.execute("SELECT id FROM categories")
             existing_categories = {row[0] for row in await cur.fetchall()}
-            
+
             # Проверяем, что все переданные ID существуют
             invalid_ids = category_ids - existing_categories
             if invalid_ids:
                 raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST, 
+                    status_code=status.HTTP_400_BAD_REQUEST,
                     detail=f"Invalid category IDs: {list(invalid_ids)}"
                 )
-    
+
     # Обновляем категории пользователя
     success = await database.update_user_categories(pool, current_user["id"], category_ids)
     if not success:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to update user categories")
-    
+
     return models.SuccessResponse(message="User categories successfully updated")
+
+# --- Telegram Link endpoints ---
+telegram_router = APIRouter(prefix="/api/v1/users/me/telegram", tags=["telegram_link"])
+
+@telegram_router.post("/generate-link", response_model=models.TelegramLinkResponse)
+async def generate_telegram_link_code(current_user: dict = Depends(get_current_active_user)):
+    """Генерирует код для привязки Telegram аккаунта"""
+    from user_manager import UserManager
+    user_manager = UserManager()
+    link_code = await user_manager.generate_telegram_link_code(current_user["id"])
+    if not link_code:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to generate link code")
+
+    return models.TelegramLinkResponse(
+        link_code=link_code,
+        instructions="Отправьте этот код в Telegram бота командой: /link <код>"
+    )
+
+@telegram_router.delete("/unlink", response_model=models.SuccessResponse)
+async def unlink_telegram_account(current_user: dict = Depends(get_current_active_user)):
+    """Отвязывает Telegram аккаунт от пользователя"""
+    from user_manager import UserManager
+    user_manager = UserManager()
+    success = await user_manager.unlink_telegram(current_user["id"])
+    if not success:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to unlink Telegram account")
+
+    return models.SuccessResponse(message="Telegram account successfully unlinked")
+
+@telegram_router.get("/status", response_model=models.TelegramLinkStatusResponse)
+async def get_telegram_link_status(current_user: dict = Depends(get_current_active_user)):
+    """Получает статус привязки Telegram аккаунта"""
+    pool = await database.get_db_pool()
+    if pool is None:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Database error")
+
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute("""
+                SELECT telegram_id, linked_at FROM user_telegram_links
+                WHERE user_id = %s AND linked_at IS NOT NULL
+            """, (current_user["id"],))
+
+            result = await cur.fetchone()
+            if result:
+                return models.TelegramLinkStatusResponse(
+                    is_linked=True,
+                    telegram_id=result[0],
+                    linked_at=result[1].isoformat() if result[1] else None
+                )
+            else:
+                return models.TelegramLinkStatusResponse(is_linked=False)
 
 @rss_router.get("/", response_model=models.PaginatedResponse[models.UserRSSFeedResponse])
 async def get_user_rss_feeds(
@@ -886,3 +950,4 @@ app.include_router(auth_router)
 app.include_router(user_router)
 app.include_router(categories_router)
 app.include_router(rss_router)
+app.include_router(telegram_router)

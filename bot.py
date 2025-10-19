@@ -177,12 +177,15 @@ async def settings_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     try:
         lang = await get_current_user_language(user_id)
+        logger.info(f"Loading settings for user {user_id}")
         settings = await user_manager.get_user_settings(user_id)
+        logger.info(f"Loaded settings for user {user_id}: {settings}")
+        current_subs = settings["subscriptions"] if isinstance(settings["subscriptions"], list) else []
         USER_STATES[user_id] = {
-            "current_subs": settings["subscriptions"].copy(),
+            "current_subs": current_subs,
             "language": settings["language"]
         }
-        await _show_settings_menu(update, context, user_id)
+        await _show_settings_menu(context.bot, update.effective_chat.id, user_id)
         USER_CURRENT_MENUS[user_id] = "settings"
     except Exception as e:
         logger.error(f"Ошибка команды /settings для {user_id}: {e}")
@@ -227,8 +230,42 @@ async def change_language_command(update: Update, context: ContextTypes.DEFAULT_
     )
     USER_CURRENT_MENUS[user_id] = "language"
 
+async def link_telegram_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработчик команды /link для привязки Telegram аккаунта."""
+    user_id = update.effective_user.id
+    lang = await get_current_user_language(user_id)
+
+    if not context.args:
+        await update.message.reply_text(
+            "Использование: /link <код_привязки>\n\n"
+            "Получите код привязки в личном кабинете на сайте.",
+            reply_markup=get_main_menu_keyboard(lang)
+        )
+        USER_CURRENT_MENUS[user_id] = "main"
+        return
+
+    link_code = context.args[0].strip()
+
+    # Проверяем код через UserManager
+    success = await user_manager.confirm_telegram_link(user_id, link_code)
+
+    if success:
+        await update.message.reply_text(
+            "✅ Ваш Telegram аккаунт успешно привязан к аккаунту на сайте!\n\n"
+            "Теперь вы можете управлять настройками через сайт или бота.",
+            reply_markup=get_main_menu_keyboard(lang)
+        )
+    else:
+        await update.message.reply_text(
+            "❌ Код привязки недействителен или истек.\n\n"
+            "Пожалуйста, сгенерируйте новый код в личном кабинете на сайте.",
+            reply_markup=get_main_menu_keyboard(lang)
+        )
+
+    USER_CURRENT_MENUS[user_id] = "main"
+
 # --- Вспомогательные функции UI ---
-async def _show_settings_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, user_id: int):
+async def _show_settings_menu(bot, chat_id: int, user_id: int):
     """Отображает меню настроек."""
     state = USER_STATES.get(user_id)
     if not state: return
@@ -238,21 +275,23 @@ async def _show_settings_menu(update: Update, context: ContextTypes.DEFAULT_TYPE
         categories = await get_categories()
         keyboard = []
         for category in categories:
-            is_selected = category in current_subs
-            text = f"{'✅ ' if is_selected else '🔲 '}{category.capitalize()}"
-            keyboard.append([InlineKeyboardButton(text, callback_data=f"toggle_{category}")])
+            category_name = category.get('name', str(category))
+            is_selected = category_name in current_subs
+            text = f"{'✅ ' if is_selected else '🔲 '}{category_name.capitalize()}"
+            keyboard.append([InlineKeyboardButton(text, callback_data=f"toggle_{category_name}")])
         keyboard.append([InlineKeyboardButton(get_message("save_button", current_lang), callback_data="save_settings")])
         reply_markup = InlineKeyboardMarkup(keyboard)
-        await update.message.reply_text(
-            get_message("settings_title", current_lang),
+        await bot.send_message(
+            chat_id=chat_id,
+            text=get_message("settings_title", current_lang),
             reply_markup=reply_markup
         )
     except Exception as e:
         logger.error(f"Ошибка в _show_settings_menu для {user_id}: {e}")
 
-async def _show_settings_menu_from_callback(query, context, user_id: int):
+async def _show_settings_menu_from_callback(bot, chat_id: int, user_id: int):
     """Отображает меню настроек из callback."""
-    await _show_settings_menu(context.bot, context, user_id)
+    await _show_settings_menu(bot, chat_id, user_id)
 
 # --- Обработчики callback и сообщений ---
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -263,8 +302,10 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = query.from_user.id
     try:
         if user_id not in USER_STATES:
+            subs = await user_manager.get_user_subscriptions(user_id)
+            current_subs = subs if isinstance(subs, list) else []
             USER_STATES[user_id] = {
-                "current_subs": (await user_manager.get_user_subscriptions(user_id)) or [],
+                "current_subs": current_subs,
                 "language": await get_current_user_language(user_id)
             }
         state = USER_STATES[user_id]
@@ -281,9 +322,12 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await query.message.delete()
             except Exception:
                 pass
-            await _show_settings_menu_from_callback(query, context, user_id)
+            await _show_settings_menu_from_callback(context.bot, query.message.chat_id, user_id)
         elif query.data == "save_settings":
-            await user_manager.save_user_settings(user_id, state["current_subs"], state["language"])
+            # Save category names as strings
+            logger.info(f"Saving settings for user {user_id}: subscriptions={state['current_subs']}, language={state['language']}")
+            result = await user_manager.save_user_settings(user_id, state["current_subs"], state["language"])
+            logger.info(f"Save result for user {user_id}: {result}")
             USER_STATES.pop(user_id, None)
             try:
                 await query.message.delete()
@@ -391,32 +435,32 @@ async def send_personal_news(bot, prepared_rss_item: PreparedRSSItem):
             
             # Проверяем, есть ли у элемента контент на языке пользователя
             title_to_send = None
-            description_to_send = None
-            
+            content_to_send = None
+
             # Если язык пользователя совпадает с языком оригинала элемента
             if user_lang == original_news_lang:
                 title_to_send = prepared_rss_item.original_data['title']
-                description_to_send = prepared_rss_item.original_data.get('description', '')
+                content_to_send = prepared_rss_item.original_data.get('content', '')
             # Иначе ищем перевод на язык пользователя
             elif user_lang in translations_cache and translations_cache[user_lang]:
                 translation_data = translations_cache[user_lang]
                 title_to_send = translation_data.get('title', '')
-                description_to_send = translation_data.get('description', '')
-                
+                content_to_send = translation_data.get('content', '')
+
             # Если нет подходящего контента, пропускаем пользователя
             if not title_to_send or not title_to_send.strip():
                 logger.debug(f"Пропуск пользователя {user_id} - нет контента на языке {user_lang}")
                 continue
-                
+
             title_to_send = clean_html(title_to_send)
-            description_to_send = clean_html(description_to_send)
-            
+            content_to_send = clean_html(content_to_send)
+
             lang_note = ""
             if user_lang != original_news_lang:
                 lang_note = f"\n🌐 {TRANSLATED_FROM_LABELS.get(user_lang, 'Translated from')} {original_news_lang.upper()}\n"
             content_text = (
                 f"🔥 <b>{title_to_send}</b>\n"
-                f"\n\n{description_to_send}\n"
+                f"\n\n{content_to_send}\n"
                 f"\nFROM: {prepared_rss_item.original_data.get('source', 'Unknown Source')}\n"
                 f"CATEGORY: {category}\n{lang_note}\n"
                 f"⚡ <a href='{prepared_rss_item.original_data.get('link', '#')}'>{READ_MORE_LABELS.get(user_lang, 'Read more')}</a>"
@@ -435,10 +479,10 @@ async def send_personal_news(bot, prepared_rss_item: PreparedRSSItem):
                 caption = content_text
                 if len(caption) > 1024:
                     base_text = f"🔥 <b>{title_to_send}</b>\nFROM: {prepared_rss_item.original_data.get('source', 'Unknown Source')}\nCATEGORY: {category}{lang_note}\n⚡ <a href='{prepared_rss_item.original_data.get('link', '#')}'>{READ_MORE_LABELS.get(user_lang, 'Read more')}</a>"
-                    max_desc_length = 1024 - len(base_text)
-                    if max_desc_length > 0:
-                        truncated_desc = description_to_send[:max_desc_length-3] + "..."
-                        caption = f"🔥 <b>{title_to_send}</b>\n{truncated_desc}\n{base_text}"
+                    max_content_length = 1024 - len(base_text)
+                    if max_content_length > 0:
+                        truncated_content = content_to_send[:max_content_length-3] + "..."
+                        caption = f"🔥 <b>{title_to_send}</b>\n{truncated_content}\n{base_text}"
                     else:
                         caption = caption[:1021] + "..."
                 try:
@@ -471,27 +515,35 @@ async def post_to_channel(bot, prepared_rss_item: PreparedRSSItem):
     news_id = prepared_rss_item.original_data.get('id')
     logger.info(f"Публикация RSS-элемента в каналы: {original_title[:50]}...")
     logger.debug(f"post_to_channel prepared_rss_item = {prepared_rss_item}")
-    original_description = prepared_rss_item.original_data.get('description', '')
+    original_content = prepared_rss_item.original_data.get('content', '')
     category = prepared_rss_item.original_data.get('category', '')
     original_source = prepared_rss_item.original_data.get('source', 'UnknownSource')
     original_lang = prepared_rss_item.original_data['lang']
     translations_cache = prepared_rss_item.translations
     channels_list = list(CHANNEL_IDS.items())
-    
-    # Отправляем только в канал, соответствующий оригинальному языку
-    for target_lang, channel_id in channels_list:
-        if target_lang != original_lang:
-            continue
-        try:
-            # Используем оригинальный текст
-            title = original_title
-            description = original_description
 
-            lang_note = ""  # Нет перевода, так как оригинал
+    # Отправляем в каналы, где есть перевод или оригинал
+    for target_lang, channel_id in channels_list:
+        try:
+            # Определяем, использовать ли перевод или оригинал
+            if target_lang == original_lang:
+                # Оригинальный язык
+                title = original_title
+                content = original_content
+                lang_note = ""
+            elif target_lang in translations_cache and translations_cache[target_lang]:
+                # Есть перевод
+                translation_data = translations_cache[target_lang]
+                title = translation_data.get('title', original_title)
+                content = translation_data.get('description', original_content)
+                lang_note = f"\n{TRANSLATED_FROM_LABELS.get(target_lang, '[AI] Translated from')} {original_lang.upper()}\n"
+            else:
+                # Нет перевода, пропускаем
+                continue
             hashtags = f"\n#{category} #{original_source}"
             content_text = f"<b>{title}</b>\n"
-            if description and description.strip():
-                content_text += f"\n{description}\n"
+            if content and content.strip():
+                content_text += f"\n{content}\n"
             content_text += f"{lang_note}{hashtags}"
             image_filename = prepared_rss_item.image_filename
             logger.debug(f"post_to_channel image_filename = {image_filename}")
@@ -506,10 +558,10 @@ async def post_to_channel(bot, prepared_rss_item: PreparedRSSItem):
                 caption = content_text
                 if len(caption) > 1024:
                     base_text = f"<b>{title}</b>{lang_note}{hashtags}"
-                    max_desc_length = 1024 - len(base_text)
-                    if max_desc_length > 0:
-                        truncated_desc = description[:max_desc_length-3] + "..."
-                        caption = f"<b>{title}</b>\n{truncated_desc}{lang_note}{hashtags}"
+                    max_content_length = 1024 - len(base_text)
+                    if max_content_length > 0:
+                        truncated_content = content[:max_content_length-3] + "..."
+                        caption = f"<b>{title}</b>\n{truncated_content}{lang_note}{hashtags}"
                     else:
                         caption = caption[:1021] + "..."
                 try:
@@ -530,7 +582,7 @@ async def post_to_channel(bot, prepared_rss_item: PreparedRSSItem):
                 except Exception as e:
                     logger.error(f"Ошибка отправки сообщения в канал {channel_id}: {e}")
             logger.info(f"Опубликовано в {channel_id}: {title[:50]}...")
-            break  # Отправлено в нужный канал, выходим
+            # Не выходим, продолжаем для других каналов, где есть переводы
         except Exception as e:
             logger.error(f"Ошибка отправки в {channel_id}: {e}")
 
@@ -545,7 +597,7 @@ async def process_rss_item(context, rss_item_from_api):
         original_data = {
             'id': rss_item_from_api.get('news_id'),
             'title': rss_item_from_api.get('original_title'),
-            'description': rss_item_from_api.get('original_content'),
+            'content': rss_item_from_api.get('original_content'),
             'category': rss_item_from_api.get('category'),
             'source': rss_item_from_api.get('source'),
             'lang': rss_item_from_api.get('original_language'),
@@ -704,6 +756,7 @@ def main():
     application.add_handler(CommandHandler("settings", settings_command))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("status", status_command))
+    application.add_handler(CommandHandler("link", link_telegram_command))
     application.add_handler(CallbackQueryHandler(button_handler))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_menu_selection))
     application.add_handler(MessageHandler(filters.ALL, debug))
