@@ -45,7 +45,12 @@ TERMINOLOGY_DICT = {
     "Disney+": {"en": "Disney+", "ru": "Disney+", "de": "Disney+", "fr": "Disney+"},
     "HBO Max": {"en": "HBO Max", "ru": "HBO Max", "de": "HBO Max", "fr": "HBO Max"},
     "Apple TV+": {"en": "Apple TV+", "ru": "Apple TV+", "de": "Apple TV+", "fr": "Apple TV+"},
-    "Amazon Prime Video": {"en": "Amazon Prime Video", "ru": "Amazon Prime Video", "de": "Amazon Prime Video", "fr": "Amazon Prime Video"},
+    "Amazon Prime Video": {
+        "en": "Amazon Prime Video",
+        "ru": "Amazon Prime Video",
+        "de": "Amazon Prime Video",
+        "fr": "Amazon Prime Video",
+    },
     "YouTube": {"en": "YouTube", "ru": "YouTube", "de": "YouTube", "fr": "YouTube"},
     "Snapchat": {"en": "Snapchat", "ru": "Snapchat", "de": "Snapchat", "fr": "Snapchat"},
     "Pinterest": {"en": "Pinterest", "ru": "Pinterest", "de": "Pinterest", "fr": "Pinterest"},
@@ -64,7 +69,6 @@ TERMINOLOGY_DICT = {
     "Opera": {"en": "Opera", "ru": "Opera", "de": "Opera", "fr": "Opera"},
     "Brave": {"en": "Brave", "ru": "Brave", "de": "Brave", "fr": "Brave"},
     "Tor Browser": {"en": "Tor Browser", "ru": "Tor Browser", "de": "Tor Browser", "fr": "Tor Browser"},
-
     # Криптовалюты
     "Bitcoin": {"en": "Bitcoin", "ru": "Bitcoin", "de": "Bitcoin", "fr": "Bitcoin"},
     "Ethereum": {"en": "Ethereum", "ru": "Ethereum", "de": "Ethereum", "fr": "Ethereum"},
@@ -76,7 +80,6 @@ TERMINOLOGY_DICT = {
     "Polkadot": {"en": "Polkadot", "ru": "Polkadot", "de": "Polkadot", "fr": "Polkadot"},
     "Chainlink": {"en": "Chainlink", "ru": "Chainlink", "de": "Chainlink", "fr": "Chainlink"},
     "Uniswap": {"en": "Uniswap", "ru": "Uniswap", "de": "Uniswap", "fr": "Uniswap"},
-
     # ИИ и технологии (с переводами)
     "OpenAI": {"en": "OpenAI", "ru": "OpenAI", "de": "OpenAI", "fr": "OpenAI"},
     "ChatGPT": {"en": "ChatGPT", "ru": "ChatGPT", "de": "ChatGPT", "fr": "ChatGPT"},
@@ -87,17 +90,67 @@ TERMINOLOGY_DICT = {
     "Perplexity": {"en": "Perplexity", "ru": "Perplexity", "de": "Perplexity", "fr": "Perplexity"},
     "Midjourney": {"en": "Midjourney", "ru": "Midjourney", "de": "Midjourney", "fr": "Midjourney"},
     "DALL-E": {"en": "DALL-E", "ru": "DALL-E", "de": "DALL-E", "fr": "DALL-E"},
-    "Stable Diffusion": {"en": "Stable Diffusion", "ru": "Stable Diffusion", "de": "Stable Diffusion", "fr": "Stable Diffusion"},
-    "Artificial Intelligence": {"en": "Artificial Intelligence", "ru": "Искусственный интеллект", "de": "Künstliche Intelligenz", "fr": "Intelligence Artificielle"},
-    "Machine Learning": {"en": "Machine Learning", "ru": "Машинное обучение", "de": "Maschinelles Lernen", "fr": "Apprentissage Automatique"},
-    "Deep Learning": {"en": "Deep Learning", "ru": "Глубокое обучение", "de": "Deep Learning", "fr": "Apprentissage Profond"},
-    "Neural Network": {"en": "Neural Network", "ru": "Нейронная сеть", "de": "Neuronales Netzwerk", "fr": "Réseau de Neurones"},
+    "Stable Diffusion": {
+        "en": "Stable Diffusion",
+        "ru": "Stable Diffusion",
+        "de": "Stable Diffusion",
+        "fr": "Stable Diffusion",
+    },
+    "Artificial Intelligence": {
+        "en": "Artificial Intelligence",
+        "ru": "Искусственный интеллект",
+        "de": "Künstliche Intelligenz",
+        "fr": "Intelligence Artificielle",
+    },
+    "Machine Learning": {
+        "en": "Machine Learning",
+        "ru": "Машинное обучение",
+        "de": "Maschinelles Lernen",
+        "fr": "Apprentissage Automatique",
+    },
+    "Deep Learning": {
+        "en": "Deep Learning",
+        "ru": "Глубокое обучение",
+        "de": "Deep Learning",
+        "fr": "Apprentissage Profond",
+    },
+    "Neural Network": {
+        "en": "Neural Network",
+        "ru": "Нейронная сеть",
+        "de": "Neuronales Netzwerk",
+        "fr": "Réseau de Neurones",
+    },
     "Blockchain": {"en": "Blockchain", "ru": "Блокчейн", "de": "Blockchain", "fr": "Blockchain"},
     "Cryptocurrency": {"en": "Cryptocurrency", "ru": "Криптовалюта", "de": "Kryptowährung", "fr": "Cryptomonnaie"},
     "Big Data": {"en": "Big Data", "ru": "Большие данные", "de": "Big Data", "fr": "Big Data"},
-    "Cloud Computing": {"en": "Cloud Computing", "ru": "Облачные вычисления", "de": "Cloud Computing", "fr": "Informatique en Nuage"},
-    "Internet of Things": {"en": "Internet of Things", "ru": "Интернет вещей", "de": "Internet der Dinge", "fr": "Internet des Objets"},
-    "Augmented Reality": {"en": "Augmented Reality", "ru": "Дополненная реальность", "de": "Erweiterte Realität", "fr": "Réalité Augmentée"},
-    "Virtual Reality": {"en": "Virtual Reality", "ru": "Виртуальная реальность", "de": "Virtuelle Realität", "fr": "Réalité Virtuelle"},
-    "Quantum Computing": {"en": "Quantum Computing", "ru": "Квантовые вычисления", "de": "Quantencomputing", "fr": "Informatique Quantique"}
+    "Cloud Computing": {
+        "en": "Cloud Computing",
+        "ru": "Облачные вычисления",
+        "de": "Cloud Computing",
+        "fr": "Informatique en Nuage",
+    },
+    "Internet of Things": {
+        "en": "Internet of Things",
+        "ru": "Интернет вещей",
+        "de": "Internet der Dinge",
+        "fr": "Internet des Objets",
+    },
+    "Augmented Reality": {
+        "en": "Augmented Reality",
+        "ru": "Дополненная реальность",
+        "de": "Erweiterte Realität",
+        "fr": "Réalité Augmentée",
+    },
+    "Virtual Reality": {
+        "en": "Virtual Reality",
+        "ru": "Виртуальная реальность",
+        "de": "Virtuelle Realität",
+        "fr": "Réalité Virtuelle",
+    },
+    "Quantum Computing": {
+        "en": "Quantum Computing",
+        "ru": "Квантовые вычисления",
+        "de": "Quantencomputing",
+        "fr": "Informatique Quantique",
+    },
 }

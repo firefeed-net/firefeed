@@ -11,16 +11,17 @@ from config import SMTP_CONFIG
 logger = logging.getLogger("email_service.sender")
 logger.setLevel(logging.INFO)
 
+
 class EmailSender:
     def __init__(self):
         self.smtp_config = SMTP_CONFIG
-        self.sender_email = self.smtp_config['email']
-        
+        self.sender_email = self.smtp_config["email"]
+
         # Настройка Jinja2 для загрузки шаблонов
-        template_dir = os.path.join(os.path.dirname(__file__), 'templates')
+        template_dir = os.path.join(os.path.dirname(__file__), "templates")
         self.jinja_env = Environment(loader=FileSystemLoader(template_dir))
-        
-    async def send_password_reset_email(self, to_email: str, reset_token: str, language: str = 'en') -> bool:
+
+    async def send_password_reset_email(self, to_email: str, reset_token: str, language: str = "en") -> bool:
         """
         Отправляет email с ссылкой для сброса пароля
 
@@ -54,11 +55,11 @@ class EmailSender:
             # Отправляем email асинхронно
             await send(
                 message,
-                hostname=self.smtp_config['server'],
-                port=self.smtp_config['port'],
+                hostname=self.smtp_config["server"],
+                port=self.smtp_config["port"],
                 username=self.sender_email,
-                password=self.smtp_config['password'],
-                start_tls=False  # Используем SSL (порт 465)
+                password=self.smtp_config["password"],
+                start_tls=False,  # Используем SSL (порт 465)
             )
 
             logger.info(f"Password reset email sent successfully to {to_email}")
@@ -68,15 +69,15 @@ class EmailSender:
             logger.error(f"Failed to send password reset email to {to_email}: {str(e)}")
             return False
 
-    async def send_verification_email(self, to_email: str, verification_code: str, language: str = 'en') -> bool:
+    async def send_verification_email(self, to_email: str, verification_code: str, language: str = "en") -> bool:
         """
         Отправляет email с кодом подтверждения регистрации
-        
+
         Args:
             to_email (str): Email получателя
             verification_code (str): Код подтверждения
             language (str): Язык письма ('en', 'ru', 'de')
-            
+
         Returns:
             bool: True если письмо отправлено успешно, False в случае ошибки
         """
@@ -86,58 +87,58 @@ class EmailSender:
             message["Subject"] = self._get_subject(language)
             message["From"] = self.sender_email
             message["To"] = to_email
-            
+
             # Получаем содержимое письма из шаблонов
             text_content = self._get_text_content(verification_code, language)
             html_content = self._render_html_template(verification_code, language)
-            
+
             # Создаем части письма
             text_part = MIMEText(text_content, "plain", "utf-8")
             html_part = MIMEText(html_content, "html", "utf-8")
-            
+
             # Добавляем части в сообщение
             message.attach(text_part)
             message.attach(html_part)
-            
+
             # Отправляем email асинхронно
             await send(
                 message,
-                hostname=self.smtp_config['server'],
-                port=self.smtp_config['port'],
+                hostname=self.smtp_config["server"],
+                port=self.smtp_config["port"],
                 username=self.sender_email,
-                password=self.smtp_config['password'],
-                start_tls=False  # Используем SSL (порт 465)
+                password=self.smtp_config["password"],
+                start_tls=False,  # Используем SSL (порт 465)
             )
-            
+
             logger.info(f"Verification email sent successfully to {to_email}")
             return True
-            
+
         except Exception as e:
             logger.error(f"Failed to send verification email to {to_email}: {str(e)}")
             return False
-    
+
     def _get_reset_subject(self, language: str) -> str:
         """Возвращает тему письма сброса пароля в зависимости от языка"""
         subjects = {
-            'en': 'FireFeed - Password Reset',
-            'ru': 'FireFeed - Сброс пароля',
-            'de': 'FireFeed - Passwort zurücksetzen'
+            "en": "FireFeed - Password Reset",
+            "ru": "FireFeed - Сброс пароля",
+            "de": "FireFeed - Passwort zurücksetzen",
         }
-        return subjects.get(language, subjects['en'])
+        return subjects.get(language, subjects["en"])
 
     def _get_subject(self, language: str) -> str:
         """Возвращает тему письма в зависимости от языка"""
         subjects = {
-            'en': 'FireFeed - Account Verification Code',
-            'ru': 'FireFeed - Код подтверждения аккаунта',
-            'de': 'FireFeed - Konto-Verifizierungscode'
+            "en": "FireFeed - Account Verification Code",
+            "ru": "FireFeed - Код подтверждения аккаунта",
+            "de": "FireFeed - Konto-Verifizierungscode",
         }
-        return subjects.get(language, subjects['en'])
-    
+        return subjects.get(language, subjects["en"])
+
     def _get_reset_text_content(self, reset_token: str, language: str) -> str:
         """Возвращает текстовую версию письма сброса пароля"""
         reset_link = f"https://yourdomain.com/reset-password?token={reset_token}"  # TODO: заменить на реальный домен
-        if language == 'ru':
+        if language == "ru":
             return f"""
 FireFeed - Сброс пароля
 
@@ -153,7 +154,7 @@ FireFeed - Сброс пароля
 С уважением,
 Команда FireFeed
             """.strip()
-        elif language == 'de':
+        elif language == "de":
             return f"""
 FireFeed - Passwort zurücksetzen
 
@@ -188,7 +189,7 @@ FireFeed Team
 
     def _get_text_content(self, verification_code: str, language: str) -> str:
         """Возвращает текстовую версию письма"""
-        if language == 'ru':
+        if language == "ru":
             return f"""
 Добро пожаловать в FireFeed!
 
@@ -199,7 +200,7 @@ FireFeed Team
 С уважением,
 Команда FireFeed
             """.strip()
-        elif language == 'de':
+        elif language == "de":
             return f"""
 Willkommen bei FireFeed!
 
@@ -221,17 +222,17 @@ Please enter this code on the registration page to complete the process.
 Best regards,
 FireFeed Team
             """.strip()
-    
+
     def _render_reset_html_template(self, reset_token: str, language: str) -> str:
         """Рендерит HTML шаблон сброса пароля с помощью Jinja2"""
         # Определяем имя файла шаблона
         template_files = {
-            'en': 'password_reset_email_en.html',
-            'ru': 'password_reset_email_ru.html',
-            'de': 'password_reset_email_de.html'
+            "en": "password_reset_email_en.html",
+            "ru": "password_reset_email_ru.html",
+            "de": "password_reset_email_de.html",
         }
 
-        template_name = template_files.get(language, template_files['en'])
+        template_name = template_files.get(language, template_files["en"])
 
         try:
             # Загружаем и рендерим шаблон
@@ -246,12 +247,12 @@ FireFeed Team
         """Рендерит HTML шаблон с помощью Jinja2"""
         # Определяем имя файла шаблона
         template_files = {
-            'en': 'verification_email_en.html',
-            'ru': 'verification_email_ru.html',
-            'de': 'verification_email_de.html'
+            "en": "verification_email_en.html",
+            "ru": "verification_email_ru.html",
+            "de": "verification_email_de.html",
         }
 
-        template_name = template_files.get(language, template_files['en'])
+        template_name = template_files.get(language, template_files["en"])
 
         try:
             # Загружаем и рендерим шаблон
@@ -261,11 +262,11 @@ FireFeed Team
             logger.error(f"Failed to render template {template_name}: {str(e)}")
             # Возвращаем базовый HTML контент если шаблон не найден
             return self._get_fallback_html_content(verification_code, language)
-    
+
     def _get_fallback_html_content(self, verification_code: str, language: str) -> str:
         """Возвращает базовый HTML контент если шаблон не найден"""
         year = datetime.now().year
-        if language == 'ru':
+        if language == "ru":
             return f"""
 <!DOCTYPE html>
 <html>
@@ -300,7 +301,7 @@ FireFeed Team
 </body>
 </html>
             """.strip()
-        elif language == 'de':
+        elif language == "de":
             return f"""
 <!DOCTYPE html>
 <html>
@@ -375,7 +376,7 @@ FireFeed Team
         """Возвращает базовый HTML контент для сброса пароля если шаблон не найден"""
         year = datetime.now().year
         reset_link = f"https://yourdomain.com/reset-password?token={reset_token}"  # TODO: заменить на реальный домен
-        if language == 'ru':
+        if language == "ru":
             return f"""
 <!DOCTYPE html>
 <html>
@@ -410,7 +411,7 @@ FireFeed Team
 </body>
 </html>
             """.strip()
-        elif language == 'de':
+        elif language == "de":
             return f"""
 <!DOCTYPE html>
 <html>
@@ -481,11 +482,13 @@ FireFeed Team
 </html>
             """.strip()
 
+
 # Создаем глобальный экземпляр отправщика
 email_sender = EmailSender()
 
+
 # Удобная функция для отправки письма
-async def send_verification_email(to_email: str, verification_code: str, language: str = 'en') -> bool:
+async def send_verification_email(to_email: str, verification_code: str, language: str = "en") -> bool:
     """
     Удобная функция для отправки email с кодом подтверждения
 
@@ -499,7 +502,8 @@ async def send_verification_email(to_email: str, verification_code: str, languag
     """
     return await email_sender.send_verification_email(to_email, verification_code, language)
 
-async def send_password_reset_email(to_email: str, reset_token: str, language: str = 'en') -> bool:
+
+async def send_password_reset_email(to_email: str, reset_token: str, language: str = "en") -> bool:
     """
     Удобная функция для отправки email с ссылкой сброса пароля
 

@@ -8,32 +8,33 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Уровень логирования по умолчанию, переопределяемый через env var
-LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO')
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 
 # Конфигурация подключения к БД
 DB_CONFIG = {
-    'host': os.getenv('DB_HOST', 'localhost'),
-    'user': os.getenv('DB_USER'),
-    'password': os.getenv('DB_PASSWORD'),
-    'database': os.getenv('DB_NAME'),
-    'port': int(os.getenv('DB_PORT', 5432)),
-    'minsize': int(os.getenv('DB_MINSIZE', 5)),
-    'maxsize': int(os.getenv('DB_MAXSIZE', 20))
+    "host": os.getenv("DB_HOST", "localhost"),
+    "user": os.getenv("DB_USER"),
+    "password": os.getenv("DB_PASSWORD"),
+    "database": os.getenv("DB_NAME"),
+    "port": int(os.getenv("DB_PORT", 5432)),
+    "minsize": int(os.getenv("DB_MINSIZE", 5)),
+    "maxsize": int(os.getenv("DB_MAXSIZE", 20)),
 }
 
 # Конфигурация SMTP для отправки email
 SMTP_CONFIG = {
-    'server': os.getenv('SMTP_SERVER'),
-    'port': int(os.getenv('SMTP_PORT', 465)),
-    'email': os.getenv('SMTP_EMAIL'),
-    'password': os.getenv('SMTP_PASSWORD'),
-    'use_tls': os.getenv('SMTP_USE_TLS', 'True').lower() == 'true'
+    "server": os.getenv("SMTP_SERVER"),
+    "port": int(os.getenv("SMTP_PORT", 465)),
+    "email": os.getenv("SMTP_EMAIL"),
+    "password": os.getenv("SMTP_PASSWORD"),
+    "use_tls": os.getenv("SMTP_USE_TLS", "True").lower() == "true",
 }
 
 # Один общий пул для всех менеджеров
 _shared_db_pool = None
 # Lock для предотвращения гонки при инициализации
 _pool_init_lock = asyncio.Lock()
+
 
 async def get_shared_db_pool():
     """Лениво создает и возвращает общий пул подключений к базе данных в правильном event loop."""
@@ -55,6 +56,7 @@ async def get_shared_db_pool():
         logger.info("[CONFIG] Shared database pool успешно создан.")
         return _shared_db_pool
 
+
 async def close_shared_db_pool():
     """Закрывает общий пул подключений."""
     global _shared_db_pool
@@ -65,29 +67,25 @@ async def close_shared_db_pool():
         logger = logging.getLogger(__name__)
         logger.info("[DB] Общий пул подключений закрыт.")
 
+
 # Конфигурация подключения к webhook
 WEBHOOK_CONFIG = {
-    'listen': os.getenv('WEBHOOK_LISTEN', '127.0.0.1'),
-    'port': int(os.getenv('WEBHOOK_PORT', 5000)),
-    'url_path': os.getenv('WEBHOOK_URL_PATH', 'webhook'),
-    'webhook_url': os.getenv('WEBHOOK_URL')
+    "listen": os.getenv("WEBHOOK_LISTEN", "127.0.0.1"),
+    "port": int(os.getenv("WEBHOOK_PORT", 5000)),
+    "url_path": os.getenv("WEBHOOK_URL_PATH", "webhook"),
+    "webhook_url": os.getenv("WEBHOOK_URL"),
 }
 
 # Токен FeedFire Bot
-BOT_TOKEN = os.getenv('BOT_TOKEN')
+BOT_TOKEN = os.getenv("BOT_TOKEN")
 
 # :-)
 FIRE_EMOJI = "🔥"
 
 # Словарь ID каналов на разных языках
-CHANNEL_IDS = {
-    'ru': '-1002584789230',
-    'de': '-1002959373215',
-    'fr': '-1002910849909',
-    'en': '-1003035894895'
-}
+CHANNEL_IDS = {"ru": "-1002584789230", "de": "-1002959373215", "fr": "-1002910849909", "en": "-1003035894895"}
 
-CHANNEL_CATEGORIES = {'world', 'technology', 'lifestyle', 'politics', 'economy', 'autos', 'sports'}
+CHANNEL_CATEGORIES = {"world", "technology", "lifestyle", "politics", "economy", "autos", "sports"}
 
 # Максимальное кол-во новостей из одной ленты в одной задаче мониторинга новостей
 MAX_ENTRIES_PER_FEED = 3
@@ -105,10 +103,10 @@ IMAGES_ROOT_DIR = "/var/www/firefeed/data/www/firefeed.net/data/images/"
 # Абсолютный путь к директории с изображениями на сайте
 HTTP_IMAGES_ROOT_DIR = "https://firefeed.net/data/images/"
 # Допустимые расширения для изображений
-IMAGE_FILE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.gif', '.webp']
+IMAGE_FILE_EXTENSIONS = [".jpg", ".jpeg", ".png", ".gif", ".webp"]
 
 # Настройки JWT
-JWT_SECRET_KEY = os.getenv('JWT_SECRET_KEY')
+JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY")
 
 VERIFICATION_CODE_EXPIRE_HOURS = 1
 

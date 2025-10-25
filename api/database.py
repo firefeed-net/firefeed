@@ -2,12 +2,14 @@
 import os
 import sys
 import logging
+
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import config
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any, List, Set, Tuple
 
 logger = logging.getLogger(__name__)
+
 
 async def get_db_pool():
     """Получает общий пул подключений к базе данных."""
@@ -18,6 +20,7 @@ async def get_db_pool():
         logger.info(f"[DB] Ошибка при получении пула подключений к PostgreSQL: {e}")
         return None
 
+
 async def close_db_pool():
     """Закрывает общий пул подключений к базе данных."""
     try:
@@ -26,7 +29,9 @@ async def close_db_pool():
     except Exception as e:
         logger.info(f"[DB] Ошибка при закрытии пула подключений к PostgreSQL: {e}")
 
+
 # --- Функции для работы с пользователями ---
+
 
 async def create_user(pool, email: str, password_hash: str, language: str) -> Optional[Dict[str, Any]]:
     """Создает нового пользователя"""
@@ -49,6 +54,7 @@ async def create_user(pool, email: str, password_hash: str, language: str) -> Op
                 logger.info(f"[DB] Error creating user: {e}")
                 return None
 
+
 async def get_user_by_email(pool, email: str) -> Optional[Dict[str, Any]]:
     """Получает пользователя по email"""
     async with pool.acquire() as conn:
@@ -68,6 +74,7 @@ async def get_user_by_email(pool, email: str) -> Optional[Dict[str, Any]]:
                 logger.info(f"[DB] Error getting user by email: {e}")
                 return None
 
+
 async def get_user_by_id(pool, user_id: int) -> Optional[Dict[str, Any]]:
     """Получает пользователя по ID"""
     async with pool.acquire() as conn:
@@ -86,6 +93,7 @@ async def get_user_by_id(pool, user_id: int) -> Optional[Dict[str, Any]]:
             except Exception as e:
                 logger.info(f"[DB] Error getting user by id: {e}")
                 return None
+
 
 async def update_user(pool, user_id: int, update_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     """Обновляет данные пользователя"""
@@ -108,7 +116,7 @@ async def update_user(pool, user_id: int, update_data: Dict[str, Any]) -> Option
                 WHERE id = %s
                 RETURNING id, email, password_hash, language, is_active, created_at, updated_at
                 """
-                params.append(datetime.utcnow()) # updated_at
+                params.append(datetime.utcnow())  # updated_at
                 await cur.execute(query, params)
                 result = await cur.fetchone()
                 if result:
@@ -118,6 +126,7 @@ async def update_user(pool, user_id: int, update_data: Dict[str, Any]) -> Option
             except Exception as e:
                 logger.info(f"[DB] Error updating user: {e}")
                 return None
+
 
 async def delete_user(pool, user_id: int) -> bool:
     """Деактивирует (удаляет) пользователя"""
@@ -135,6 +144,7 @@ async def delete_user(pool, user_id: int) -> bool:
                 logger.info(f"[DB] Error deleting user: {e}")
                 return False
 
+
 async def activate_user(pool, user_id: int) -> bool:
     """Активирует пользователя"""
     async with pool.acquire() as conn:
@@ -148,6 +158,7 @@ async def activate_user(pool, user_id: int) -> bool:
             except Exception as e:
                 logger.info(f"[DB] Error activating user: {e}")
                 return False
+
 
 async def update_user_password(pool, user_id: int, new_hashed_password: str) -> bool:
     """Обновляет пароль пользователя"""
@@ -163,7 +174,9 @@ async def update_user_password(pool, user_id: int, new_hashed_password: str) -> 
                 logger.info(f"[DB] Error updating user password: {e}")
                 return False
 
+
 # --- Функции для работы с кодами верификации ---
+
 
 async def save_verification_code(pool, user_id: int, code: str) -> bool:
     """Сохраняет код верификации для пользователя"""
@@ -184,6 +197,7 @@ async def save_verification_code(pool, user_id: int, code: str) -> bool:
                 logger.info(f"[DB] Error saving verification code: {e}")
                 return False
 
+
 async def verify_user_email(pool, email: str, code: str) -> Optional[int]:
     """Проверяет код верификации и возвращает user_id, если код действителен"""
     async with pool.acquire() as conn:
@@ -198,13 +212,15 @@ async def verify_user_email(pool, email: str, code: str) -> Optional[int]:
                 await cur.execute(query, (email, code, datetime.utcnow()))
                 result = await cur.fetchone()
                 if result:
-                    return result[0] # Возвращаем user_id
+                    return result[0]  # Возвращаем user_id
                 return None
             except Exception as e:
                 logger.info(f"[DB] Error verifying user email: {e}")
                 return None
 
+
 # --- Функции для работы с токенами сброса пароля ---
+
 
 async def save_password_reset_token(pool, user_id: int, token: str, expires_at: datetime) -> bool:
     """Сохраняет токен сброса пароля"""
@@ -224,6 +240,7 @@ async def save_password_reset_token(pool, user_id: int, token: str, expires_at: 
                 logger.info(f"[DB] Error saving password reset token: {e}")
                 return False
 
+
 async def get_password_reset_token(pool, token: str) -> Optional[Dict[str, Any]]:
     """Получает данные токена сброса пароля, если токен действителен"""
     async with pool.acquire() as conn:
@@ -242,6 +259,7 @@ async def get_password_reset_token(pool, token: str) -> Optional[Dict[str, Any]]
                 logger.info(f"[DB] Error getting password reset token: {e}")
                 return None
 
+
 async def delete_password_reset_token(pool, token: str) -> bool:
     """Удаляет использованный токен сброса пароля"""
     async with pool.acquire() as conn:
@@ -253,7 +271,9 @@ async def delete_password_reset_token(pool, token: str) -> bool:
                 logger.info(f"[DB] Error deleting password reset token: {e}")
                 return False
 
+
 # --- Функции для работы с пользовательскими категориями ---
+
 
 async def update_user_categories(pool, user_id: int, category_ids: Set[int]) -> bool:
     """Обновляет список категорий пользователя"""
@@ -270,8 +290,7 @@ async def update_user_categories(pool, user_id: int, category_ids: Set[int]) -> 
                 if category_ids:
                     for cat_id in category_ids:
                         await cur.execute(
-                            "INSERT INTO user_categories (user_id, category_id) VALUES (%s, %s)",
-                            (user_id, cat_id)
+                            "INSERT INTO user_categories (user_id, category_id) VALUES (%s, %s)", (user_id, cat_id)
                         )
 
                 # Коммитим транзакцию
@@ -282,11 +301,8 @@ async def update_user_categories(pool, user_id: int, category_ids: Set[int]) -> 
                 logger.info(f"[DB] Error updating user categories: {e}")
                 return False
 
-async def get_user_categories(
-    pool, 
-    user_id: int, 
-    source_ids: Optional[List[int]] = None
-) -> List[Dict[str, Any]]:
+
+async def get_user_categories(pool, user_id: int, source_ids: Optional[List[int]] = None) -> List[Dict[str, Any]]:
     """Получает список категорий пользователя с фильтрацией по source_id"""
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
@@ -300,7 +316,7 @@ async def get_user_categories(
                 params = [user_id, config.USER_DEFINED_RSS_CATEGORY_ID]
 
                 if source_ids:
-                    placeholders = ','.join(['%s'] * len(source_ids))
+                    placeholders = ",".join(["%s"] * len(source_ids))
                     query += f" AND c.id IN (SELECT category_id FROM source_categories WHERE source_id IN ({placeholders})  AND category_id != %s)"
                     params.extend(source_ids)
 
@@ -313,9 +329,13 @@ async def get_user_categories(
                 logger.info(f"[DB] Error getting user categories: {e}")
                 return []
 
+
 # --- Функции для работы с пользовательскими RSS-лентами ---
 
-async def create_user_rss_feed(pool, user_id: int, url: str, name: str, category_id: int, language: str) -> Optional[Dict[str, Any]]:
+
+async def create_user_rss_feed(
+    pool, user_id: int, url: str, name: str, category_id: int, language: str
+) -> Optional[Dict[str, Any]]:
     """Создает пользовательскую RSS-ленту"""
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
@@ -335,6 +355,7 @@ async def create_user_rss_feed(pool, user_id: int, url: str, name: str, category
             except Exception as e:
                 logger.info(f"[DB] Error creating user RSS feed: {e}")
                 return None
+
 
 async def get_user_rss_feeds(pool, user_id: int, limit: int, offset: int) -> List[Dict[str, Any]]:
     """Получает список RSS-лент пользователя"""
@@ -358,6 +379,7 @@ async def get_user_rss_feeds(pool, user_id: int, limit: int, offset: int) -> Lis
                 logger.info(f"[DB] Error getting user RSS feeds: {e}")
                 return []
 
+
 async def get_user_rss_feed_by_id(pool, user_id: int, feed_id: int) -> Optional[Dict[str, Any]]:
     """Получает конкретную RSS-ленту пользователя"""
     async with pool.acquire() as conn:
@@ -378,7 +400,10 @@ async def get_user_rss_feed_by_id(pool, user_id: int, feed_id: int) -> Optional[
                 logger.info(f"[DB] Error getting user RSS feed by ID: {e}")
                 return None
 
-async def update_user_rss_feed(pool, user_id: int, feed_id: int, update_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+
+async def update_user_rss_feed(
+    pool, user_id: int, feed_id: int, update_data: Dict[str, Any]
+) -> Optional[Dict[str, Any]]:
     """Обновляет пользовательскую RSS-ленту"""
     if not update_data:
         return await get_user_rss_feed_by_id(pool, user_id, feed_id)
@@ -400,7 +425,7 @@ async def update_user_rss_feed(pool, user_id: int, feed_id: int, update_data: Di
                 WHERE user_id = %s AND id = %s
                 RETURNING id, user_id, url, name, category_id, language, is_active, created_at, updated_at
                 """
-                params.append(datetime.utcnow()) # updated_at
+                params.append(datetime.utcnow())  # updated_at
                 await cur.execute(query, params)
                 result = await cur.fetchone()
                 if result:
@@ -410,6 +435,7 @@ async def update_user_rss_feed(pool, user_id: int, feed_id: int, update_data: Di
             except Exception as e:
                 logger.info(f"[DB] Error updating user RSS feed: {e}")
                 return None
+
 
 async def delete_user_rss_feed(pool, user_id: int, feed_id: int) -> bool:
     """Удаляет пользовательскую RSS-ленту"""
@@ -425,15 +451,12 @@ async def delete_user_rss_feed(pool, user_id: int, feed_id: int) -> bool:
                 logger.info(f"[DB] Error deleting user RSS feed: {e}")
                 return False
 
+
 # --- Функции для получения RSS-элементов ---
 
+
 async def get_user_rss_items_list(
-    pool,
-    user_id: int,
-    display_language: str,
-    original_language: Optional[str],
-    limit: int,
-    offset: int
+    pool, user_id: int, display_language: str, original_language: Optional[str], limit: int, offset: int
 ) -> Tuple[int, List[Tuple], List[str]]:
     """
     Получает список RSS-элементов для текущего пользователя на основе его подписок.
@@ -444,17 +467,20 @@ async def get_user_rss_items_list(
             try:
                 # 1. Получить ID категорий, на которые подписан пользователь
                 user_categories = await get_user_categories(pool, user_id)
-                user_category_ids = [cat['id'] for cat in user_categories]
+                user_category_ids = [cat["id"] for cat in user_categories]
 
                 # Если у пользователя нет подписок, возвращаем пустой результат
                 if not user_category_ids:
                     return 0, [], []
 
                 # 2. Получить ID пользовательских RSS-лент пользователя из этих категорий
-                await cur.execute("""
+                await cur.execute(
+                    """
                     SELECT id FROM user_rss_feeds
                     WHERE user_id = %s AND category_id = ANY(%s) AND is_active = TRUE
-                """, (user_id, user_category_ids))
+                """,
+                    (user_id, user_category_ids),
+                )
                 user_rss_feed_ids = [row[0] for row in await cur.fetchall()]
 
                 # Если нет активных лент в подписанных категориях, возвращаем пустой результат
@@ -511,7 +537,7 @@ async def get_user_rss_items_list(
                 """
 
                 # Добавляем параметры для языковых JOIN'ов
-                query_params.extend(['ru', 'en', 'de', 'fr', display_language, user_rss_feed_ids])
+                query_params.extend(["ru", "en", "de", "fr", display_language, user_rss_feed_ids])
 
                 # Добавляем фильтры в WHERE
                 if original_language:
@@ -536,16 +562,11 @@ async def get_user_rss_items_list(
 
             except Exception as e:
                 logger.info(f"[DB] Error in get_user_rss_items_list: {e}")
-                raise # Перебрасываем исключение, чтобы обработать его в API
+                raise  # Перебрасываем исключение, чтобы обработать его в API
+
 
 async def get_user_rss_items_list_by_feed(
-    pool,
-    user_id: int,
-    feed_id: int,
-    display_language: str,
-    original_language: Optional[str],
-    limit: int,
-    offset: int
+    pool, user_id: int, feed_id: int, display_language: str, original_language: Optional[str], limit: int, offset: int
 ) -> Tuple[int, List[Tuple], List[str]]:
     """
     Получает список RSS-элементов из конкретной пользовательской RSS-ленты текущего пользователя.
@@ -555,10 +576,13 @@ async def get_user_rss_items_list_by_feed(
         async with conn.cursor() as cur:
             try:
                 # 1. Проверить, принадлежит ли лента пользователю и активна ли она
-                await cur.execute("""
+                await cur.execute(
+                    """
                     SELECT 1 FROM user_rss_feeds
                     WHERE id = %s AND user_id = %s AND is_active = TRUE
-                """, (feed_id, user_id))
+                """,
+                    (feed_id, user_id),
+                )
                 feed_exists = await cur.fetchone()
 
                 if not feed_exists:
@@ -615,7 +639,7 @@ async def get_user_rss_items_list_by_feed(
                 """
 
                 # Добавляем параметры для языковых JOIN'ов
-                query_params.extend(['ru', 'en', 'de', 'fr', display_language, feed_id])
+                query_params.extend(["ru", "en", "de", "fr", display_language, feed_id])
 
                 # Добавляем фильтры в WHERE
                 if original_language:
@@ -640,7 +664,8 @@ async def get_user_rss_items_list_by_feed(
 
             except Exception as e:
                 logger.info(f"[DB] Error in get_user_rss_items_list_by_feed: {e}")
-                raise # Перебрасываем исключение, чтобы обработать его в API
+                raise  # Перебрасываем исключение, чтобы обработать его в API
+
 
 # --- Перенесено: функция get_rss_item_by_id ---
 async def get_rss_item_by_id(pool, news_id: str) -> Optional[Tuple]:
@@ -676,13 +701,14 @@ async def get_rss_item_by_id(pool, news_id: str) -> Optional[Tuple]:
                 WHERE nd.news_id = %s
                 """
                 # Исправляем параметры запроса
-                query_params = ['ru', 'en', 'de', 'fr', news_id]
+                query_params = ["ru", "en", "de", "fr", news_id]
                 await cur.execute(query, query_params)
                 result = await cur.fetchone()
                 return result
             except Exception as e:
                 logger.info(f"[DB] Ошибка при получении RSS-элемента по ID: {e}")
                 raise
+
 
 # --- Добавлено: обертка для get_rss_item_by_id, возвращающая row и columns ---
 async def get_rss_item_by_id_full(pool, news_id: str) -> Tuple[Optional[Tuple], List[str]]:
@@ -715,7 +741,7 @@ async def get_rss_item_by_id_full(pool, news_id: str) -> Tuple[Optional[Tuple], 
                 LEFT JOIN news_translations nt_fr ON nd.news_id = nt_fr.news_id AND nt_fr.language = %s
                 WHERE nd.news_id = %s
                 """
-                query_params = ['ru', 'en', 'de', 'fr', news_id]
+                query_params = ["ru", "en", "de", "fr", news_id]
                 await cur.execute(query, query_params)
                 result = await cur.fetchone()
                 columns = [desc[0] for desc in cur.description]
@@ -723,6 +749,7 @@ async def get_rss_item_by_id_full(pool, news_id: str) -> Tuple[Optional[Tuple], 
             except Exception as e:
                 logger.info(f"[DB] Ошибка при получении RSS-элемента по ID (full): {e}")
                 return None, []
+
 
 async def get_all_rss_items_list(
     pool,
@@ -737,7 +764,7 @@ async def get_all_rss_items_list(
     before_published_at: Optional[datetime],
     cursor_news_id: Optional[str],
     limit: int,
-    offset: int
+    offset: int,
 ) -> Tuple[int, List[Tuple], List[str]]:
     """
     Получает список всех RSS-элементов с фильтрацией.
@@ -769,22 +796,26 @@ async def get_all_rss_items_list(
 
                 if include_all_translations:
                     # Дополнительные JOIN'ы и колонки только при необходимости
-                    select_parts.extend([
-                        "nt_ru.translated_title as title_ru",
-                        "nt_ru.translated_content as content_ru",
-                        "nt_en.translated_title as title_en",
-                        "nt_en.translated_content as content_en",
-                        "nt_de.translated_title as title_de",
-                        "nt_de.translated_content as content_de",
-                        "nt_fr.translated_title as title_fr",
-                        "nt_fr.translated_content as content_fr",
-                    ])
-                    join_parts.extend([
-                        "LEFT JOIN news_translations nt_ru ON nd.news_id = nt_ru.news_id AND nt_ru.language = 'ru'",
-                        "LEFT JOIN news_translations nt_en ON nd.news_id = nt_en.news_id AND nt_en.language = 'en'",
-                        "LEFT JOIN news_translations nt_de ON nd.news_id = nt_de.news_id AND nt_de.language = 'de'",
-                        "LEFT JOIN news_translations nt_fr ON nd.news_id = nt_fr.news_id AND nt_fr.language = 'fr'",
-                    ])
+                    select_parts.extend(
+                        [
+                            "nt_ru.translated_title as title_ru",
+                            "nt_ru.translated_content as content_ru",
+                            "nt_en.translated_title as title_en",
+                            "nt_en.translated_content as content_en",
+                            "nt_de.translated_title as title_de",
+                            "nt_de.translated_content as content_de",
+                            "nt_fr.translated_title as title_fr",
+                            "nt_fr.translated_content as content_fr",
+                        ]
+                    )
+                    join_parts.extend(
+                        [
+                            "LEFT JOIN news_translations nt_ru ON nd.news_id = nt_ru.news_id AND nt_ru.language = 'ru'",
+                            "LEFT JOIN news_translations nt_en ON nd.news_id = nt_en.news_id AND nt_en.language = 'en'",
+                            "LEFT JOIN news_translations nt_de ON nd.news_id = nt_de.news_id AND nt_de.language = 'de'",
+                            "LEFT JOIN news_translations nt_fr ON nd.news_id = nt_fr.news_id AND nt_fr.language = 'fr'",
+                        ]
+                    )
 
                 query = f"""
                 SELECT {', '.join(select_parts)}
@@ -802,7 +833,7 @@ async def get_all_rss_items_list(
                         query += " AND nd.category_id = %s"
                         params.append(category_id[0])
                     else:
-                        placeholders = ','.join(['%s'] * len(category_id))
+                        placeholders = ",".join(["%s"] * len(category_id))
                         query += f" AND nd.category_id IN ({placeholders})"
                         params.extend(category_id)
                 if source_id:
@@ -810,13 +841,17 @@ async def get_all_rss_items_list(
                         query += " AND rf.source_id = %s"
                         params.append(source_id[0])
                     else:
-                        placeholders = ','.join(['%s'] * len(source_id))
+                        placeholders = ",".join(["%s"] * len(source_id))
                         query += f" AND rf.source_id IN ({placeholders})"
                         params.extend(source_id)
 
                 telegram_published_value = None
                 if telegram_published is not None:
-                    telegram_published_value = bool(str(telegram_published).lower() == 'true') if isinstance(telegram_published, str) else bool(telegram_published)
+                    telegram_published_value = (
+                        bool(str(telegram_published).lower() == "true")
+                        if isinstance(telegram_published, str)
+                        else bool(telegram_published)
+                    )
                     if telegram_published_value:
                         # Для опубликованных: проверяем либо переводы, либо оригиналы
                         if display_language:
@@ -877,7 +912,7 @@ async def get_all_rss_items_list(
                         count_query += " AND nd.category_id = %s"
                         count_params.append(category_id[0])
                     else:
-                        placeholders = ','.join(['%s'] * len(category_id))
+                        placeholders = ",".join(["%s"] * len(category_id))
                         count_query += f" AND nd.category_id IN ({placeholders})"
                         count_params.extend(category_id)
                 if source_id:
@@ -885,7 +920,7 @@ async def get_all_rss_items_list(
                         count_query += " AND rf.source_id = %s"
                         count_params.append(source_id[0])
                     else:
-                        placeholders = ','.join(['%s'] * len(source_id))
+                        placeholders = ",".join(["%s"] * len(source_id))
                         count_query += f" AND rf.source_id IN ({placeholders})"
                         count_params.extend(source_id)
                 if telegram_published is not None:
@@ -922,11 +957,9 @@ async def get_all_rss_items_list(
                 logger.info(f"[DB] Ошибка при выполнении запроса в get_all_rss_items_list: {e}")
                 raise
 
+
 async def get_all_categories_list(
-    pool, 
-    limit: int, 
-    offset: int, 
-    source_ids: Optional[List[int]] = None
+    pool, limit: int, offset: int, source_ids: Optional[List[int]] = None
 ) -> Tuple[int, List[Dict[str, Any]]]:
     """
     Получает список всех категорий с пагинацией и фильтрацией по source_id.
@@ -944,8 +977,10 @@ async def get_all_categories_list(
 
                 # Добавляем фильтр по source_id, если передан
                 if source_ids:
-                    placeholders = ','.join(['%s'] * len(source_ids))
-                    conditions.append(f"id IN (SELECT category_id FROM source_categories WHERE source_id IN ({placeholders}) AND category_id != %s)")
+                    placeholders = ",".join(["%s"] * len(source_ids))
+                    conditions.append(
+                        f"id IN (SELECT category_id FROM source_categories WHERE source_id IN ({placeholders}) AND category_id != %s)"
+                    )
                     params.extend(source_ids)
                     params.append(config.USER_DEFINED_RSS_CATEGORY_ID)
                     count_params.extend(source_ids)
@@ -974,11 +1009,9 @@ async def get_all_categories_list(
                 logger.info(f"[DB] Ошибка при выполнении запроса в get_all_categories_list: {e}")
                 raise
 
+
 async def get_all_sources_list(
-    pool, 
-    limit: int, 
-    offset: int, 
-    category_id: Optional[List[int]] = None
+    pool, limit: int, offset: int, category_id: Optional[List[int]] = None
 ) -> Tuple[int, List[Dict[str, Any]]]:
     """
     Получает список всех источников с пагинацией и опциональной фильтрацией по категориям.
@@ -1020,19 +1053,22 @@ async def get_all_sources_list(
 
                 results = []
                 async for row in cur:
-                    results.append({
-                        "id": row[0],
-                        "name": row[1],
-                        "description": row[2],
-                        "alias": row[3],
-                        "logo": row[4],
-                        "site_url": row[5]
-                    })
+                    results.append(
+                        {
+                            "id": row[0],
+                            "name": row[1],
+                            "description": row[2],
+                            "alias": row[3],
+                            "logo": row[4],
+                            "site_url": row[5],
+                        }
+                    )
 
                 return total_count, results
             except Exception as e:
                 logger.info(f"[DB] Ошибка при выполнении запроса в get_all_sources_list: {e}")
                 raise
+
 
 async def get_recent_news_for_broadcast(pool, last_check_time: datetime) -> List[Dict[str, Any]]:
     """
@@ -1068,7 +1104,7 @@ async def get_recent_news_for_broadcast(pool, last_check_time: datetime) -> List
                 ORDER BY nd.created_at DESC
                 LIMIT 10
                 """
-                check_time_str = last_check_time.strftime('%Y-%m-%d %H:%M:%S')
+                check_time_str = last_check_time.strftime("%Y-%m-%d %H:%M:%S")
                 await cur.execute(query, (check_time_str,))
                 results = []
                 async for row in cur:
@@ -1079,20 +1115,22 @@ async def get_recent_news_for_broadcast(pool, last_check_time: datetime) -> List
                 news_items = []
                 for row in results:
                     row_dict = dict(zip(columns, row))
-                    news_items.append({
-                        "news_id": row_dict['news_id'],
-                        "original_title": row_dict['original_title'],
-                        "original_language": row_dict['original_language'],
-                        "category": row_dict['category_name'],
-                        "published_at": row_dict['published_at'].isoformat() if row_dict['published_at'] else None,
-                        "translations": {
-                            "ru": {"title": row_dict.get('title_ru'), "content": row_dict.get('content_ru')},
-                            "en": {"title": row_dict.get('title_en'), "content": row_dict.get('content_en')},
-                            "de": {"title": row_dict.get('title_de'), "content": row_dict.get('content_de')},
-                            "fr": {"title": row_dict.get('title_fr'), "content": row_dict.get('content_fr')}
+                    news_items.append(
+                        {
+                            "news_id": row_dict["news_id"],
+                            "original_title": row_dict["original_title"],
+                            "original_language": row_dict["original_language"],
+                            "category": row_dict["category_name"],
+                            "published_at": row_dict["published_at"].isoformat() if row_dict["published_at"] else None,
+                            "translations": {
+                                "ru": {"title": row_dict.get("title_ru"), "content": row_dict.get("content_ru")},
+                                "en": {"title": row_dict.get("title_en"), "content": row_dict.get("content_en")},
+                                "de": {"title": row_dict.get("title_de"), "content": row_dict.get("content_de")},
+                                "fr": {"title": row_dict.get("title_fr"), "content": row_dict.get("content_fr")},
+                            },
                         }
-                    })
+                    )
                 return news_items
             except Exception as e:
                 logger.info(f"[DB] Error in get_recent_news_for_broadcast: {e}")
-                return [] # Возвращаем пустой список в случае ошибки, чтобы не прерывать фоновую задачу
+                return []  # Возвращаем пустой список в случае ошибки, чтобы не прерывать фоновую задачу
