@@ -87,6 +87,7 @@ TRANSLATED_FROM_LABELS = {
     "fr": "[AI] Traduit de",
 }
 READ_MORE_LABELS = {"en": "Read more", "ru": "Подробнее", "de": "Mehr lesen", "fr": "En savoir plus"}
+SOURCE_LABELS = {"en": "Source", "ru": "Источник", "de": "Quelle", "fr": "Source"}
 SELECT_CATEGORIES_LABELS = {
     "en": "Choose the categories you are interested in",
     "ru": "Выберите категории, которые вам интересны",

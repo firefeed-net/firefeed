@@ -15,7 +15,7 @@ from tenacity import retry, stop_after_attempt, wait_exponential
 from utils.text import TextProcessor
 
 from config import WEBHOOK_CONFIG, BOT_TOKEN, CHANNEL_IDS, CHANNEL_CATEGORIES, get_shared_db_pool
-from firefeed_translations import get_message, LANG_NAMES, TRANSLATED_FROM_LABELS, READ_MORE_LABELS
+from firefeed_translations import get_message, LANG_NAMES, TRANSLATED_FROM_LABELS, READ_MORE_LABELS, SOURCE_LABELS
 from logging_config import setup_logging
 from user_manager import UserManager
 
@@ -638,7 +638,7 @@ async def post_to_channel(bot, prepared_rss_item: PreparedRSSItem):
             if content and content.strip():
                 content_text += f"\n{content}\n"
             if source_url:
-                content_text += f"\n🔗 <a href=\"{source_url}\">Источник</a>\n"
+                content_text += f"\n🔗 <a href=\"{source_url}\">{SOURCE_LABELS.get(target_lang, 'Source')}</a>\n"
             content_text += f"{lang_note}{hashtags}"
             image_filename = prepared_rss_item.image_filename
             logger.debug(f"post_to_channel image_filename = {image_filename}")
