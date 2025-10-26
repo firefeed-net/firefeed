@@ -12,6 +12,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKe
 from telegram.error import NetworkError, BadRequest, RetryAfter
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes, MessageHandler, filters
 from tenacity import retry, stop_after_attempt, wait_exponential
+from utils.text import TextProcessor
 
 from config import WEBHOOK_CONFIG, BOT_TOKEN, CHANNEL_IDS, CHANNEL_CATEGORIES, get_shared_db_pool
 from firefeed_translations import get_message, LANG_NAMES, TRANSLATED_FROM_LABELS, READ_MORE_LABELS
@@ -483,7 +484,6 @@ async def debug(update: Update, context: ContextTypes.DEFAULT_TYPE):
     USER_CURRENT_MENUS[user_id] = "main"
 
 
-from utils.text import TextProcessor
 
 
 @retry(stop=stop_after_attempt(5), wait=wait_exponential(multiplier=1, min=2, max=30))
@@ -546,8 +546,6 @@ async def send_personal_news(bot, prepared_rss_item: PreparedRSSItem):
             logger.debug(f"send_personal_news image_filename = {image_filename}")
 
             if image_filename:
-                import re
-
                 valid_image_url = re.match(
                     r"^https?://.+\.(jpg|jpeg|png|gif|webp)(\?.*)?$", image_filename, re.IGNORECASE
                 )
@@ -867,7 +865,7 @@ def main():
     logger.info("=== НАЧАЛО ЗАПУСКА БОТА ===")
     logger.info(f"Python version: {sys.version}")
     logger.info(f"Current working directory: {os.getcwd()}")
-    logger.info(f"Bot token length: {len(BOT_TOKEN) if BOT_TOKEN else 0}")
+    logger.info(f"Bot token configured: {'Yes' if BOT_TOKEN else 'No'}")
 
     application = Application.builder().token(BOT_TOKEN).post_stop(post_stop).post_init(post_init).build()
 

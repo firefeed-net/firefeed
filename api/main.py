@@ -15,10 +15,15 @@ import traceback
 from datetime import datetime, timedelta
 from typing import List, Optional
 
+import bcrypt
 import jwt
-from fastapi import FastAPI, APIRouter, Depends, HTTPException, Query, status, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, APIRouter, Depends, HTTPException, Query, status, WebSocket, WebSocketDisconnect, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from api import database, models
@@ -26,7 +31,6 @@ from email_service.sender import send_verification_email, send_password_reset_em
 from logging_config import setup_logging
 
 import config
-import hashlib
 
 setup_logging()
 logger = logging.getLogger(__name__)
@@ -38,6 +42,9 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
 # --- OAuth2 схема ---
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
+
+# --- Rate Limiting ---
+limiter = Limiter(key_func=get_remote_address)
 
 
 # --- Middleware для принудительной установки UTF-8 ---
@@ -59,7 +66,7 @@ class ForceUTF8ResponseMiddleware(BaseHTTPMiddleware):
             return response
         except Exception as e:
             logger.error(f"[Middleware Error] ForceUTF8: {e}")
-            return await call_next(request)
+            raise
 
 
 # --- Функции для работы с JWT ---
@@ -75,16 +82,18 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """Проверяет пароль против хэша"""
-    return hashlib.pbkdf2_hmac(
-        "sha256", plain_password.encode("utf-8"), SECRET_KEY.encode("utf-8"), 100000
-    ) == bytes.fromhex(hashed_password)
+    """Проверяет пароль против хэша с использованием bcrypt"""
+    try:
+        return bcrypt.checkpw(plain_password.encode("utf-8"), hashed_password.encode("utf-8"))
+    except ValueError:
+        # Если хэш не в формате bcrypt, возвращаем False
+        return False
 
 
 def get_password_hash(password: str) -> str:
-    """Создает хэш пароля"""
-    pwdhash = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), SECRET_KEY.encode("utf-8"), 100000)
-    return pwdhash.hex()
+    """Создает хэш пароля с использованием bcrypt"""
+    salt = bcrypt.gensalt()
+    return bcrypt.hashpw(password.encode("utf-8"), salt).decode("utf-8")
 
 
 async def get_current_user(token: str = Depends(oauth2_scheme)):
@@ -127,6 +136,8 @@ app = FastAPI(
     redoc_url="/api/redoc",  # Путь к документации ReDoc
 )
 app.add_middleware(ForceUTF8ResponseMiddleware)
+app.add_middleware(SlowAPIMiddleware)
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 # --- Настройка CORS (важно для расширения Chrome) ---
 # Разрешены только localhost для отладки и firefeed.net для продакшена
 origins = [
@@ -139,6 +150,13 @@ origins = [
     "https://firefeed.net",
     "https://www.firefeed.net",
 ]
+
+# В продакшене ограничиваем origins только доменом firefeed.net
+if os.getenv("ENVIRONMENT") == "production":
+    origins = [
+        "https://firefeed.net",
+        "https://www.firefeed.net",
+    ]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,  # Разрешенные источники
@@ -220,8 +238,12 @@ async def websocket_endpoint(websocket: WebSocket):
         await websocket.send_text(json.dumps({"error": "Invalid JSON"}))
         await websocket.close()
         return
-    except Exception as e:
+    except (json.JSONDecodeError, asyncio.TimeoutError) as e:
         logger.error(f"[WebSocket] Error during subscribe: {e}")
+        await websocket.close()
+        return
+    except Exception as e:
+        logger.error(f"[WebSocket] Unexpected error during subscribe: {e}")
         await websocket.close()
         return
 
@@ -251,7 +273,11 @@ async def websocket_endpoint(websocket: WebSocket):
     except WebSocketDisconnect:
         pass
     except Exception as e:
-        logger.error(f"[WebSocket] Error: {e}")
+        logger.error(f"[WebSocket] Unexpected error: {e}")
+        try:
+            await websocket.close()
+        except Exception:
+            pass  # Ignore errors when closing already closed connection
     finally:
         async with active_connections_lock:
             active_connections.pop(websocket, None)
@@ -333,6 +359,8 @@ async def check_for_new_news():
 @app.on_event("startup")
 async def startup_event():
     """Запускает фоновые задачи при старте приложения"""
+    # Инициализируем limiter для SlowAPI
+    app.state.limiter = limiter
     # Запускаем задачу проверки новых новостей
     asyncio.create_task(check_for_new_news())
     logger.info("[Startup] News checking task started")
@@ -349,8 +377,78 @@ async def shutdown_event():
 
 
 # --- Endpoints для новостей ---
+def validate_news_query_params(display_language, from_date, cursor_published_at):
+    """Валидация параметров запроса новостей"""
+    supported_languages = ["ru", "en", "de", "fr"]
+    if display_language is not None and display_language not in supported_languages:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Неподдерживаемый язык отображения. Допустимые значения: {', '.join(supported_languages)}.",
+        )
+
+    # Преобразуем from_date из миллисекунд в datetime, если передан
+    from_datetime = None
+    if from_date is not None:
+        try:
+            from_datetime = datetime.fromtimestamp(from_date / 1000.0)
+        except (ValueError, OSError):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail="Некорректный формат timestamp в параметре from_date"
+            )
+
+    before_published_at = None
+    if cursor_published_at is not None:
+        try:
+            before_published_at = datetime.fromtimestamp(cursor_published_at / 1000.0)
+        except (ValueError, OSError):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Некорректный формат timestamp в параметре cursor_published_at",
+            )
+
+    return from_datetime, before_published_at
+
+
+def process_news_results(results, columns, display_language, original_language, include_all_translations):
+    """Обработка результатов запроса новостей"""
+    news_list = []
+    for row in results:
+        # Создаем словарь из результата
+        row_dict = dict(zip(columns, row))
+        translations = build_translations_dict(row_dict)
+        # Фильтрация: если display_language указан и original_language переданы и различаются,
+        # то включаем только новости с непустыми переводами на display_language
+        if display_language is not None and original_language and display_language != original_language:
+            if not translations or display_language not in translations:
+                continue
+        # Если указаны оба параметра, добавляем оригинальный текст в translations
+        if display_language is not None and original_language:
+            translations[original_language] = {
+                "title": row_dict["original_title"],
+                "content": row_dict["original_content"],
+            }
+        # Используем category_name и source_name из результата запроса
+        item_data = {
+            "news_id": row_dict["news_id"],
+            "original_title": row_dict["original_title"],
+            "original_content": row_dict["original_content"],
+            "original_language": row_dict["original_language"],
+            "image_url": get_full_image_url(row_dict["image_filename"]),
+            "category": row_dict["category_name"],
+            "source": row_dict["source_name"],
+            "source_url": row_dict["source_url"],
+            "published_at": format_datetime(row_dict["published_at"]),
+            "translations": translations,
+        }
+        news_list.append(models.RSSItem(**item_data))
+
+    return news_list
+
+
 @app.get("/api/v1/rss-items/", summary="Получить список новостей")
+@limiter.limit("100/minute")
 async def get_news(
+    request: Request,
     display_language: Optional[str] = Query(
         None,
         description="Язык, на котором отображать новости (ru, en, de, fr). Если не указан, возвращаются все переводы",
@@ -385,36 +483,11 @@ async def get_news(
     Поддерживает пагинацию через параметры limit и offset.
     Возвращает данные в формате: {"count": общее_количество, "results": [список_новостей]}
     """
-    supported_languages = ["ru", "en", "de", "fr"]
-    if display_language is not None and display_language not in supported_languages:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Неподдерживаемый язык отображения. Допустимые значения: {', '.join(supported_languages)}.",
-        )
-
     # Если display_language не указан, автоматически включаем все переводы
     if display_language is None:
         include_all_translations = True
 
-    # Преобразуем from_date из миллисекунд в datetime, если передан
-    from_datetime = None
-    if from_date is not None:
-        try:
-            from_datetime = datetime.fromtimestamp(from_date / 1000.0)
-        except (ValueError, OSError):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST, detail="Некорректный формат timestamp в параметре from_date"
-            )
-
-    before_published_at = None
-    if cursor_published_at is not None:
-        try:
-            before_published_at = datetime.fromtimestamp(cursor_published_at / 1000.0)
-        except (ValueError, OSError):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Некорректный формат timestamp в параметре cursor_published_at",
-            )
+    from_datetime, before_published_at = validate_news_query_params(display_language, from_date, cursor_published_at)
 
     page_offset = 0 if (cursor_published_at is not None or cursor_news_id is not None) else offset
 
@@ -446,36 +519,7 @@ async def get_news(
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Внутренняя ошибка сервера")
 
     # Форматируем результаты
-    news_list = []
-    for row in results:
-        # Создаем словарь из результата
-        row_dict = dict(zip(columns, row))
-        translations = build_translations_dict(row_dict)
-        # Фильтрация: если display_language указан и original_language переданы и различаются,
-        # то включаем только новости с непустыми переводами на display_language
-        if display_language is not None and original_language and display_language != original_language:
-            if not translations or display_language not in translations:
-                continue
-        # Если указаны оба параметра, добавляем оригинальный текст в translations
-        if display_language is not None and original_language:
-            translations[original_language] = {
-                "title": row_dict["original_title"],
-                "content": row_dict["original_content"],
-            }
-        # Используем category_name и source_name из результата запроса
-        item_data = {
-            "news_id": row_dict["news_id"],
-            "original_title": row_dict["original_title"],
-            "original_content": row_dict["original_content"],
-            "original_language": row_dict["original_language"],
-            "image_url": get_full_image_url(row_dict["image_filename"]),
-            "category": row_dict["category_name"],
-            "source": row_dict["source_name"],
-            "source_url": row_dict["source_url"],
-            "published_at": format_datetime(row_dict["published_at"]),
-            "translations": translations,
-        }
-        news_list.append(models.RSSItem(**item_data))
+    news_list = process_news_results(results, columns, display_language, original_language, include_all_translations)
 
     # Возвращаем данные в формате с count и results (count пересчитывается после фильтрации)
     return {"count": len(news_list), "results": news_list}
@@ -604,7 +648,8 @@ auth_router = APIRouter(prefix="/api/v1/auth", tags=["authentication"])
 
 
 @auth_router.post("/register", response_model=models.UserResponse, status_code=status.HTTP_201_CREATED)
-async def register_user(user: models.UserCreate):
+@limiter.limit("5/minute")
+async def register_user(request: Request, user: models.UserCreate):
     """Регистрация нового пользователя"""
     pool = await database.get_db_pool()
     if pool is None:
@@ -703,7 +748,8 @@ async def verify_user(request: models.EmailVerificationRequest):
 
 
 @auth_router.post("/login", response_model=models.Token)
-async def login_user(form_data: OAuth2PasswordRequestForm = Depends()):
+@limiter.limit("10/minute")
+async def login_user(request: Request, form_data: OAuth2PasswordRequestForm = Depends()):
     """Аутентификация пользователя и выдача токена"""
     pool = await database.get_db_pool()
     if pool is None:
