@@ -611,15 +611,15 @@ async def post_to_channel(bot, prepared_rss_item: PreparedRSSItem):
             # Определяем, использовать ли перевод или оригинал
             if target_lang == original_lang:
                 # Оригинальный язык
-                title = original_title
-                content = original_content
+                title = TextProcessor.clean(original_title)
+                content = TextProcessor.clean(original_content)
                 lang_note = ""
                 translation_id = None  # Для оригинального языка нет перевода
             elif target_lang in translations_cache and translations_cache[target_lang]:
                 # Есть перевод
                 translation_data = translations_cache[target_lang]
-                title = translation_data.get("title", original_title)
-                content = translation_data.get("content", original_content)
+                title = TextProcessor.clean(translation_data.get("title", original_title))
+                content = TextProcessor.clean(translation_data.get("content", original_content))
                 lang_note = (
                     f"\n{TRANSLATED_FROM_LABELS.get(target_lang, '[AI] Translated from')} {original_lang.upper()}\n"
                 )
