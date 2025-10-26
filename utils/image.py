@@ -74,6 +74,11 @@ class ImageProcessor:
                     filename = f"{safe_news_id}{extension}"
                     file_path = os.path.join(full_save_directory, filename)
 
+                    # Проверяем, существует ли файл уже
+                    if os.path.exists(file_path):
+                        logger.info(f"[LOG] Изображение уже существует на сервере: {file_path}")
+                        return file_path
+
                     # Читаем контент асинхронно
                     content = await response.read()
 

@@ -633,9 +633,12 @@ async def post_to_channel(bot, prepared_rss_item: PreparedRSSItem):
                 logger.debug(f"Нет перевода для {news_id} на {target_lang}, пропускаем публикацию")
                 continue
             hashtags = f"\n#{category} #{original_source}"
+            source_url = prepared_rss_item.original_data.get("link", "")
             content_text = f"<b>{title}</b>\n"
             if content and content.strip():
                 content_text += f"\n{content}\n"
+            if source_url:
+                content_text += f"\n🔗 <a href=\"{source_url}\">Источник</a>\n"
             content_text += f"{lang_note}{hashtags}"
             image_filename = prepared_rss_item.image_filename
             logger.debug(f"post_to_channel image_filename = {image_filename}")

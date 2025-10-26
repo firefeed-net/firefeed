@@ -11,25 +11,50 @@ logger = logging.getLogger(__name__)
 
 
 class FireFeedEmbeddingsProcessor:
+    # Глобальный кэш для синглтона
+    _instance = None
+    _model_cache = {}
+    _spacy_cache = {}
+    _spacy_usage_order = []
+
+    def __new__(cls, model_name: str = "paraphrase-multilingual-MiniLM-L12-v2", device: str = "cpu", max_spacy_cache: int = 3):
+        """Синглтон паттерн для кэширования моделей"""
+        cache_key = f"{model_name}_{device}_{max_spacy_cache}"
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+            cls._instance._initialized = False
+        return cls._instance
+
     def __init__(
         self, model_name: str = "paraphrase-multilingual-MiniLM-L12-v2", device: str = "cpu", max_spacy_cache: int = 3
     ):
         """
-        Инициализация процессора эмбеддингов
+        Инициализация процессора эмбеддингов с кэшированием моделей
 
         Args:
             model_name: Название модели sentence-transformers
             device: Устройство для модели (cpu/cuda)
             max_spacy_cache: Максимальное количество кэшированных spacy моделей
         """
-        self.model = SentenceTransformer(model_name, device=device)
+        if self._initialized:
+            return
+
+        self.model_name = model_name
         self.device = device
-        self.embedding_dim = self._get_embedding_dimension()
         self.max_spacy_cache = max_spacy_cache
 
-        # Кэш для spacy моделей с LRU логикой
-        self.spacy_models = {}
-        self.spacy_usage_order = []  # Для LRU: последний использованный в конце
+        # Загружаем или получаем из кэша SentenceTransformer модель
+        model_key = f"{model_name}_{device}"
+        if model_key not in self._model_cache:
+            logger.info(f"[EMBEDDINGS] Загрузка SentenceTransformer модели: {model_name}")
+            self._model_cache[model_key] = SentenceTransformer(model_name, device=device)
+        else:
+            logger.info(f"[EMBEDDINGS] Использование кэшированной SentenceTransformer модели: {model_name}")
+        self.model = self._model_cache[model_key]
+
+        self.embedding_dim = self._get_embedding_dimension()
+
+        self._initialized = True
 
     def _get_embedding_dimension(self) -> int:
         """Получение размерности эмбеддинга модели"""
@@ -38,13 +63,14 @@ class FireFeedEmbeddingsProcessor:
         return len(embedding)
 
     def _get_spacy_model(self, lang_code: str) -> Optional[spacy.Language]:
-        """Получает spacy модель для языка с LRU кэшированием"""
-        if lang_code in self.spacy_models:
+        """Получает spacy модель для языка с глобальным LRU кэшированием"""
+        if lang_code in self._spacy_cache:
             # Обновляем порядок использования (LRU)
-            if lang_code in self.spacy_usage_order:
-                self.spacy_usage_order.remove(lang_code)
-            self.spacy_usage_order.append(lang_code)
-            return self.spacy_models[lang_code]
+            if lang_code in self._spacy_usage_order:
+                self._spacy_usage_order.remove(lang_code)
+            self._spacy_usage_order.append(lang_code)
+            logger.info(f"[EMBEDDINGS] Использование кэшированной spacy модели для языка '{lang_code}'")
+            return self._spacy_cache[lang_code]
 
         spacy_model_map = {
             "en": "en_core_web_sm",
@@ -60,14 +86,14 @@ class FireFeedEmbeddingsProcessor:
 
         try:
             nlp = spacy.load(model_name)
-            self.spacy_models[lang_code] = nlp
-            self.spacy_usage_order.append(lang_code)
+            self._spacy_cache[lang_code] = nlp
+            self._spacy_usage_order.append(lang_code)
 
             # Очищаем кэш если превышен лимит
-            if len(self.spacy_models) > self.max_spacy_cache:
+            if len(self._spacy_cache) > self.max_spacy_cache:
                 # Удаляем наименее недавно использованную модель
-                oldest_lang = self.spacy_usage_order.pop(0)
-                del self.spacy_models[oldest_lang]
+                oldest_lang = self._spacy_usage_order.pop(0)
+                del self._spacy_cache[oldest_lang]
                 logger.info(f"[EMBEDDINGS] Очищена spacy модель для языка '{oldest_lang}' (превышен лимит кэша)")
 
             logger.info(f"[EMBEDDINGS] Загружена spacy модель для языка '{lang_code}': {model_name}")
@@ -110,6 +136,15 @@ class FireFeedEmbeddingsProcessor:
 
         normalized = " ".join(tokens)
         return normalized
+
+    @classmethod
+    def clear_cache(cls):
+        """Очистка глобального кэша моделей (для тестирования или принудительной перезагрузки)"""
+        cls._instance = None
+        cls._model_cache.clear()
+        cls._spacy_cache.clear()
+        cls._spacy_usage_order.clear()
+        logger.info("[EMBEDDINGS] Глобальный кэш моделей очищен")
 
     def generate_embedding(self, text: str, lang_code: str = "en") -> List[float]:
         """

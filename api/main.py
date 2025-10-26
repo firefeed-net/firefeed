@@ -86,8 +86,16 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     try:
         return bcrypt.checkpw(plain_password.encode("utf-8"), hashed_password.encode("utf-8"))
     except ValueError:
-        # Если хэш не в формате bcrypt, возвращаем False
-        return False
+        # Если хэш не в формате bcrypt, пробуем проверить как PBKDF2 для обратной совместимости
+        try:
+            import hashlib
+            SECRET_KEY = getattr(config, "JWT_SECRET_KEY", "your-secret-key-change-in-production")
+            return hashlib.pbkdf2_hmac('sha256',
+                                      plain_password.encode('utf-8'),
+                                      SECRET_KEY.encode('utf-8'),
+                                      100000) == bytes.fromhex(hashed_password)
+        except (ValueError, TypeError):
+            return False
 
 
 def get_password_hash(password: str) -> str:
@@ -194,11 +202,19 @@ def build_translations_dict(row_dict):
     """Формирует структуру переводов из данных строки."""
     translations = {}
     languages = ["ru", "en", "de", "fr"]
+    original_language = row_dict.get("original_language")
+
     for lang in languages:
         title_key = f"title_{lang}"
         content_key = f"content_{lang}"
         title = row_dict.get(title_key)
         content = row_dict.get(content_key)
+
+        # Если перевод отсутствует, используем оригинальный текст для языка оригинала
+        if (title is None or content is None) and lang == original_language:
+            title = row_dict.get("original_title")
+            content = row_dict.get("original_content")
+
         # Добавляем в словарь только если есть данные
         if title is not None or content is not None:
             translations[lang] = {"title": title, "content": content}

@@ -443,24 +443,36 @@ class RSSManager:
         try:
             # Проверяем заголовки
             timeout = aiohttp.ClientTimeout(total=10)
+            content_type_valid = False
             async with aiohttp.ClientSession(timeout=timeout) as session:
                 async with session.head(url, headers=headers) as response:
                     content_type = response.headers.get("Content-Type", "").lower()
-                    if "xml" not in content_type and "rss" not in content_type and "atom" not in content_type:
-                        logger.warning(f"[RSS] [VALIDATE] URL {url} не является RSS (Content-Type: {content_type})")
-                        return False
+                    if "xml" in content_type or "rss" in content_type or "atom" in content_type:
+                        content_type_valid = True
+                    else:
+                        logger.warning(f"[RSS] [VALIDATE] URL {url} имеет Content-Type: {content_type}, проверяем содержимое...")
 
-            # Пробуем спарсить небольшую часть
+            # Пробуем спарсить содержимое
             loop = asyncio.get_event_loop()
             feed = await loop.run_in_executor(None, feedparser.parse, url)
             if feed.bozo:
-                logger.error(f"[RSS] [VALIDATE] Ошибка парсинга RSS {url}: {feed.bozo_exception}")
-                return False
+                # Игнорируем ошибки кодировки, так как контент все равно считывается
+                if "document declared as us-ascii, but parsed as utf-8" in str(feed.bozo_exception):
+                    logger.warning(f"[RSS] [VALIDATE] Игнорируем ошибку кодировки для {url}: {feed.bozo_exception}")
+                else:
+                    logger.error(f"[RSS] [VALIDATE] Ошибка парсинга RSS {url}: {feed.bozo_exception}")
+                    return False
             if not hasattr(feed, "entries") or len(feed.entries) == 0:
                 logger.warning(f"[RSS] [VALIDATE] RSS {url} не содержит записей")
                 return False
-            logger.info(f"[RSS] [VALIDATE] RSS {url} валиден, содержит {len(feed.entries)} записей")
+
+            # Если Content-Type был некорректным, но парсинг прошел успешно - это валидный RSS
+            if not content_type_valid:
+                logger.info(f"[RSS] [VALIDATE] RSS {url} валиден несмотря на некорректный Content-Type, содержит {len(feed.entries)} записей")
+            else:
+                logger.info(f"[RSS] [VALIDATE] RSS {url} валиден, содержит {len(feed.entries)} записей")
             return True
+
         except Exception as e:
             logger.error(f"[RSS] [VALIDATE] Ошибка валидации RSS {url}: {e}")
             # Если ошибка связана с типом данных, попробуем получить сырой контент
@@ -474,10 +486,14 @@ class RSSManager:
                             loop = asyncio.get_event_loop()
                             feed = await loop.run_in_executor(None, feedparser.parse, raw_content)
                             if feed.bozo:
-                                logger.error(
-                                    f"[RSS] [VALIDATE] Ошибка парсинга сырого контента RSS {url}: {feed.bozo_exception}"
-                                )
-                                return False
+                                # Игнорируем ошибки кодировки, так как контент все равно считывается
+                                if "document declared as us-ascii, but parsed as utf-8" in str(feed.bozo_exception):
+                                    logger.warning(f"[RSS] [VALIDATE] Игнорируем ошибку кодировки для сырого контента {url}: {feed.bozo_exception}")
+                                else:
+                                    logger.error(
+                                        f"[RSS] [VALIDATE] Ошибка парсинга сырого контента RSS {url}: {feed.bozo_exception}"
+                                    )
+                                    return False
                             if not hasattr(feed, "entries") or len(feed.entries) == 0:
                                 logger.warning(
                                     f"[RSS] [VALIDATE] RSS {url} не содержит записей после парсинга сырого контента"
