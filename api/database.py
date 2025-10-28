@@ -167,39 +167,38 @@ async def update_user_password(pool, user_id: int, new_hashed_password: str) -> 
             try:
                 query = "UPDATE users SET password_hash = %s, updated_at = %s WHERE id = %s"
                 await cur.execute(query, (new_hashed_password, datetime.utcnow(), user_id))
-                if cur.rowcount > 0:
-                    return True
-                return False
+                return cur.rowcount > 0
             except Exception as e:
-                logger.info(f"[DB] Error updating user password: {e}")
+                logger.error(f"[DB] Error updating user password: {e}")
                 return False
 
 
 # --- Функции для работы с кодами верификации ---
 
 
-async def save_verification_code(pool, user_id: int, code: str) -> bool:
-    """Сохраняет код верификации для пользователя"""
+async def save_verification_code(pool, user_id: int, verification_code: str, expires_at: datetime) -> bool:
+    """Сохраняет код верификации для пользователя согласно схеме user_verification_codes.
+    Поля: (user_id, verification_code, created_at DEFAULT now(), expires_at, used_at NULL)
+    """
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
             try:
-                # Удаляем старые коды для этого пользователя
+                # Удаляем старые коды для этого пользователя (необязательная очистка)
                 await cur.execute("DELETE FROM user_verification_codes WHERE user_id = %s", (user_id,))
                 # Вставляем новый код
-                expires_at = datetime.utcnow() + timedelta(hours=config.VERIFICATION_CODE_EXPIRE_HOURS)
                 query = """
-                INSERT INTO user_verification_codes (user_id, code, expires_at, created_at)
-                VALUES (%s, %s, %s, %s)
+                INSERT INTO user_verification_codes (user_id, verification_code, expires_at)
+                VALUES (%s, %s, %s)
                 """
-                await cur.execute(query, (user_id, code, expires_at, datetime.utcnow()))
+                await cur.execute(query, (user_id, verification_code, expires_at))
                 return True
             except Exception as e:
-                logger.info(f"[DB] Error saving verification code: {e}")
+                logger.error(f"[DB] Error saving verification code: {e}")
                 return False
 
 
-async def verify_user_email(pool, email: str, code: str) -> Optional[int]:
-    """Проверяет код верификации и возвращает user_id, если код действителен"""
+async def verify_user_email(pool, email: str, verification_code: str) -> Optional[int]:
+    """Проверяет код верификации и возвращает user_id, если код действителен."""
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
             try:
@@ -207,17 +206,55 @@ async def verify_user_email(pool, email: str, code: str) -> Optional[int]:
                 SELECT uvc.user_id
                 FROM user_verification_codes uvc
                 JOIN users u ON uvc.user_id = u.id
-                WHERE u.email = %s AND uvc.code = %s AND uvc.expires_at > %s
+                WHERE u.email = %s
+                  AND uvc.verification_code = %s
+                  AND uvc.used_at IS NULL
+                  AND uvc.expires_at > %s
                 """
-                await cur.execute(query, (email, code, datetime.utcnow()))
+                await cur.execute(query, (email, verification_code, datetime.utcnow()))
                 result = await cur.fetchone()
                 if result:
-                    return result[0]  # Возвращаем user_id
+                    return result[0]
                 return None
             except Exception as e:
-                logger.info(f"[DB] Error verifying user email: {e}")
+                logger.error(f"[DB] Error verifying user email: {e}")
                 return None
 
+
+async def get_active_verification_code(pool, user_id: int, verification_code: str) -> Optional[dict]:
+    """Возвращает активный (неиспользованный и неистекший) код верификации пользователя."""
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            try:
+                await cur.execute(
+                    """
+                    SELECT id, user_id, verification_code, created_at, expires_at, used_at
+                    FROM user_verification_codes
+                    WHERE user_id = %s AND verification_code = %s AND used_at IS NULL AND expires_at > NOW()
+                    FOR UPDATE
+                    """,
+                    (user_id, verification_code),
+                )
+                row = await cur.fetchone()
+                if row:
+                    cols = [d[0] for d in cur.description]
+                    return dict(zip(cols, row))
+                return None
+            except Exception as e:
+                logger.error(f"[DB] Error getting active verification code: {e}")
+                return None
+
+
+async def mark_verification_code_used(pool, code_id: int) -> bool:
+    """Отмечает код верификации как использованный (used_at = NOW())."""
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            try:
+                await cur.execute("UPDATE user_verification_codes SET used_at = NOW() WHERE id = %s", (code_id,))
+                return cur.rowcount > 0
+            except Exception as e:
+                logger.error(f"[DB] Error marking verification code used: {e}")
+                return False
 
 # --- Функции для работы с токенами сброса пароля ---
 
@@ -268,7 +305,7 @@ async def delete_password_reset_token(pool, token: str) -> bool:
                 await cur.execute("DELETE FROM password_reset_tokens WHERE token = %s", (token,))
                 return True
             except Exception as e:
-                logger.info(f"[DB] Error deleting password reset token: {e}")
+                logger.error(f"[DB] Error deleting password reset token: {e}")
                 return False
 
 
@@ -301,6 +338,18 @@ async def update_user_categories(pool, user_id: int, category_ids: Set[int]) -> 
                 logger.info(f"[DB] Error updating user categories: {e}")
                 return False
 
+
+async def get_all_category_ids(pool) -> Set[int]:
+    """Возвращает множество всех id категорий."""
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            try:
+                await cur.execute("SELECT id FROM categories")
+                rows = await cur.fetchall()
+                return {row[0] for row in rows}
+            except Exception as e:
+                logger.error(f"[DB] Error fetching category ids: {e}")
+                return set()
 
 async def get_user_categories(pool, user_id: int, source_ids: Optional[List[int]] = None) -> List[Dict[str, Any]]:
     """Получает список категорий пользователя с фильтрацией по source_id"""
@@ -1010,6 +1059,72 @@ async def get_all_categories_list(
                 raise
 
 
+async def activate_user_and_use_verification_code(pool, user_id: int, verification_code: str) -> bool:
+    """В одной транзакции активирует пользователя и помечает код верификации как использованный.
+    Возвращает True при успехе, False при ошибке или если код не найден/недействителен.
+    """
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            try:
+                await cur.execute("BEGIN")
+                await cur.execute(
+                    """
+                    SELECT id FROM user_verification_codes
+                    WHERE user_id = %s AND verification_code = %s AND used_at IS NULL AND expires_at > NOW()
+                    FOR UPDATE
+                    """,
+                    (user_id, verification_code),
+                )
+                rec = await cur.fetchone()
+                if not rec:
+                    await cur.execute("ROLLBACK")
+                    return False
+                await cur.execute("UPDATE users SET is_active = TRUE WHERE id = %s", (user_id,))
+                await cur.execute("UPDATE user_verification_codes SET used_at = NOW() WHERE id = %s", (rec[0],))
+                await cur.execute("COMMIT")
+                return True
+            except Exception as e:
+                await cur.execute("ROLLBACK")
+                logger.error(f"[DB] Error activating user with verification code: {e}")
+                return False
+
+async def confirm_password_reset_transaction(pool, token: str, new_password_hash: str) -> bool:
+    """В одной транзакции проверяет валидность reset-токена, обновляет пароль и удаляет токен."""
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            try:
+                await cur.execute("BEGIN")
+                await cur.execute(
+                    """
+                    SELECT user_id, expires_at FROM password_reset_tokens
+                    WHERE token = %s AND expires_at > %s AND used_at IS NULL
+                    FOR UPDATE
+                    """,
+                    (token, datetime.utcnow()),
+                )
+                token_record = await cur.fetchone()
+                if not token_record:
+                    await cur.execute("ROLLBACK")
+                    return False
+                user_id, expires_at = token_record
+                if expires_at < datetime.utcnow():
+                    await cur.execute("ROLLBACK")
+                    return False
+                await cur.execute(
+                    "UPDATE users SET password_hash = %s, updated_at = %s WHERE id = %s",
+                    (new_password_hash, datetime.utcnow(), user_id),
+                )
+                await cur.execute("DELETE FROM password_reset_tokens WHERE token = %s", (token,))
+                if cur.rowcount == 0:
+                    await cur.execute("ROLLBACK")
+                    return False
+                await cur.execute("COMMIT")
+                return True
+            except Exception as e:
+                await cur.execute("ROLLBACK")
+                logger.error(f"[DB] Error confirming password reset: {e}")
+                return False
+
 async def get_all_sources_list(
     pool, limit: int, offset: int, category_id: Optional[List[int]] = None
 ) -> Tuple[int, List[Dict[str, Any]]]:
@@ -1112,10 +1227,10 @@ async def get_recent_news_for_broadcast(pool, last_check_time: datetime) -> List
 
                 # Преобразуем в формат для отправки
                 columns = [desc[0] for desc in cur.description]
-                news_items = []
+                rss_items_payload = []
                 for row in results:
                     row_dict = dict(zip(columns, row))
-                    news_items.append(
+                    rss_items_payload.append(
                         {
                             "news_id": row_dict["news_id"],
                             "original_title": row_dict["original_title"],
@@ -1130,7 +1245,7 @@ async def get_recent_news_for_broadcast(pool, last_check_time: datetime) -> List
                             },
                         }
                     )
-                return news_items
+                return rss_items_payload
             except Exception as e:
                 logger.info(f"[DB] Error in get_recent_news_for_broadcast: {e}")
                 return []  # Возвращаем пустой список в случае ошибки, чтобы не прерывать фоновую задачу

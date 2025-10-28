@@ -33,6 +33,8 @@ class EmailSender:
         Returns:
             bool: True если письмо отправлено успешно, False в случае ошибки
         """
+        start_ts = datetime.utcnow()
+        logger.info(f"[EmailSender] Password reset email start: to={to_email} at {start_ts.isoformat()}Z")
         try:
             # Создаем сообщение
             message = MIMEMultipart("alternative")
@@ -52,7 +54,7 @@ class EmailSender:
             message.attach(text_part)
             message.attach(html_part)
 
-            # Отправляем email асинхронно
+            # Отправляем email асинхронно с таймаутами (connect/read/write по 10 секунд)
             await send(
                 message,
                 hostname=self.smtp_config["server"],
@@ -60,13 +62,19 @@ class EmailSender:
                 username=self.sender_email,
                 password=self.smtp_config["password"],
                 start_tls=False,  # Используем SSL (порт 465)
+                timeout=10,
             )
 
-            logger.info(f"Password reset email sent successfully to {to_email}")
+            duration = (datetime.utcnow() - start_ts).total_seconds()
+            if duration > 10:
+                logger.warning(f"[EmailSender] Password reset email slow ({duration:.3f}s) to {to_email}")
+            else:
+                logger.info(f"[EmailSender] Password reset email sent in {duration:.3f}s to {to_email}")
             return True
 
         except Exception as e:
-            logger.error(f"Failed to send password reset email to {to_email}: {str(e)}")
+            duration = (datetime.utcnow() - start_ts).total_seconds()
+            logger.error(f"[EmailSender] Failed to send password reset email to {to_email} after {duration:.3f}s: {str(e)}")
             return False
 
     async def send_verification_email(self, to_email: str, verification_code: str, language: str = "en") -> bool:
@@ -81,6 +89,8 @@ class EmailSender:
         Returns:
             bool: True если письмо отправлено успешно, False в случае ошибки
         """
+        start_ts = datetime.utcnow()
+        logger.info(f"[EmailSender] Verification email start: to={to_email} at {start_ts.isoformat()}Z")
         try:
             # Создаем сообщение
             message = MIMEMultipart("alternative")
@@ -100,7 +110,7 @@ class EmailSender:
             message.attach(text_part)
             message.attach(html_part)
 
-            # Отправляем email асинхронно
+            # Отправляем email асинхронно с таймаутом 10 секунд
             await send(
                 message,
                 hostname=self.smtp_config["server"],
@@ -108,13 +118,19 @@ class EmailSender:
                 username=self.sender_email,
                 password=self.smtp_config["password"],
                 start_tls=False,  # Используем SSL (порт 465)
+                timeout=10,
             )
 
-            logger.info(f"Verification email sent successfully to {to_email}")
+            duration = (datetime.utcnow() - start_ts).total_seconds()
+            if duration > 10:
+                logger.warning(f"[EmailSender] Verification email slow ({duration:.3f}s) to {to_email}")
+            else:
+                logger.info(f"[EmailSender] Verification email sent in {duration:.3f}s to {to_email}")
             return True
 
         except Exception as e:
-            logger.error(f"Failed to send verification email to {to_email}: {str(e)}")
+            duration = (datetime.utcnow() - start_ts).total_seconds()
+            logger.error(f"[EmailSender] Failed to send verification email to {to_email} after {duration:.3f}s: {str(e)}")
             return False
 
     def _get_reset_subject(self, language: str) -> str:
