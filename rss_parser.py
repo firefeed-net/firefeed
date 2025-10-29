@@ -27,6 +27,7 @@ class RSSParserService:
         self.running = True
         self.parse_task = None
         self.batch_processor_task = None
+        self.cleanup_task = None
 
     async def parse_rss_task(self):
         """Периодическая задача парсинга RSS"""
@@ -74,6 +75,40 @@ class RSSParserService:
 
             traceback.print_exc()
 
+    async def cleanup_duplicates_task(self):
+        """Фоновая задача очистки дубликатов (запускается каждый час)"""
+        while self.running:
+            try:
+                logger.info("[CLEANUP] Запуск периодической очистки дубликатов...")
+                await self.rss_manager.cleanup_duplicates()
+                logger.info("[CLEANUP] Периодическая очистка дубликатов завершена")
+
+                # Ждем 1 час перед следующей очисткой или пока не будет остановка
+                for _ in range(3600):  # 3600 секунд = 1 час
+                    if not self.running:
+                        logger.info(
+                            "[RSS_PARSER] [CLEANUP_TASK] Получен сигнал остановки, завершение задачи очистки дубликатов."
+                        )
+                        return
+                    await asyncio.sleep(1)
+
+            except asyncio.CancelledError:
+                logger.info("[CLEANUP] [CLEANUP_TASK] Задача очистки дубликатов отменена")
+                break
+            except Exception as e:
+                logger.error(f"[CLEANUP] [CLEANUP_TASK] Ошибка в фоновой задаче очистки дубликатов: {e}")
+                import traceback
+
+                traceback.print_exc()
+                # Ждем 5 минут перед повторной попыткой или проверкой флага остановки
+                for _ in range(300):  # 300 секунд = 5 минут
+                    if not self.running:
+                        logger.info(
+                            "[RSS_PARSER] [CLEANUP_TASK] Получен сигнал остановки во время ожидания, завершение задачи очистки дубликатов."
+                        )
+                        return
+                    await asyncio.sleep(1)
+
     async def batch_processor_task_loop(self):
         """Фоновая задача пакетной обработки"""
         while self.running:
@@ -120,12 +155,13 @@ class RSSParserService:
         # Создаем задачи
         self.parse_task = asyncio.create_task(self.parse_rss_task())
         self.batch_processor_task = asyncio.create_task(self.batch_processor_task_loop())
+        self.cleanup_task = asyncio.create_task(self.cleanup_duplicates_task())
 
         try:
             # Ждем завершения любой из задач (обычно это не происходит, если running=True)
             # Или завершения по сигналу (который установит running=False и задачи завершатся)
             done, pending = await asyncio.wait(
-                [self.parse_task, self.batch_processor_task], return_when=asyncio.FIRST_COMPLETED
+                [self.parse_task, self.batch_processor_task, self.cleanup_task], return_when=asyncio.FIRST_COMPLETED
             )
             logger.info(f"[RSS_PARSER] Одна из задач завершена. Done: {len(done)}, Pending: {len(pending)}")
 
@@ -176,10 +212,9 @@ class RSSParserService:
         # Просто ждем, пока задачи не завершатся сами по self.running=False
         # Это нужно для использования с wait_for
         while (
-            self.parse_task
-            and not self.parse_task.done()
-            or self.batch_processor_task
-            and not self.batch_processor_task.done()
+            (self.parse_task and not self.parse_task.done())
+            or (self.batch_processor_task and not self.batch_processor_task.done())
+            or (self.cleanup_task and not self.cleanup_task.done())
         ):
             await asyncio.sleep(0.1)
         logger.info("[RSS_PARSER] Все задачи остановлены по флагу running.")
@@ -200,6 +235,11 @@ class RSSParserService:
             logger.info("[RSS_PARSER] Отмена активной задачи пакетной обработки...")
             self.batch_processor_task.cancel()
             tasks_to_cancel.append(self.batch_processor_task)
+
+        if self.cleanup_task and not self.cleanup_task.done():
+            logger.info("[RSS_PARSER] Отмена активной задачи очистки дубликатов...")
+            self.cleanup_task.cancel()
+            tasks_to_cancel.append(self.cleanup_task)
 
         # Дожидаемся завершения отмененных задач
         if tasks_to_cancel:
