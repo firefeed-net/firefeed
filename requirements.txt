@@ -32,4 +32,6 @@ python-multipart==0.0.20
 spacy==3.8.7
 aiosmtplib==4.0.2
 bcrypt==5.0.0
+pytest==8.3.4
+pytest-asyncio==0.25.1
 slowapi==0.1.9

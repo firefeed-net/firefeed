@@ -13,7 +13,6 @@ import config
 
 logger = logging.getLogger(__name__)
 
-# JWT constants moved to config.py
 SECRET_KEY = config.JWT_SECRET_KEY
 ALGORITHM = config.JWT_ALGORITHM
 ACCESS_TOKEN_EXPIRE_MINUTES = config.JWT_ACCESS_TOKEN_EXPIRE_MINUTES
@@ -82,7 +81,7 @@ def sanitize_search_phrase(search_phrase: str) -> str:
 
 def validate_rss_url(url: str) -> bool:
     """Validate RSS URL format and safety"""
-    if not url or len(url) > 2048:  # Reasonable URL length limit
+    if not url or len(url) > 2048:
         return False
 
     try:
