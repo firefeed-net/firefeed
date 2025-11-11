@@ -1,10 +1,10 @@
 import logging
 from typing import List, Optional
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from api.middleware import limiter
 from api import database, models
-from api.deps import format_datetime, get_full_image_url, build_translations_dict, validate_rss_items_query_params, sanitize_search_phrase
+from api.deps import format_datetime, get_full_image_url, build_translations_dict, validate_rss_items_query_params, sanitize_search_phrase, get_current_user_by_api_key
 import config
 
 logger = logging.getLogger(__name__)
@@ -119,6 +119,7 @@ async def get_rss_items(
     cursor_rss_item_id: Optional[str] = Query(None),
     limit: Optional[int] = Query(50, le=100, gt=0),
     offset: Optional[int] = Query(0, ge=0),
+    current_user: dict = Depends(get_current_user_by_api_key),
 ):
     if display_language is None:
         include_all_translations = True
@@ -186,7 +187,7 @@ async def get_rss_items(
     }
 )
 @limiter.limit("300/minute")
-async def get_rss_item_by_id(request: Request, rss_item_id: str):
+async def get_rss_item_by_id(request: Request, rss_item_id: str, current_user: dict = Depends(get_current_user_by_api_key)):
     pool = await database.get_db_pool()
     if pool is None:
         raise HTTPException(status_code=500, detail="Ошибка подключения к базе данных")
@@ -257,6 +258,7 @@ async def get_categories(
     limit: Optional[int] = Query(100, le=1000, gt=0),
     offset: Optional[int] = Query(0, ge=0),
     source_ids: Optional[List[int]] = Query(None),
+    current_user: dict = Depends(get_current_user_by_api_key),
 ):
     pool = await database.get_db_pool()
     if pool is None:
@@ -318,6 +320,7 @@ async def get_sources(
     limit: Optional[int] = Query(100, le=1000, gt=0),
     offset: Optional[int] = Query(0, ge=0),
     category_id: Optional[List[int]] = Query(None),
+    current_user: dict = Depends(get_current_user_by_api_key),
 ):
     pool = await database.get_db_pool()
     if pool is None:
@@ -365,7 +368,7 @@ async def get_sources(
     }
 )
 @limiter.limit("300/minute")
-async def get_languages(request: Request):
+async def get_languages(request: Request, current_user: dict = Depends(get_current_user_by_api_key)):
     return {"results": config.SUPPORTED_LANGUAGES}
 
 

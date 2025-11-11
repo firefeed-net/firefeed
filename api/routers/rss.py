@@ -1,15 +1,27 @@
 import logging
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, HTTPException, Response
 from feedgen.feed import FeedGenerator
 from email.utils import formatdate
 
-from api.middleware import limiter
 from api import database
-from api.deps import get_current_user_by_api_key
 import config
+import redis
+import json
+from datetime import datetime, timedelta
 
 logger = logging.getLogger(__name__)
+
+# Redis client for caching
+redis_client = redis.Redis(
+    host=config.REDIS_CONFIG["host"],
+    port=config.REDIS_CONFIG["port"],
+    password=config.REDIS_CONFIG["password"],
+    db=config.REDIS_CONFIG["db"],
+    decode_responses=True
+)
+
+CACHE_TTL_SECONDS = 3600  # 1 hour
 
 router = APIRouter(
     tags=["rss"],
@@ -83,10 +95,16 @@ def generate_rss_feed(results, columns, language, feed_title, feed_description):
         500: {"description": "Internal Server Error"}
     }
 )
-@limiter.limit("100/minute")
-async def get_rss_feed_by_category(request: Request, language: str, category_name: str, current_user: dict = Depends(get_current_user_by_api_key)):
+async def get_rss_feed_by_category(language: str, category_name: str):
     if language not in config.SUPPORTED_LANGUAGES:
         raise HTTPException(status_code=400, detail=f"Unsupported language: {language}")
+
+    cache_key = f"rss:category:{category_name}:{language}"
+
+    # Try to get from cache
+    cached_rss = redis_client.get(cache_key)
+    if cached_rss:
+        return Response(content=cached_rss, media_type="application/rss+xml")
 
     pool = await database.get_db_pool()
     if pool is None:
@@ -98,7 +116,8 @@ async def get_rss_feed_by_category(request: Request, language: str, category_nam
         if category_id is None:
             raise HTTPException(status_code=404, detail=f"Category '{category_name}' not found")
 
-        # Get RSS items for the category
+        # Get RSS items for the category (last hour, max 10 items)
+        from_date = int((datetime.utcnow() - timedelta(hours=1)).timestamp())
         total_count, results, columns = await database.get_all_rss_items_list(
             pool,
             display_language=language,
@@ -106,18 +125,21 @@ async def get_rss_feed_by_category(request: Request, language: str, category_nam
             category_id=[category_id],
             source_id=None,
             telegram_published=None,
-            from_date=None,
+            from_date=from_date,
             search_phrase=None,
             include_all_translations=False,
             before_published_at=None,
             cursor_news_id=None,
-            limit=100,  # Limit to 100 items for RSS
+            limit=10,  # Max 10 items per hour
             offset=0,
         )
 
         feed_title = f"FireFeed - {category_name} ({language.upper()})"
         feed_description = f"Latest news in {category_name} category, translated to {language.upper()}"
         rss_xml = generate_rss_feed(results, columns, language, feed_title, feed_description)
+
+        # Cache the result
+        redis_client.setex(cache_key, CACHE_TTL_SECONDS, rss_xml)
 
         return Response(content=rss_xml, media_type="application/rss+xml")
 
@@ -150,10 +172,16 @@ async def get_rss_feed_by_category(request: Request, language: str, category_nam
         500: {"description": "Internal Server Error"}
     }
 )
-@limiter.limit("100/minute")
-async def get_rss_feed_by_source(request: Request, language: str, source_alias: str, current_user: dict = Depends(get_current_user_by_api_key)):
+async def get_rss_feed_by_source(language: str, source_alias: str):
     if language not in config.SUPPORTED_LANGUAGES:
         raise HTTPException(status_code=400, detail=f"Unsupported language: {language}")
+
+    cache_key = f"rss:source:{source_alias}:{language}"
+
+    # Try to get from cache
+    cached_rss = redis_client.get(cache_key)
+    if cached_rss:
+        return Response(content=cached_rss, media_type="application/rss+xml")
 
     pool = await database.get_db_pool()
     if pool is None:
@@ -165,7 +193,8 @@ async def get_rss_feed_by_source(request: Request, language: str, source_alias: 
         if source_id is None:
             raise HTTPException(status_code=404, detail=f"Source '{source_alias}' not found")
 
-        # Get RSS items for the source
+        # Get RSS items for the source (last hour, max 10 items)
+        from_date = int((datetime.utcnow() - timedelta(hours=1)).timestamp())
         total_count, results, columns = await database.get_all_rss_items_list(
             pool,
             display_language=language,
@@ -173,18 +202,21 @@ async def get_rss_feed_by_source(request: Request, language: str, source_alias: 
             category_id=None,
             source_id=[source_id],
             telegram_published=None,
-            from_date=None,
+            from_date=from_date,
             search_phrase=None,
             include_all_translations=False,
             before_published_at=None,
             cursor_news_id=None,
-            limit=100,  # Limit to 100 items for RSS
+            limit=10,  # Max 10 items per hour
             offset=0,
         )
 
         feed_title = f"FireFeed - {source_alias} ({language.upper()})"
         feed_description = f"Latest news from {source_alias} source, translated to {language.upper()}"
         rss_xml = generate_rss_feed(results, columns, language, feed_title, feed_description)
+
+        # Cache the result
+        redis_client.setex(cache_key, CACHE_TTL_SECONDS, rss_xml)
 
         return Response(content=rss_xml, media_type="application/rss+xml")
 
