@@ -1,12 +1,14 @@
 import logging
 import re
+import hashlib
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import Optional, Dict, Any
 from urllib.parse import urlparse
 
 import bcrypt
 import jwt
-from fastapi import Depends, HTTPException, status
+import redis
+from fastapi import Depends, HTTPException, status, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 import config
@@ -18,6 +20,12 @@ ALGORITHM = config.JWT_ALGORITHM
 ACCESS_TOKEN_EXPIRE_MINUTES = config.JWT_ACCESS_TOKEN_EXPIRE_MINUTES
 
 security = HTTPBearer()
+
+
+def hash_api_key(api_key: str) -> str:
+    """Hash API key with bcrypt for storage"""
+    salt = bcrypt.gensalt()
+    return bcrypt.hashpw(api_key.encode("utf-8"), salt).decode("utf-8")
 
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
@@ -186,3 +194,136 @@ def validate_rss_items_query_params(display_language, from_date, cursor_publishe
             )
 
     return from_datetime, before_published_at
+
+
+# Redis client for rate limiting
+_redis_client = None
+
+
+def get_redis_client():
+    """Get Redis client for rate limiting"""
+    global _redis_client
+    if _redis_client is None:
+        _redis_client = redis.Redis(
+            host=config.REDIS_CONFIG["host"],
+            port=config.REDIS_CONFIG["port"],
+            password=config.REDIS_CONFIG["password"],
+            db=config.REDIS_CONFIG["db"],
+            decode_responses=True
+        )
+    return _redis_client
+
+
+async def check_rate_limit(api_key_data: Dict[str, Any]) -> None:
+    """Check and increment rate limit for API key"""
+    redis_client = get_redis_client()
+    key_id = api_key_data["id"]
+    limits = api_key_data["limits"]
+
+    now = datetime.utcnow()
+    day_key = f"user_api_key:{key_id}:day:{now.strftime('%Y-%m-%d')}"
+    hour_key = f"user_api_key:{key_id}:hour:{now.strftime('%Y-%m-%d-%H')}"
+
+    # Check daily limit
+    if "requests_per_day" in limits:
+        day_count = redis_client.incr(day_key)
+        if day_count == 1:
+            redis_client.expire(day_key, 86400)  # 24 hours
+        if day_count > limits["requests_per_day"]:
+            logger.warning(f"API key {key_id}: Daily limit exceeded ({day_count}/{limits['requests_per_day']})")
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="Daily request limit exceeded",
+                headers={"Retry-After": "86400"}
+            )
+        logger.info(f"API key {key_id}: Daily requests {day_count}/{limits['requests_per_day']}")
+
+    # Check hourly limit
+    if "requests_per_hour" in limits:
+        hour_count = redis_client.incr(hour_key)
+        if hour_count == 1:
+            redis_client.expire(hour_key, 3600)  # 1 hour
+        if hour_count > limits["requests_per_hour"]:
+            logger.warning(f"API key {key_id}: Hourly limit exceeded ({hour_count}/{limits['requests_per_hour']})")
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="Hourly request limit exceeded",
+                headers={"Retry-After": "3600"}
+            )
+        logger.info(f"API key {key_id}: Hourly requests {hour_count}/{limits['requests_per_hour']}")
+
+
+async def get_current_user_by_api_key(request: Request):
+    """Dependency to get current user authenticated by API key"""
+    try:
+        # Extract API key from X-API-Key header
+        api_key = request.headers.get("X-API-Key")
+        if not api_key:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="X-API-Key header required",
+            )
+
+        # Check if it's the site or bot API key
+        if config.SITE_API_KEY and api_key == config.SITE_API_KEY:
+            # Site key: unlimited access, return system user
+            return {
+                "id": 0,  # System user ID
+                "email": "system@firefeed.net",
+                "language": "en",
+                "is_active": True,
+                "created_at": None,
+                "updated_at": None,
+                "api_key_data": {"limits": {}}  # No limits
+            }
+        if config.BOT_API_KEY and api_key == config.BOT_API_KEY:
+            # Bot key: unlimited access, return bot user
+            return {
+                "id": -1,  # Bot user ID
+                "email": "bot@firefeed.net",
+                "language": "en",
+                "is_active": True,
+                "created_at": None,
+                "updated_at": None,
+                "api_key_data": {"limits": {}}  # No limits
+            }
+
+        # Get API key data from database
+        from api import database
+        pool = await database.get_db_pool()
+        if pool is None:
+            raise HTTPException(status_code=500, detail="Database error")
+
+        api_key_data = await database.get_user_api_key_by_key(pool, api_key)
+        if not api_key_data:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid API key",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+        # Check rate limits
+        await check_rate_limit(api_key_data)
+
+        # Get user data
+        user_data = await database.get_user_by_id(pool, api_key_data["user_id"])
+        if not user_data:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="User not found",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+        # Return user data with API key info
+        user_data["api_key_data"] = api_key_data
+        return user_data
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in API key authentication: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication failed",
+            headers={"WWW-Authenticate": "Bearer"},
+        )

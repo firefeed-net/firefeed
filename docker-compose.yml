@@ -1,6 +1,15 @@
 version: '3.8'
 
 services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    command: redis-server --requirepass ${REDIS_PASSWORD}
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+
   firefeed-api:
     build: .
     ports:
@@ -20,9 +29,13 @@ services:
       - WEBHOOK_LISTEN=0.0.0.0
       - WEBHOOK_PORT=5000
       - LOG_LEVEL=INFO
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
     volumes:
       - ./data:/app/data  # Монтируем директорию для изображений
     depends_on:
+      - redis
       - db  # Если БД тоже в docker-compose
     restart: unless-stopped
 
@@ -40,3 +53,4 @@ services:
 
 volumes:
   postgres_data:
+  redis_data:

@@ -351,6 +351,32 @@ async def get_all_category_ids(pool) -> Set[int]:
                 logger.error(f"[DB] Error fetching category ids: {e}")
                 return set()
 
+
+async def get_category_id_by_name(pool, category_name: str) -> Optional[int]:
+    """Возвращает id категории по её имени."""
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            try:
+                await cur.execute("SELECT id FROM categories WHERE name = %s", (category_name,))
+                row = await cur.fetchone()
+                return row[0] if row else None
+            except Exception as e:
+                logger.error(f"[DB] Error fetching category id by name: {e}")
+                return None
+
+
+async def get_source_id_by_alias(pool, source_alias: str) -> Optional[int]:
+    """Возвращает id источника по его alias."""
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            try:
+                await cur.execute("SELECT id FROM sources WHERE alias = %s", (source_alias,))
+                row = await cur.fetchone()
+                return row[0] if row else None
+            except Exception as e:
+                logger.error(f"[DB] Error fetching source id by alias: {e}")
+                return None
+
 async def get_user_categories(pool, user_id: int, source_ids: Optional[List[int]] = None) -> List[Dict[str, Any]]:
     """Получает список категорий пользователя с фильтрацией по source_id"""
     async with pool.acquire() as conn:
@@ -1249,3 +1275,144 @@ async def get_recent_rss_items_for_broadcast(pool, last_check_time: datetime) ->
             except Exception as e:
                 logger.info(f"[DB] Error in get_recent_news_for_broadcast: {e}")
                 return []  # Возвращаем пустой список в случае ошибки, чтобы не прерывать фоновую задачу
+
+
+# --- Функции для работы с API-ключами пользователей ---
+
+
+async def create_user_api_key(pool, user_id: int, plain_key: str, limits: Dict[str, int], expires_at: Optional[datetime] = None) -> Optional[Dict[str, Any]]:
+    """Создает новый API-ключ для пользователя"""
+    from api.deps import hash_api_key
+    key_hash = hash_api_key(plain_key)
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            try:
+                query = """
+                INSERT INTO user_api_keys (user_id, key_hash, limits, is_active, created_at, expires_at)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                RETURNING id, user_id, key_hash, limits, is_active, created_at, expires_at
+                """
+                now = datetime.utcnow()
+                await cur.execute(query, (user_id, key_hash, limits, True, now, expires_at))
+                result = await cur.fetchone()
+                if result:
+                    columns = [desc[0] for desc in cur.description]
+                    data = dict(zip(columns, result))
+                    data["key"] = plain_key  # Add plain key for response
+                    return data
+                return None
+            except Exception as e:
+                logger.error(f"[DB] Error creating user API key: {e}")
+                return None
+
+
+async def get_user_api_keys(pool, user_id: int) -> List[Dict[str, Any]]:
+    """Получает список API-ключей пользователя"""
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            try:
+                query = """
+                SELECT id, user_id, limits, is_active, created_at, expires_at
+                FROM user_api_keys
+                WHERE user_id = %s
+                ORDER BY created_at DESC
+                """
+                await cur.execute(query, (user_id,))
+                results = []
+                async for row in cur:
+                    columns = [desc[0] for desc in cur.description]
+                    results.append(dict(zip(columns, row)))
+                return results
+            except Exception as e:
+                logger.error(f"[DB] Error getting user API keys: {e}")
+                return []
+
+
+async def get_user_api_key_by_key(pool, plain_key: str) -> Optional[Dict[str, Any]]:
+    """Получает API-ключ по значению ключа"""
+    from api.deps import hash_api_key
+    key_hash = hash_api_key(plain_key)
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            try:
+                query = """
+                SELECT id, user_id, limits, is_active, created_at, expires_at
+                FROM user_api_keys
+                WHERE key_hash = %s AND is_active = TRUE AND (expires_at IS NULL OR expires_at > %s)
+                """
+                await cur.execute(query, (key_hash, datetime.utcnow()))
+                result = await cur.fetchone()
+                if result:
+                    columns = [desc[0] for desc in cur.description]
+                    return dict(zip(columns, result))
+                return None
+            except Exception as e:
+                logger.error(f"[DB] Error getting user API key by key: {e}")
+                return None
+
+
+async def update_user_api_key(pool, user_id: int, key_id: int, update_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Обновляет API-ключ пользователя"""
+    if not update_data:
+        return await get_user_api_key_by_id(pool, user_id, key_id)
+
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            try:
+                set_parts = []
+                params = []
+                for key, value in update_data.items():
+                    set_parts.append(f"{key} = %s")
+                    params.append(value)
+                params.append(user_id)
+                params.append(key_id)
+
+                query = f"""
+                UPDATE user_api_keys
+                SET {', '.join(set_parts)}
+                WHERE user_id = %s AND id = %s
+                RETURNING id, user_id, limits, is_active, created_at, expires_at
+                """
+                await cur.execute(query, params)
+                result = await cur.fetchone()
+                if result:
+                    columns = [desc[0] for desc in cur.description]
+                    return dict(zip(columns, result))
+                return None
+            except Exception as e:
+                logger.error(f"[DB] Error updating user API key: {e}")
+                return None
+
+
+async def get_user_api_key_by_id(pool, user_id: int, key_id: int) -> Optional[Dict[str, Any]]:
+    """Получает конкретный API-ключ пользователя по ID"""
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            try:
+                query = """
+                SELECT id, user_id, limits, is_active, created_at, expires_at
+                FROM user_api_keys
+                WHERE user_id = %s AND id = %s
+                """
+                await cur.execute(query, (user_id, key_id))
+                result = await cur.fetchone()
+                if result:
+                    columns = [desc[0] for desc in cur.description]
+                    return dict(zip(columns, result))
+                return None
+            except Exception as e:
+                logger.error(f"[DB] Error getting user API key by ID: {e}")
+                return None
+
+
+async def delete_user_api_key(pool, user_id: int, key_id: int) -> bool:
+    """Удаляет API-ключ пользователя"""
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            try:
+                query = "DELETE FROM user_api_keys WHERE user_id = %s AND id = %s"
+                await cur.execute(query, (user_id, key_id))
+                return cur.rowcount > 0
+            except Exception as e:
+                logger.error(f"[DB] Error deleting user API key: {e}")
+                return False

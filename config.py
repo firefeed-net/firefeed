@@ -114,6 +114,22 @@ VERIFICATION_CODE_EXPIRE_HOURS = 1
 
 USER_DEFINED_RSS_CATEGORY_ID = 10
 
+# Supported languages for translations
+SUPPORTED_LANGUAGES = ["en", "ru", "de", "fr"]
+
+# Конфигурация Redis
+REDIS_CONFIG = {
+    "host": os.getenv("REDIS_HOST", "localhost"),
+    "port": int(os.getenv("REDIS_PORT", 6379)),
+    "password": os.getenv("REDIS_PASSWORD"),
+    "db": int(os.getenv("REDIS_DB", 0)),
+}
+
+# API Key configuration
+API_KEY_SALT = os.getenv("API_KEY_SALT", "default_salt_change_in_production")
+SITE_API_KEY = os.getenv("SITE_API_KEY")  # Special key for website, unlimited access
+BOT_API_KEY = os.getenv("BOT_API_KEY")  # Special key for Telegram bot, unlimited access
+
 # JWT configuration
 JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY")
 JWT_ALGORITHM = "HS256"

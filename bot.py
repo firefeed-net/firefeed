@@ -26,6 +26,7 @@ logger = logging.getLogger(__name__)
 
 # --- Конфигурация API ---
 API_BASE_URL = "http://localhost:8000/api/v1"
+BOT_API_KEY = os.getenv("BOT_API_KEY")  # API key for bot authentication
 
 # --- Глобальные переменные ---
 USER_STATES = {}  # {user_id: {"current_subs": [...], "language": "en", "last_access": timestamp}}
@@ -137,8 +138,13 @@ async def api_get(endpoint: str, params: dict = None) -> dict:
         else:
             processed_params = params
 
+        # Добавляем API key в headers, если задан
+        headers = {}
+        if BOT_API_KEY:
+            headers["X-API-Key"] = BOT_API_KEY
+
         timeout = aiohttp.ClientTimeout(total=10, connect=5)  # Таймаут 10 секунд для API запросов
-        async with http_session.get(url, params=processed_params, timeout=timeout) as response:
+        async with http_session.get(url, params=processed_params, headers=headers, timeout=timeout) as response:
             if response.status == 200:
                 return await response.json()
             else:

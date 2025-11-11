@@ -10,6 +10,8 @@ from api.routers import categories as categories_router
 from api.routers import rss_feeds as rss_feeds_router
 from api.routers import telegram as telegram_router
 from api.routers import rss_items as rss_items_router
+from api.routers import rss as rss_router
+from api.routers import api_keys as api_keys_router
 from api.websocket import router as ws_router, check_for_new_rss_items
 from api import database
 from logging_config import setup_logging
@@ -110,6 +112,8 @@ app.include_router(categories_router.router)
 app.include_router(rss_feeds_router.router)
 app.include_router(telegram_router.router)
 app.include_router(rss_items_router.router)
+app.include_router(rss_router.router)
+app.include_router(api_keys_router.router)
 app.include_router(ws_router)
 
 
