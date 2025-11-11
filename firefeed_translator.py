@@ -686,11 +686,11 @@ class FireFeedTranslator:
                 )
 
                 # Ждем его с таймаутом
-                result = await asyncio.wait_for(future, timeout=120.0)
+                result = await asyncio.wait_for(future, timeout=300.0)
                 self.stats["translations_processed"] += len(texts)
                 return result
             except asyncio.TimeoutError:
-                logger.error(f"[ERROR] [TRANSLATOR] ТАЙМАУТ (120 сек) для '{source_lang}' -> '{target_lang}'!")
+                logger.error(f"[ERROR] [TRANSLATOR] ТАЙМАУТ (300 сек) для '{source_lang}' -> '{target_lang}'!")
                 return texts
             except Exception as e:
                 logger.error(f"[ERROR] [TRANSLATOR] Ошибка при переводе '{source_lang}' -> '{target_lang}': {e}")

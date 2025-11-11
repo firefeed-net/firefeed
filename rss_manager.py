@@ -19,6 +19,7 @@ class RSSManager:
     def __init__(self, translator_queue=None):
         self.translator_queue = translator_queue
         self._feed_semaphore = asyncio.Semaphore(MAX_CONCURRENT_FEEDS)
+        self._validation_cache = {}  # Кэш валидации фидов: url -> (is_valid, timestamp)
 
     async def get_pool(self):
         """Вспомогательный метод: Получает общий пул подключений из config.py."""
@@ -425,7 +426,19 @@ class RSSManager:
         return on_success, on_error
 
     async def validate_rss_feed(self, url, headers):
-        """Валидирует RSS-ленту: проверяет, что URL возвращает валидный RSS."""
+        """Валидирует RSS-ленту: проверяет, что URL возвращает валидный RSS. Использует кэш на 5 минут."""
+        import time
+        cache_ttl = 300  # 5 минут
+
+        current_time = time.time()
+        if url in self._validation_cache:
+            is_valid, timestamp = self._validation_cache[url]
+            if current_time - timestamp < cache_ttl:
+                logger.debug(f"[RSS] [VALIDATE] Используем кэш для {url}: valid={is_valid}")
+                return is_valid
+            else:
+                del self._validation_cache[url]  # Удаляем устаревший кэш
+
         try:
             # Проверяем заголовки
             timeout = aiohttp.ClientTimeout(total=10)
@@ -447,9 +460,11 @@ class RSSManager:
                     logger.warning(f"[RSS] [VALIDATE] Игнорируем ошибку кодировки для {url}: {feed.bozo_exception}")
                 else:
                     logger.error(f"[RSS] [VALIDATE] Ошибка парсинга RSS {url}: {feed.bozo_exception}")
+                    self._validation_cache[url] = (False, current_time)
                     return False
             if not hasattr(feed, "entries") or len(feed.entries) == 0:
                 logger.warning(f"[RSS] [VALIDATE] RSS {url} не содержит записей")
+                self._validation_cache[url] = (False, current_time)
                 return False
 
             # Если Content-Type был некорректным, но парсинг прошел успешно - это валидный RSS
@@ -457,6 +472,7 @@ class RSSManager:
                 logger.info(f"[RSS] [VALIDATE] RSS {url} валиден несмотря на некорректный Content-Type, содержит {len(feed.entries)} записей")
             else:
                 logger.info(f"[RSS] [VALIDATE] RSS {url} валиден, содержит {len(feed.entries)} записей")
+            self._validation_cache[url] = (True, current_time)
             return True
 
         except Exception as e:
@@ -479,19 +495,24 @@ class RSSManager:
                                     logger.error(
                                         f"[RSS] [VALIDATE] Ошибка парсинга сырого контента RSS {url}: {feed.bozo_exception}"
                                     )
+                                    self._validation_cache[url] = (False, current_time)
                                     return False
                             if not hasattr(feed, "entries") or len(feed.entries) == 0:
                                 logger.warning(
                                     f"[RSS] [VALIDATE] RSS {url} не содержит записей после парсинга сырого контента"
                                 )
+                                self._validation_cache[url] = (False, current_time)
                                 return False
                             logger.info(
                                 f"[RSS] [VALIDATE] RSS {url} валиден после парсинга сырого контента, содержит {len(feed.entries)} записей"
                             )
+                            self._validation_cache[url] = (True, current_time)
                             return True
                 except Exception as raw_e:
                     logger.error(f"[RSS] [VALIDATE] Ошибка валидации сырого контента RSS {url}: {raw_e}")
+                    self._validation_cache[url] = (False, current_time)
                     return False
+            self._validation_cache[url] = (False, current_time)
             return False
 
     async def fetch_single_feed(self, feed_info, headers):
@@ -547,31 +568,34 @@ class RSSManager:
                     return local_rss_items
 
                 logger.info(f"[RSS] Парсинг ленты: {feed_info['name']} ({feed_info['url']})")
-                # Парсим RSS асинхронно
-                loop = asyncio.get_event_loop()
-                feed = await loop.run_in_executor(None, feedparser.parse, feed_info["url"])
-                # Альтернативная попытка с использованием aiohttp для получения сырого содержимого
-                if not feed.entries and feed.bozo:
-                    logger.debug(f"[RSS] [DEBUG] feedparser не смог распарсить {feed_info['url']}. Пробуем aiohttp...")
-                    try:
-                        timeout = aiohttp.ClientTimeout(total=15)
-                        async with aiohttp.ClientSession(timeout=timeout) as session:
-                            async with session.get(feed_info["url"], headers=headers) as response:
-                                raw_content = await response.text()
-                                # Парсим асинхронно
-                                loop = asyncio.get_event_loop()
-                                feed = await loop.run_in_executor(None, feedparser.parse, raw_content)
-                                if feed.entries:
-                                    logger.debug(f"[RSS] [DEBUG] aiohttp помог распарсить {feed_info['url']}")
-                    except asyncio.TimeoutError:
-                        logger.debug(f"[RSS] [DEBUG] Таймаут при получении сырого содержимого для {feed_info['url']}")
-                    except Exception as fetch_err:  # Еще более общий exception
-                        logger.debug(
-                            f"[RSS] [DEBUG] Неожиданная ошибка при получении сырого содержимого для {feed_info['url']}: {type(fetch_err).__name__}: {fetch_err}"
-                        )
-                        import traceback
+                # Асинхронно получаем сырой контент RSS
+                timeout = aiohttp.ClientTimeout(total=15)
+                raw_content = None
+                try:
+                    async with aiohttp.ClientSession(timeout=timeout) as session:
+                        async with session.get(feed_info["url"], headers=headers) as response:
+                            raw_content = await response.text()
+                except asyncio.TimeoutError:
+                    logger.debug(f"[RSS] [DEBUG] Таймаут при получении сырого содержимого для {feed_info['url']}")
+                except Exception as fetch_err:
+                    logger.debug(
+                        f"[RSS] [DEBUG] Неожиданная ошибка при получении сырого содержимого для {feed_info['url']}: {type(fetch_err).__name__}: {fetch_err}"
+                    )
+                    import traceback
+                    traceback.print_exc()
 
-                        traceback.print_exc()
+                if not raw_content:
+                    logger.warning(f"[RSS] Не удалось получить контент для {feed_info['url']}")
+                    return local_rss_items
+
+                # Парсим RSS в executor
+                loop = asyncio.get_event_loop()
+                feed = await loop.run_in_executor(None, feedparser.parse, raw_content)
+                if feed.entries:
+                    logger.debug(f"[RSS] [DEBUG] Успешно распарсили {feed_info['url']} с {len(feed.entries)} записями")
+                elif feed.bozo:
+                    logger.warning(f"[RSS] [DEBUG] feedparser не смог распарсить {feed_info['url']}: {feed.bozo_exception}")
+                    return local_rss_items
 
                 if not feed.entries:
                     logger.warning(f"[RSS] Нет записей в {feed_info['url']}")

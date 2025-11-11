@@ -88,11 +88,11 @@ CHANNEL_IDS = {"ru": "-1002584789230", "de": "-1002959373215", "fr": "-100291084
 CHANNEL_CATEGORIES = {"world", "technology", "lifestyle", "politics", "economy", "autos", "sports"}
 
 # Максимальное кол-во новостей из одной ленты в одной задаче мониторинга новостей
-MAX_ENTRIES_PER_FEED = 3
+MAX_ENTRIES_PER_FEED = 5
 # Максимальное кол-во всех новостей со всех лент в одной задаче мониторинга новостей
 MAX_TOTAL_RSS_ITEMS = 15
 # Максимальное количество RSS-лент, обрабатываемых одновременно
-MAX_CONCURRENT_FEEDS = 3
+MAX_CONCURRENT_FEEDS = 10
 # Интервал проверки RSS-элементов в API
 RSS_ITEM_CHECK_INTERVAL_SECONDS = 300
 # Максимальное количество одновременных WebSocket соединений
