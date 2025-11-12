@@ -415,9 +415,14 @@ async def create_user_rss_feed(
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
             try:
+                # Check if the feed already exists for this user
+                await cur.execute("SELECT 1 FROM user_rss_feeds WHERE user_id = %s AND url = %s", (user_id, url))
+                if await cur.fetchone():
+                    return {"error": "duplicate"}
+
                 query = """
                 INSERT INTO user_rss_feeds (user_id, url, name, category_id, language, is_active, created_at, updated_at)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING id, user_id, url, name, category_id, language, is_active, created_at, updated_at
                 """
                 now = datetime.utcnow()
@@ -455,7 +460,7 @@ async def get_user_rss_feeds(pool, user_id: int, limit: int, offset: int) -> Lis
                 return []
 
 
-async def get_user_rss_feed_by_id(pool, user_id: int, feed_id: int) -> Optional[Dict[str, Any]]:
+async def get_user_rss_feed_by_id(pool, user_id: int, feed_id: str) -> Optional[Dict[str, Any]]:
     """Получает конкретную RSS-ленту пользователя"""
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
@@ -477,7 +482,7 @@ async def get_user_rss_feed_by_id(pool, user_id: int, feed_id: int) -> Optional[
 
 
 async def update_user_rss_feed(
-    pool, user_id: int, feed_id: int, update_data: Dict[str, Any]
+    pool, user_id: int, feed_id: str, update_data: Dict[str, Any]
 ) -> Optional[Dict[str, Any]]:
     """Обновляет пользовательскую RSS-ленту"""
     if not update_data:
@@ -512,7 +517,7 @@ async def update_user_rss_feed(
                 return None
 
 
-async def delete_user_rss_feed(pool, user_id: int, feed_id: int) -> bool:
+async def delete_user_rss_feed(pool, user_id: int, feed_id: str) -> bool:
     """Удаляет пользовательскую RSS-ленту"""
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
@@ -641,7 +646,7 @@ async def get_user_rss_items_list(
 
 
 async def get_user_rss_items_list_by_feed(
-    pool, user_id: int, feed_id: int, display_language: str, original_language: Optional[str], limit: int, offset: int
+    pool, user_id: int, feed_id: str, display_language: str, original_language: Optional[str], limit: int, offset: int
 ) -> Tuple[int, List[Tuple], List[str]]:
     """
     Получает список RSS-элементов из конкретной пользовательской RSS-ленты текущего пользователя.

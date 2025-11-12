@@ -60,8 +60,8 @@ def process_rss_items_results(results, columns, display_language, original_langu
     **Filtering Options:**
     - `display_language`: Language for displaying content (ru, en, de, fr)
     - `original_language`: Filter by original article language
-    - `category_id`: Filter by news categories (multiple values allowed)
-    - `source_id`: Filter by news sources (multiple values allowed)
+    - `category_id`: Filter by news categories (comma-separated values or multiple params allowed, e.g., 3,5 or category_id=3&category_id=5)
+    - `source_id`: Filter by news sources (comma-separated values or multiple params allowed, e.g., 1,2 or source_id=1&source_id=2)
     - `telegram_published`: Filter by Telegram publication status (true/false)
     - `from_date`: Filter articles published after this timestamp (Unix timestamp)
     - `search_phrase`: Full-text search in titles and content
@@ -109,8 +109,8 @@ async def get_rss_items(
     request: Request,
     display_language: Optional[str] = Query(None),
     original_language: Optional[str] = Query(None),
-    category_id: Optional[List[int]] = Query(None),
-    source_id: Optional[List[int]] = Query(None),
+    category_id: Optional[List[str]] = Query(None),
+    source_id: Optional[List[str]] = Query(None),
     telegram_published: Optional[bool] = Query(None),
     from_date: Optional[int] = Query(None),
     search_phrase: Optional[str] = Query(None, alias="searchPhrase"),
@@ -123,6 +123,33 @@ async def get_rss_items(
 ):
     if display_language is None:
         include_all_translations = True
+
+    # Parse category_id and source_id from lists of strings (supporting comma-separated or multiple params)
+    category_ids = None
+    if category_id:
+        try:
+            ids = []
+            for cid in category_id:
+                if ',' in cid:
+                    ids.extend(int(x.strip()) for x in cid.split(',') if x.strip())
+                else:
+                    ids.append(int(cid.strip()))
+            category_ids = ids if ids else None
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid category_id format")
+
+    source_ids = None
+    if source_id:
+        try:
+            ids = []
+            for sid in source_id:
+                if ',' in sid:
+                    ids.extend(int(x.strip()) for x in sid.split(',') if x.strip())
+                else:
+                    ids.append(int(sid.strip()))
+            source_ids = ids if ids else None
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid source_id format")
 
     # Sanitize search phrase
     if search_phrase:
@@ -140,8 +167,8 @@ async def get_rss_items(
             pool,
             display_language,
             original_language,
-            category_id,
-            source_id,
+            category_ids,
+            source_ids,
             telegram_published,
             from_datetime,
             search_phrase,
@@ -228,7 +255,7 @@ async def get_rss_item_by_id(request: Request, rss_item_id: str, current_user: d
     **Query parameters:**
     - `limit`: Number of categories per page (1-1000, default: 100)
     - `offset`: Number of categories to skip (default: 0)
-    - `source_ids`: Filter categories by associated news sources (multiple values allowed)
+    - `source_ids`: Filter categories by associated news sources (comma-separated values or multiple params allowed, e.g., 1,2 or source_ids=1&source_ids=2)
 
     **Rate limit:** 300 requests per minute
     """,
@@ -257,15 +284,28 @@ async def get_categories(
     request: Request,
     limit: Optional[int] = Query(100, le=1000, gt=0),
     offset: Optional[int] = Query(0, ge=0),
-    source_ids: Optional[List[int]] = Query(None),
+    source_ids: Optional[List[str]] = Query(None),
     current_user: dict = Depends(get_current_user_by_api_key),
 ):
+    source_ids_list = None
+    if source_ids:
+        try:
+            ids = []
+            for sid in source_ids:
+                if ',' in sid:
+                    ids.extend(int(x.strip()) for x in sid.split(',') if x.strip())
+                else:
+                    ids.append(int(sid.strip()))
+            source_ids_list = ids if ids else None
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid source_ids format")
+
     pool = await database.get_db_pool()
     if pool is None:
         raise HTTPException(status_code=500, detail="Ошибка подключения к базе данных")
 
     try:
-        total_count, results = await database.get_all_categories_list(pool, limit, offset, source_ids)
+        total_count, results = await database.get_all_categories_list(pool, limit, offset, source_ids_list)
     except Exception as e:
         logger.error(f"[API] Ошибка при выполнении запроса в get_categories: {e}")
         raise HTTPException(status_code=500, detail="Внутренняя ошибка сервера")
@@ -285,7 +325,7 @@ async def get_categories(
     **Query parameters:**
     - `limit`: Number of sources per page (1-1000, default: 100)
     - `offset`: Number of sources to skip (default: 0)
-    - `category_id`: Filter sources by associated categories (multiple values allowed)
+    - `category_id`: Filter sources by associated categories (comma-separated values or multiple params allowed, e.g., 1,2 or category_id=1&category_id=2)
 
     **Rate limit:** 300 requests per minute
     """,
@@ -319,15 +359,28 @@ async def get_sources(
     request: Request,
     limit: Optional[int] = Query(100, le=1000, gt=0),
     offset: Optional[int] = Query(0, ge=0),
-    category_id: Optional[List[int]] = Query(None),
+    category_id: Optional[List[str]] = Query(None),
     current_user: dict = Depends(get_current_user_by_api_key),
 ):
+    category_ids = None
+    if category_id:
+        try:
+            ids = []
+            for cid in category_id:
+                if ',' in cid:
+                    ids.extend(int(x.strip()) for x in cid.split(',') if x.strip())
+                else:
+                    ids.append(int(cid.strip()))
+            category_ids = ids if ids else None
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid category_id format")
+
     pool = await database.get_db_pool()
     if pool is None:
         raise HTTPException(status_code=500, detail="Ошибка подключения к базе данных")
 
     try:
-        total_count, results = await database.get_all_sources_list(pool, limit, offset, category_id)
+        total_count, results = await database.get_all_sources_list(pool, limit, offset, category_ids)
     except Exception as e:
         logger.error(f"[API] Ошибка при выполнении запроса в get_sources: {e}")
         raise HTTPException(status_code=500, detail="Внутренняя ошибка сервера")

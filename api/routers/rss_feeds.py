@@ -69,6 +69,8 @@ async def create_user_rss_feed(request: Request, feed: models.UserRSSFeedCreate,
     new_feed = await database.create_user_rss_feed(
         pool, current_user["id"], feed.url, feed.name, feed.category_id, feed.language
     )
+    if isinstance(new_feed, dict) and new_feed.get("error") == "duplicate":
+        raise HTTPException(status_code=400, detail="RSS feed with this URL already exists for this user")
     if not new_feed:
         raise HTTPException(status_code=500, detail="Failed to create RSS feed")
     return models.UserRSSFeedResponse(**new_feed)
@@ -143,7 +145,7 @@ async def get_user_rss_feeds(
     }
 )
 @limiter.limit("300/minute")
-async def get_user_rss_feed(request: Request, feed_id: int, current_user: dict = Depends(get_current_user)):
+async def get_user_rss_feed(request: Request, feed_id: str, current_user: dict = Depends(get_current_user)):
     pool = await database.get_db_pool()
     if pool is None:
         raise HTTPException(status_code=500, detail="Database error")
@@ -191,7 +193,7 @@ async def get_user_rss_feed(request: Request, feed_id: int, current_user: dict =
     }
 )
 @limiter.limit("300/minute")
-async def update_user_rss_feed(request: Request, feed_id: int, feed_update: models.UserRSSFeedUpdate, current_user: dict = Depends(get_current_user)):
+async def update_user_rss_feed(request: Request, feed_id: str, feed_update: models.UserRSSFeedUpdate, current_user: dict = Depends(get_current_user)):
     # Validate input lengths
     if feed_update.name is not None and len(feed_update.name) > 255:
         raise HTTPException(status_code=400, detail="Feed name too long (max 255 characters)")
@@ -239,7 +241,7 @@ async def update_user_rss_feed(request: Request, feed_id: int, feed_update: mode
     }
 )
 @limiter.limit("300/minute")
-async def delete_user_rss_feed(request: Request, feed_id: int, current_user: dict = Depends(get_current_user)):
+async def delete_user_rss_feed(request: Request, feed_id: str, current_user: dict = Depends(get_current_user)):
     pool = await database.get_db_pool()
     if pool is None:
         raise HTTPException(status_code=500, detail="Database error")

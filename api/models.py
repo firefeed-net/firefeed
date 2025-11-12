@@ -67,7 +67,7 @@ class UserCreate(UserBase):
 
 
 class UserLogin(BaseModel):
-    email: EmailStr
+    username: str
     password: str
 
 
@@ -142,7 +142,7 @@ class UserRSSFeedUpdate(BaseModel):
 
 
 class UserRSSFeedResponse(UserRSSFeedBase):
-    id: int
+    id: str
     user_id: int
     is_active: bool
     created_at: datetime

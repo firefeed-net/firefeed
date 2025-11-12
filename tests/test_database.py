@@ -264,7 +264,7 @@ class TestDatabaseFunctions:
     async def test_create_user_rss_feed_success(self, mock_pool, mock_conn, mock_cur):
         mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
         mock_conn.cursor.return_value.__aenter__.return_value = mock_cur
-        mock_cur.fetchone.return_value = (1, 1, 'http://example.com/rss', 'Test Feed', 1, 'en', True, datetime.utcnow(), datetime.utcnow())
+        mock_cur.fetchone.return_value = ('1', 1, 'http://example.com/rss', 'Test Feed', 1, 'en', True, datetime.utcnow(), datetime.utcnow())
         mock_cur.description = [('id',), ('user_id',), ('url',), ('name',), ('category_id',), ('language',), ('is_active',), ('created_at',), ('updated_at',)]
 
         result = await create_user_rss_feed(mock_pool, 1, 'http://example.com/rss', 'Test Feed', 1, 'en')
@@ -273,7 +273,7 @@ class TestDatabaseFunctions:
     async def test_get_user_rss_feeds_success(self, mock_pool, mock_conn, mock_cur):
         mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
         mock_conn.cursor.return_value.__aenter__.return_value = mock_cur
-        mock_cur.fetchone = AsyncMock(side_effect=[(1, 1, 'http://example.com/rss', 'Test Feed', 1, 'en', True, datetime.utcnow(), datetime.utcnow()), None])
+        mock_cur.fetchone = AsyncMock(side_effect=[('1', 1, 'http://example.com/rss', 'Test Feed', 1, 'en', True, datetime.utcnow(), datetime.utcnow()), None])
 
         result = await get_user_rss_feeds(mock_pool, 1, 10, 0)
         assert len(result) == 1
@@ -282,19 +282,19 @@ class TestDatabaseFunctions:
     async def test_get_user_rss_feed_by_id_success(self, mock_pool, mock_conn, mock_cur):
         mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
         mock_conn.cursor.return_value.__aenter__.return_value = mock_cur
-        mock_cur.fetchone.return_value = (1, 1, 'http://example.com/rss', 'Test Feed', 1, 'en', True, datetime.utcnow(), datetime.utcnow())
+        mock_cur.fetchone.return_value = ('1', 1, 'http://example.com/rss', 'Test Feed', 1, 'en', True, datetime.utcnow(), datetime.utcnow())
         mock_cur.description = [('id',), ('user_id',), ('url',), ('name',), ('category_id',), ('language',), ('is_active',), ('created_at',), ('updated_at',)]
 
-        result = await get_user_rss_feed_by_id(mock_pool, 1, 1)
-        assert result['id'] == 1
+        result = await get_user_rss_feed_by_id(mock_pool, 1, '1')
+        assert result['id'] == '1'
 
     async def test_update_user_rss_feed_success(self, mock_pool, mock_conn, mock_cur):
         mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
         mock_conn.cursor.return_value.__aenter__.return_value = mock_cur
-        mock_cur.fetchone.return_value = (1, 1, 'http://example.com/rss', 'Updated Feed', 1, 'en', True, datetime.utcnow(), datetime.utcnow())
+        mock_cur.fetchone.return_value = ('1', 1, 'http://example.com/rss', 'Updated Feed', 1, 'en', True, datetime.utcnow(), datetime.utcnow())
         mock_cur.description = [('id',), ('user_id',), ('url',), ('name',), ('category_id',), ('language',), ('is_active',), ('created_at',), ('updated_at',)]
 
-        result = await update_user_rss_feed(mock_pool, 1, 1, {'name': 'Updated Feed'})
+        result = await update_user_rss_feed(mock_pool, 1, '1', {'name': 'Updated Feed'})
         assert result['name'] == 'Updated Feed'
 
     async def test_delete_user_rss_feed_success(self, mock_pool, mock_conn, mock_cur):
@@ -302,7 +302,7 @@ class TestDatabaseFunctions:
         mock_conn.cursor.return_value.__aenter__.return_value = mock_cur
         mock_cur.rowcount = 1
 
-        result = await delete_user_rss_feed(mock_pool, 1, 1)
+        result = await delete_user_rss_feed(mock_pool, 1, '1')
         assert result is True
 
     async def test_activate_user_and_use_verification_code_success(self, mock_pool, mock_conn, mock_cur):
