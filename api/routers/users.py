@@ -1,9 +1,11 @@
 import logging
-from fastapi import APIRouter, Depends, HTTPException, Request
+from typing import Optional
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from api.middleware import limiter
 from api import database, models
-from api.deps import get_current_user
+from api.deps import get_current_user, validate_rss_items_query_params, sanitize_search_phrase
+from api.routers.rss_items import process_rss_items_results
 
 logger = logging.getLogger(__name__)
 
@@ -130,3 +132,72 @@ async def delete_current_user(request: Request, current_user: dict = Depends(get
     if not success:
         raise HTTPException(status_code=500, detail="Failed to delete user")
     return
+
+
+@router.get(
+    "/me/rss-items/",
+    response_model=models.PaginatedResponse[models.RSSItem],
+    summary="Get user's aggregated RSS items",
+    description="""
+    Retrieve a paginated list of RSS items aggregated from all the authenticated user's RSS feeds.
+
+    This endpoint returns news articles from all active RSS feeds that belong to categories
+    the user has subscribed to. Results can be filtered by language and searched.
+
+    **Filtering Options:**
+    - `display_language`: Language for displaying content (ru, en, de, fr)
+    - `original_language`: Filter by original article language
+    - `from_date`: Filter articles published after this timestamp (Unix timestamp)
+    - `search_phrase`: Full-text search in titles and content
+
+    **Pagination:**
+    - `limit`: Number of items per page (1-100, default: 50)
+    - `offset`: Number of items to skip (default: 0)
+
+    **Rate limit:** 300 requests per minute
+    """,
+    responses={
+        200: {
+            "description": "List of user's RSS items",
+            "model": models.PaginatedResponse[models.RSSItem]
+        },
+        401: {"description": "Unauthorized - Authentication required"},
+        429: {"description": "Too Many Requests - Rate limit exceeded"},
+        500: {"description": "Internal Server Error"}
+    }
+)
+@limiter.limit("300/minute")
+async def get_user_rss_items(
+    request: Request,
+    display_language: Optional[str] = Query(None, description="Language for displaying content (ru, en, de, fr)"),
+    original_language: Optional[str] = Query(None, description="Filter by original article language"),
+    from_date: Optional[int] = Query(None, description="Filter articles published after this timestamp (Unix timestamp)"),
+    search_phrase: Optional[str] = Query(None, alias="searchPhrase", description="Full-text search in titles and content"),
+    limit: int = Query(50, le=100, gt=0, description="Number of items per page (1-100)"),
+    offset: int = Query(0, ge=0, description="Number of items to skip"),
+    current_user: dict = Depends(get_current_user),
+):
+    # Validate query parameters
+    from_datetime, _ = validate_rss_items_query_params(display_language, from_date, None)
+
+    # Sanitize search phrase
+    if search_phrase:
+        search_phrase = sanitize_search_phrase(search_phrase)
+
+    # Get database connection
+    pool = await database.get_db_pool()
+    if pool is None:
+        raise HTTPException(status_code=500, detail="Database error")
+
+    try:
+        # Get user's RSS items
+        total_count, results, columns = await database.get_user_rss_items_list(
+            pool, current_user["id"], display_language, original_language, limit, offset
+        )
+    except Exception as e:
+        logger.error(f"[API] Error in get_user_rss_items: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+    # Process results
+    rss_items_list = process_rss_items_results(results, columns, display_language, original_language, True)
+    return models.PaginatedResponse[models.RSSItem](count=len(rss_items_list), results=rss_items_list)

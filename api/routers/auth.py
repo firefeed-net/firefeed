@@ -8,7 +8,7 @@ from fastapi.security import OAuth2PasswordRequestForm
 from api.middleware import limiter
 from api import database, models
 from api.deps import create_access_token, verify_password, get_password_hash, ACCESS_TOKEN_EXPIRE_MINUTES
-from api.email_service.sender import send_verification_email, send_registration_success_email
+from api.email_service.sender import send_verification_email, send_registration_success_email, send_password_reset_email
 
 logger = logging.getLogger(__name__)
 
@@ -210,10 +210,16 @@ async def login_user(request: Request, form_data: OAuth2PasswordRequestForm = De
     if not verify_password(form_data.password, user["password_hash"]):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect email or password")
 
-    if not user.get("is_verified") or user.get("is_deleted"):
+    if not user.get("is_verified"):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Account not verified or deactivated.",
+            detail="Account not verified.",
+        )
+
+    if user.get("is_deleted"):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Account deactivated.",
         )
 
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
