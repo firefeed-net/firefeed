@@ -77,7 +77,9 @@ class ImageProcessor:
                     # Проверяем, существует ли файл уже
                     if os.path.exists(file_path):
                         logger.info(f"[LOG] Изображение уже существует на сервере: {file_path}")
-                        return file_path
+                        # Возвращаем относительный путь от save_directory
+                        relative_path = os.path.relpath(file_path, save_directory)
+                        return relative_path
 
                     # Читаем контент асинхронно
                     content = await response.read()
@@ -87,7 +89,9 @@ class ImageProcessor:
                         f.write(content)
 
             logger.info(f"[LOG] Изображение успешно сохранено: {file_path}")
-            return file_path
+            # Возвращаем относительный путь от save_directory
+            relative_path = os.path.relpath(file_path, save_directory)
+            return relative_path
 
         except OSError as e:
             logger.warning(

@@ -748,13 +748,9 @@ async def post_to_channel(bot, prepared_rss_item: PreparedRSSItem):
             image_filename = prepared_rss_item.image_filename
             logger.debug(f"post_to_channel image_filename = {image_filename}")
 
-            if image_filename:
-                # Проверяем доступность и корректность изображения
-                if await validate_image_url(image_filename):
-                    logger.debug(f"Изображение прошло валидацию: {image_filename}")
-                else:
-                    logger.warning(f"Изображение не прошло валидацию, отправляем без него: {image_filename}")
-                    image_filename = None  # Сбрасываем изображение
+            if image_filename and await validate_image_url(image_filename):
+                # Изображение прошло валидацию - отправляем с фото
+                logger.debug(f"Изображение прошло валидацию: {image_filename}")
 
                 caption = content_text
                 if len(caption) > 1024:
@@ -796,6 +792,9 @@ async def post_to_channel(bot, prepared_rss_item: PreparedRSSItem):
                     logger.error(f"Ошибка отправки фото в канал {channel_id}: {e}")
                     continue
             else:
+                # Нет изображения или оно не прошло валидацию - отправляем только текст
+                if image_filename:
+                    logger.warning(f"Изображение не прошло валидацию, отправляем без него: {image_filename}")
                 try:
                     message = await bot.send_message(
                         chat_id=channel_id, text=content_text, parse_mode="HTML", disable_web_page_preview=True
@@ -821,7 +820,9 @@ async def post_to_channel(bot, prepared_rss_item: PreparedRSSItem):
                 await mark_original_as_published(news_id, channel_id, message_id)
 
             logger.info(f"Опубликовано в {channel_id}: {title[:50]}...")
-            # Не выходим, продолжаем для других каналов, где есть переводы
+
+            # Добавляем задержку 5 секунд между публикациями в разные каналы
+            await asyncio.sleep(5)
         except Exception as e:
             logger.error(f"Ошибка отправки в {channel_id}: {e}")
 
@@ -1029,9 +1030,9 @@ def main():
 
     job_queue = application.job_queue
     if job_queue:
-        job_queue.run_repeating(monitor_rss_items_task, interval=60, first=1, job_kwargs={"misfire_grace_time": 600})
+        job_queue.run_repeating(monitor_rss_items_task, interval=180, first=1, job_kwargs={"misfire_grace_time": 600})
         job_queue.run_repeating(cleanup_expired_user_data, interval=3600, first=60)
-        logger.info("Зарегистрирована задача мониторинга RSS-элементов (каждую минуту)")
+        logger.info("Зарегистрирована задача мониторинга RSS-элементов (каждые 3 минуты)")
         logger.info("Зарегистрирована задача очистки устаревших данных пользователей (каждые 60 минут)")
 
     logger.info("Бот запущен в режиме Webhook")

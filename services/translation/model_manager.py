@@ -56,17 +56,16 @@ class ModelManager(IModelManager):
                 # Import here to avoid circular imports and conditional loading
                 from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
 
-                # Use a multilingual model for simplicity
-                model_name = "Helsinki-NLP/opus-mt-{}-{}".format(source_lang, target_lang)
+                # Use the original m2m100 multilingual model
+                model_name = "facebook/m2m100_418M"
 
-                # Try to load specific model, fallback to multilingual if needed
                 try:
                     tokenizer = AutoTokenizer.from_pretrained(model_name)
                     model = AutoModelForSeq2SeqLM.from_pretrained(model_name).to(self.device)
                 except Exception as e:
-                    logger.warning(f"[MODEL] Specific model {model_name} not found, trying multilingual: {e}")
-                    # Fallback to multilingual model
-                    model_name = "Helsinki-NLP/opus-mt-en-ru"  # Default fallback
+                    logger.warning(f"[MODEL] m2m100 model not found, trying Helsinki fallback: {e}")
+                    # Fallback to Helsinki model
+                    model_name = "Helsinki-NLP/opus-mt-{}-{}".format(source_lang, target_lang)
                     tokenizer = AutoTokenizer.from_pretrained(model_name)
                     model = AutoModelForSeq2SeqLM.from_pretrained(model_name).to(self.device)
 

@@ -38,12 +38,26 @@ class FireFeedTranslatorTaskQueue:
                 logger.info(f"[{worker_id}] 📥 Начало обработки задачи: {task_id[:20]}")
 
                 try:
+                    # Prepare target languages (all except original)
+                    target_langs = ["en", "ru", "de", "fr"]  # TODO: make configurable
+                    original_lang = task["data"]["original_lang"]
+                    if original_lang in target_langs:
+                        target_langs.remove(original_lang)
+
+                    # Call translator without callback parameters
                     result = await self.translator.prepare_translations(
-                        **task["data"],
-                        callback=task.get("callback"),
-                        error_callback=task.get("error_callback"),
-                        task_id=task.get("task_id"),
+                        title=task["data"]["title"],
+                        content=task["data"]["content"],
+                        original_lang=original_lang,
+                        target_langs=target_langs
                     )
+
+                    # Call success callback if provided
+                    if task.get("callback"):
+                        try:
+                            await task["callback"](result, task_id=task_id)
+                        except Exception as callback_error:
+                            logger.error(f"[{worker_id}] ❌ Ошибка в callback для задачи {task_id[:20]}: {callback_error}")
 
                     # Статистика
                     self.stats["processed"] += 1
@@ -51,6 +65,13 @@ class FireFeedTranslatorTaskQueue:
                     duration = time.time() - start_time
                     logger.info(f"[{worker_id}] ✅ Задача {task_id[:20]} завершена за {duration:.2f} сек")
                 except Exception as e:
+                    # Call error callback if provided
+                    if task.get("error_callback"):
+                        try:
+                            await task["error_callback"]({"error": str(e), "task_id": task_id}, task_id=task_id)
+                        except Exception as callback_error:
+                            logger.error(f"[{worker_id}] ❌ Ошибка в error_callback для задачи {task_id[:20]}: {callback_error}")
+
                     # Статистика ошибок
                     self.stats["errors"] += 1
                     logger.error(f"[{worker_id}] ❌ Ошибка перевода для задачи {task_id[:20]}: {e}")

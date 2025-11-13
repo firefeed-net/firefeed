@@ -51,8 +51,8 @@ class RSSParserService:
         while self.running:
             try:
                 logger.info("[RSS_PARSER] Начало парсинга RSS лент...")
-                await self.rss_manager.fetch_rss_items()
-                logger.info("[RSS_PARSER] Парсинг RSS лент завершен")
+                result = await self.rss_manager.process_all_feeds()
+                logger.info(f"[RSS_PARSER] Парсинг RSS лент завершен: {result}")
 
                 # Ждем 3 минуты перед следующим парсингом или пока не будет установлен флаг self.running = False
                 for _ in range(180):
