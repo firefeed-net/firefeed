@@ -1,7 +1,7 @@
 import logging
 import random
 import secrets
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException, status, Request, BackgroundTasks
 from fastapi.security import OAuth2PasswordRequestForm
 
@@ -72,7 +72,7 @@ async def register_user(request: Request, user: models.UserCreate, background_ta
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to create user")
 
     verification_code = "".join(random.choices("0123456789", k=6))
-    expires_at = datetime.utcnow() + timedelta(hours=24)
+    expires_at = datetime.now(timezone.utc) + timedelta(hours=24)
     ok = await database.save_verification_code(pool, new_user["id"], verification_code, expires_at)
     if not ok:
         await database.delete_user(pool, new_user["id"])
@@ -204,7 +204,7 @@ async def resend_verification(request: Request, resend_request: models.ResendVer
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User already verified")
 
     verification_code = "".join(random.choices("0123456789", k=6))
-    expires_at = datetime.utcnow() + timedelta(hours=24)
+    expires_at = datetime.now(timezone.utc) + timedelta(hours=24)
     ok = await database.save_verification_code(pool, user["id"], verification_code, expires_at)
     if not ok:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to create verification code")
@@ -336,7 +336,7 @@ async def request_password_reset(request: Request, password_reset_request: model
         return {"message": "If email exists, reset instructions have been sent"}
 
     token = secrets.token_urlsafe(32)
-    expires_at = datetime.utcnow() + timedelta(hours=1)
+    expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
     success = await database.save_password_reset_token(pool, user["id"], token, expires_at)
     if not success:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to create reset token")

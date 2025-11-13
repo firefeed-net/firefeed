@@ -5,7 +5,7 @@ import logging
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import config
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, Dict, Any, List, Set, Tuple
 
 logger = logging.getLogger(__name__)
@@ -271,7 +271,7 @@ async def save_password_reset_token(pool, user_id: int, token: str, expires_at: 
                 INSERT INTO password_reset_tokens (user_id, token, expires_at, created_at)
                 VALUES (%s, %s, %s, %s)
                 """
-                await cur.execute(query, (user_id, token, expires_at, datetime.utcnow()))
+                await cur.execute(query, (user_id, token, expires_at, datetime.now(timezone.utc)))
                 return True
             except Exception as e:
                 logger.info(f"[DB] Error saving password reset token: {e}")
@@ -1124,6 +1124,7 @@ async def confirm_password_reset_transaction(pool, token: str, new_password_hash
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
             try:
+                now = datetime.now(timezone.utc)
                 await cur.execute("BEGIN")
                 await cur.execute(
                     """
@@ -1131,19 +1132,19 @@ async def confirm_password_reset_transaction(pool, token: str, new_password_hash
                     WHERE token = %s AND expires_at > %s AND used_at IS NULL
                     FOR UPDATE
                     """,
-                    (token, datetime.utcnow()),
+                    (token, now),
                 )
                 token_record = await cur.fetchone()
                 if not token_record:
                     await cur.execute("ROLLBACK")
                     return False
                 user_id, expires_at = token_record
-                if expires_at < datetime.utcnow():
+                if expires_at < now:
                     await cur.execute("ROLLBACK")
                     return False
                 await cur.execute(
                     "UPDATE users SET password_hash = %s, updated_at = %s WHERE id = %s",
-                    (new_password_hash, datetime.utcnow(), user_id),
+                    (new_password_hash, now, user_id),
                 )
                 await cur.execute("DELETE FROM password_reset_tokens WHERE token = %s", (token,))
                 if cur.rowcount == 0:
