@@ -63,6 +63,10 @@ class DIContainer:
             if param_name == 'self':
                 continue
 
+            # Skip *args and **kwargs parameters
+            if param.kind in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD):
+                continue
+
             # Try to resolve parameter type
             if param.annotation != inspect.Parameter.empty:
                 try:
@@ -107,8 +111,12 @@ def setup_di_container() -> DIContainer:
     # Import services
     from services.rss import MediaExtractor, RSSValidator, RSSStorage, RSSFetcher
     from services.translation import ModelManager, TranslationService, TranslationCache
+    from services.database_pool_adapter import DatabasePoolAdapter
     from firefeed_translator_task_queue import FireFeedTranslatorTaskQueue
     from firefeed_dublicate_detector import FireFeedDuplicateDetector
+
+    # Register database pool adapter
+    di_container.register(IDatabasePool, DatabasePoolAdapter)
 
     # Register simple services first
     di_container.register(IRSSStorage, RSSStorage)

@@ -130,7 +130,7 @@ class RSSFetcher(IRSSFetcher):
             if image_url:
                 try:
                     image_processor = ImageProcessor()
-                    image_filename = await image_processor.process_image_from_url(image_url)
+                    image_filename = await image_processor.process_image_from_url(image_url, news_id)
                 except Exception as e:
                     logger.warning(f"[RSS] Error processing image {image_url}: {e}")
 

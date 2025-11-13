@@ -13,9 +13,10 @@ logger = logging.getLogger(__name__)
 class RSSValidator(IRSSValidator):
     """Service for validating RSS feeds"""
 
-    def __init__(self):
+    def __init__(self, cache_ttl: int = 300, request_timeout: int = 10):
         self._validation_cache = {}  # url -> (is_valid, timestamp)
-        self._cache_ttl = 300  # 5 minutes
+        self._cache_ttl = cache_ttl
+        self._request_timeout = request_timeout
 
     async def validate_feed(self, url: str, headers: Dict[str, str]) -> bool:
         """Validate if URL contains valid RSS feed with caching"""
@@ -33,7 +34,7 @@ class RSSValidator(IRSSValidator):
         try:
             # Check headers first
             content_type_valid = False
-            timeout = aiohttp.ClientTimeout(total=10)
+            timeout = aiohttp.ClientTimeout(total=self._request_timeout)
             async with aiohttp.ClientSession(timeout=timeout) as session:
                 async with session.head(url, headers=headers) as response:
                     content_type = response.headers.get("Content-Type", "").lower()
@@ -75,7 +76,7 @@ class RSSValidator(IRSSValidator):
             if "expected string or bytes-like object, got 'dict'" in str(e):
                 try:
                     logger.debug(f"[RSS] [VALIDATE] Trying raw content parsing for {url}")
-                    timeout = aiohttp.ClientTimeout(total=15)
+                    timeout = aiohttp.ClientTimeout(total=self._request_timeout + 5)  # Extra 5 seconds for raw content
                     async with aiohttp.ClientSession(timeout=timeout) as session:
                         async with session.get(url, headers=headers) as response:
                             raw_content = await response.text()

@@ -99,6 +99,20 @@ class ImageProcessor:
             return None
 
     @staticmethod
+    async def process_image_from_url(url, rss_item_id):
+        """
+        Process image from URL - download and save it locally.
+
+        :param url: URL of the image
+        :param rss_item_id: RSS item ID for filename generation
+        :return: local file path or None
+        """
+        if not url or not rss_item_id:
+            return None
+
+        return await ImageProcessor.download_and_save_image(url, rss_item_id)
+
+    @staticmethod
     async def extract_image_from_preview(url):
         """
         Извлекает URL изображения из web preview страницы.

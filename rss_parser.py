@@ -6,7 +6,10 @@ import logging
 from logging_config import setup_logging
 from rss_manager import RSSManager
 from di_container import setup_di_container, get_service
-from interfaces import IDuplicateDetector, ITranslationService, ITranslatorQueue
+from interfaces import (
+    IDuplicateDetector, ITranslationService, ITranslatorQueue,
+    IRSSFetcher, IRSSValidator, IRSSStorage, IMediaExtractor
+)
 from config import close_shared_db_pool
 
 setup_logging()
@@ -22,9 +25,22 @@ class RSSParserService:
         self.duplicate_detector = get_service(IDuplicateDetector)
         self.translation_service = get_service(ITranslationService)
         self.translator_queue = get_service(ITranslatorQueue)
+        self.rss_fetcher = get_service(IRSSFetcher)
+        self.rss_validator = get_service(IRSSValidator)
+        self.rss_storage = get_service(IRSSStorage)
+        self.media_extractor = get_service(IMediaExtractor)
 
         # Создаем RSSManager через DI (он получит все зависимости автоматически)
-        self.rss_manager = RSSManager()
+        from services.rss.rss_manager import RSSManager
+        self.rss_manager = RSSManager(
+            rss_fetcher=self.rss_fetcher,
+            rss_validator=self.rss_validator,
+            rss_storage=self.rss_storage,
+            media_extractor=self.media_extractor,
+            translation_service=self.translation_service,
+            duplicate_detector=self.duplicate_detector,
+            translator_queue=self.translator_queue
+        )
         self.running = True
         self.parse_task = None
         self.batch_processor_task = None

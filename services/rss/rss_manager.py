@@ -46,11 +46,49 @@ class RSSManager:
         pass
 
     async def get_all_active_feeds(self) -> List[Dict[str, Any]]:
-        """Get all active feeds - now this would be a separate repository/service"""
-        # This method should be moved to a repository service
-        # For now, return empty list
-        logger.warning("get_all_active_feeds should be implemented in repository service")
-        return []
+        """Get all active feeds"""
+        try:
+            # Use rss_storage to get database connection
+            async with self.rss_storage.db_pool.acquire() as conn:
+                async with conn.cursor() as cur:
+                    # Explicitly list fields from rss_feeds
+                    query = """
+                    SELECT
+                        rf.id,
+                        rf.url,
+                        rf.name,
+                        rf.language,
+                        rf.source_id,
+                        rf.category_id,
+                        s.name as source_name, -- Get source name
+                        c.name as category_name, -- Get category name
+                        rf.cooldown_minutes, -- Can add if needed
+                        rf.max_news_per_hour  -- Can add if needed
+                    FROM rss_feeds rf
+                    JOIN categories c ON rf.category_id = c.id
+                    JOIN sources s ON rf.source_id = s.id
+                    WHERE rf.is_active = TRUE
+                    """
+                    await cur.execute(query)
+                    feeds = []
+                    async for row in cur:
+                        feeds.append(
+                            {
+                                "id": row[0],
+                                "url": row[1].strip(),
+                                "name": row[2],
+                                "lang": row[3],
+                                "source_id": row[4],
+                                "category_id": row[5],
+                                "source": row[6],  # s.name
+                                "category": row[7] if row[7] else "uncategorized"
+                            }
+                        )
+                    logger.info(f"Found {len(feeds)} active feeds")
+                    return feeds
+        except Exception as e:
+            logger.error(f"[RSS_MANAGER] Error getting active feeds: {e}")
+            return []
 
     async def get_feeds_by_category(self, category_name: str) -> List[Dict[str, Any]]:
         """Get feeds by category - repository method"""
