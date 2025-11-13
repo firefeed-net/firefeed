@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 redis_client = redis.Redis(
     host=config.REDIS_CONFIG["host"],
     port=config.REDIS_CONFIG["port"],
+    username=config.REDIS_CONFIG["username"],
     password=config.REDIS_CONFIG["password"],
     db=config.REDIS_CONFIG["db"],
     decode_responses=True
@@ -117,7 +118,7 @@ async def get_rss_feed_by_category(language: str, category_name: str):
             raise HTTPException(status_code=404, detail=f"Category '{category_name}' not found")
 
         # Get RSS items for the category (last hour, max 10 items)
-        from_date = int((datetime.utcnow() - timedelta(hours=1)).timestamp())
+        from_date = datetime.utcnow() - timedelta(hours=1)
         total_count, results, columns = await database.get_all_rss_items_list(
             pool,
             display_language=language,
@@ -194,7 +195,7 @@ async def get_rss_feed_by_source(language: str, source_alias: str):
             raise HTTPException(status_code=404, detail=f"Source '{source_alias}' not found")
 
         # Get RSS items for the source (last hour, max 10 items)
-        from_date = int((datetime.utcnow() - timedelta(hours=1)).timestamp())
+        from_date = datetime.utcnow() - timedelta(hours=1)
         total_count, results, columns = await database.get_all_rss_items_list(
             pool,
             display_language=language,

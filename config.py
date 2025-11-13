@@ -121,6 +121,7 @@ SUPPORTED_LANGUAGES = ["en", "ru", "de", "fr"]
 REDIS_CONFIG = {
     "host": os.getenv("REDIS_HOST", "localhost"),
     "port": int(os.getenv("REDIS_PORT", 6379)),
+    "username": os.getenv("REDIS_USERNAME", "default"),
     "password": os.getenv("REDIS_PASSWORD"),
     "db": int(os.getenv("REDIS_DB", 0)),
 }

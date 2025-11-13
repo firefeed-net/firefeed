@@ -207,6 +207,7 @@ def get_redis_client():
         _redis_client = redis.Redis(
             host=config.REDIS_CONFIG["host"],
             port=config.REDIS_CONFIG["port"],
+            username=config.REDIS_CONFIG["username"],
             password=config.REDIS_CONFIG["password"],
             db=config.REDIS_CONFIG["db"],
             decode_responses=True
