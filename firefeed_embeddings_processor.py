@@ -1,5 +1,6 @@
 import re
 import spacy
+import asyncio
 from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
 import numpy as np
@@ -11,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 
 class FireFeedEmbeddingsProcessor:
-    # Глобальный кэш для синглтона
+    # Global cache for singleton
     _instance = None
     _model_cache = {}
     _spacy_cache = {}
@@ -43,13 +44,13 @@ class FireFeedEmbeddingsProcessor:
         self.device = device
         self.max_spacy_cache = max_spacy_cache
 
-        # Загружаем или получаем из кэша SentenceTransformer модель
+        # Load or get SentenceTransformer model from cache
         model_key = f"{model_name}_{device}"
         if model_key not in self._model_cache:
-            logger.info(f"[EMBEDDINGS] Загрузка SentenceTransformer модели: {model_name}")
+            logger.info(f"[EMBEDDINGS] Loading SentenceTransformer model: {model_name}")
             self._model_cache[model_key] = SentenceTransformer(model_name, device=device)
         else:
-            logger.info(f"[EMBEDDINGS] Использование кэшированной SentenceTransformer модели: {model_name}")
+            logger.info(f"[EMBEDDINGS] Using cached SentenceTransformer model: {model_name}")
         self.model = self._model_cache[model_key]
 
         self.embedding_dim = self._get_embedding_dimension()
@@ -65,11 +66,11 @@ class FireFeedEmbeddingsProcessor:
     def _get_spacy_model(self, lang_code: str) -> Optional[spacy.Language]:
         """Получает spacy модель для языка с глобальным LRU кэшированием"""
         if lang_code in self._spacy_cache:
-            # Обновляем порядок использования (LRU)
+            # Update usage order (LRU)
             if lang_code in self._spacy_usage_order:
                 self._spacy_usage_order.remove(lang_code)
             self._spacy_usage_order.append(lang_code)
-            logger.info(f"[EMBEDDINGS] Использование кэшированной spacy модели для языка '{lang_code}'")
+            logger.info(f"[EMBEDDINGS] Using cached spacy model for language '{lang_code}'")
             return self._spacy_cache[lang_code]
 
         spacy_model_map = {
@@ -81,7 +82,7 @@ class FireFeedEmbeddingsProcessor:
 
         model_name = spacy_model_map.get(lang_code)
         if not model_name:
-            logger.warning(f"[EMBEDDINGS] Языковая модель для '{lang_code}' не найдена, используем 'en_core_web_sm'")
+            logger.warning(f"[EMBEDDINGS] Language model for '{lang_code}' not found, using 'en_core_web_sm'")
             model_name = "en_core_web_sm"
 
         try:
@@ -89,22 +90,22 @@ class FireFeedEmbeddingsProcessor:
             self._spacy_cache[lang_code] = nlp
             self._spacy_usage_order.append(lang_code)
 
-            # Очищаем кэш если превышен лимит
+            # Clear cache if limit exceeded
             if len(self._spacy_cache) > self.max_spacy_cache:
-                # Удаляем наименее недавно использованную модель
+                # Remove least recently used model
                 oldest_lang = self._spacy_usage_order.pop(0)
                 del self._spacy_cache[oldest_lang]
-                logger.info(f"[EMBEDDINGS] Очищена spacy модель для языка '{oldest_lang}' (превышен лимит кэша)")
+                logger.info(f"[EMBEDDINGS] Cleared spacy model for language '{oldest_lang}' (cache limit exceeded)")
 
-            logger.info(f"[EMBEDDINGS] Загружена spacy модель для языка '{lang_code}': {model_name}")
+            logger.info(f"[EMBEDDINGS] Loaded spacy model for language '{lang_code}': {model_name}")
             return nlp
         except OSError:
             logger.error(
-                f"[EMBEDDINGS] Модель '{model_name}' не найдена. Установите её командой: python -m spacy download {model_name}"
+                f"[EMBEDDINGS] Model '{model_name}' not found. Install it with: python -m spacy download {model_name}"
             )
             return None
 
-    def normalize_text(self, text: str, lang_code: str = "en") -> str:
+    async def normalize_text(self, text: str, lang_code: str = "en") -> str:
         """
         Нормализация текста: удаление HTML, стоп-слов, лемматизация
 
@@ -115,20 +116,22 @@ class FireFeedEmbeddingsProcessor:
         Returns:
             Нормализованный текст
         """
-        # Удаление HTML
-        text = TextProcessor.clean(text)
+        loop = asyncio.get_event_loop()
 
-        # Получение spacy модели
+        # HTML removal
+        text = await loop.run_in_executor(None, TextProcessor.clean, text)
+
+        # Getting spacy model
         nlp = self._get_spacy_model(lang_code)
         if nlp is None:
-            # Если модель не загружена, применяем простую очистку
-            text = re.sub(r"\s+", " ", text).strip()
+            # If model not loaded, apply simple cleaning
+            text = await loop.run_in_executor(None, lambda t: re.sub(r"\s+", " ", t).strip(), text)
             return text
 
-        # Обработка через spacy
-        doc = nlp(text)
+        # Processing through spacy
+        doc = await loop.run_in_executor(None, nlp, text)
 
-        # Лемматизация и удаление стоп-слов
+        # Lemmatization and stop-word removal
         tokens = []
         for token in doc:
             if not token.is_stop and not token.is_punct and not token.is_space:
@@ -144,9 +147,9 @@ class FireFeedEmbeddingsProcessor:
         cls._model_cache.clear()
         cls._spacy_cache.clear()
         cls._spacy_usage_order.clear()
-        logger.info("[EMBEDDINGS] Глобальный кэш моделей очищен")
+        logger.info("[EMBEDDINGS] Global model cache cleared")
 
-    def generate_embedding(self, text: str, lang_code: str = "en") -> List[float]:
+    async def generate_embedding(self, text: str, lang_code: str = "en") -> List[float]:
         """
         Генерация эмбеддинга для текста
 
@@ -157,11 +160,12 @@ class FireFeedEmbeddingsProcessor:
         Returns:
             Эмбеддинг как список float
         """
-        normalized_text = self.normalize_text(text, lang_code)
-        embedding = self.model.encode(normalized_text, show_progress_bar=False)
+        loop = asyncio.get_event_loop()
+        normalized_text = await self.normalize_text(text, lang_code)
+        embedding = await loop.run_in_executor(None, lambda: self.model.encode(normalized_text, show_progress_bar=False))
         return embedding.tolist()
 
-    def calculate_similarity(self, embedding1: List[float], embedding2: List[float]) -> float:
+    async def calculate_similarity(self, embedding1: List[float], embedding2: List[float]) -> float:
         """
         Расчет косинусного сходства между двумя эмбеддингами
 
@@ -172,6 +176,12 @@ class FireFeedEmbeddingsProcessor:
         Returns:
             Сходство (0-1)
         """
+        loop = asyncio.get_event_loop()
+        similarity = await loop.run_in_executor(None, self._calculate_similarity_sync, embedding1, embedding2)
+        return similarity
+
+    def _calculate_similarity_sync(self, embedding1: List[float], embedding2: List[float]) -> float:
+        """Синхронная версия расчета сходства для выполнения в executor"""
         emb1 = np.array(embedding1)
         emb2 = np.array(embedding2)
         similarity = cosine_similarity([emb1], [emb2])[0][0]
@@ -190,22 +200,22 @@ class FireFeedEmbeddingsProcessor:
         """
         base_threshold = 0.9
 
-        # Корректировка по типу
+        # Adjustment by type
         if text_type == "title":
-            base_threshold = 0.85  # Мягче для заголовков
+            base_threshold = 0.85  # Softer for titles
         elif text_type == "content":
-            base_threshold = 0.95  # Жестче для статей
+            base_threshold = 0.95  # Stricter for articles
 
-        # Корректировка по длине
-        if text_length < 50:  # Короткие тексты
+        # Adjustment by length
+        if text_length < 50:  # Short texts
             base_threshold -= 0.05
-        elif text_length > 1000:  # Длинные тексты
+        elif text_length > 1000:  # Long texts
             base_threshold += 0.02
 
-        # Ограничения
+        # Constraints
         return max(0.7, min(0.98, base_threshold))
 
-    def combine_texts(self, title: str, content: str, lang_code: str = "en") -> str:
+    async def combine_texts(self, title: str, content: str, lang_code: str = "en") -> str:
         """
         Комбинирование заголовка и содержания для эмбеддинга
 
@@ -217,10 +227,12 @@ class FireFeedEmbeddingsProcessor:
         Returns:
             Комбинированный текст
         """
-        normalized_title = self.normalize_text(title, lang_code)
-        normalized_content = self.normalize_text(content, lang_code)
+        normalized_title, normalized_content = await asyncio.gather(
+            self.normalize_text(title, lang_code),
+            self.normalize_text(content, lang_code)
+        )
 
-        # Ограничиваем длину содержания
+        # Limit content length
         content_preview = normalized_content[:500] if len(normalized_content) > 500 else normalized_content
 
         return f"{normalized_title} {content_preview}"

@@ -145,14 +145,14 @@ class TranslationService(ITranslationService):
                         continue
 
                     # Semantic check
-                    if not self._semantic_check(title, final_title, original_lang):
+                    if not await self._semantic_check(title, final_title, original_lang):
                         logger.warning(f"[SEMANTIC] Title semantic check failed for {target_lang}")
                         # Try fallback with beam_size=1
                         fallback_titles = await self.translate_async([title], original_lang, target_lang, beam_size=1)
                         fallback_title = fallback_titles[0] if fallback_titles else ""
                         if (fallback_title and fallback_title.strip() != title.strip() and
                             self._check_translation_language(fallback_title, target_lang) and
-                            self._semantic_check(title, fallback_title, original_lang)):
+                            await self._semantic_check(title, fallback_title, original_lang)):
                             logger.info(f"[FALLBACK] Title fallback successful for {target_lang}")
                             lang_translations["title"] = fallback_title
                         else:
@@ -163,7 +163,7 @@ class TranslationService(ITranslationService):
                                 fallback_title_2 = fallback_titles_2[0] if fallback_titles_2 else ""
                                 if (fallback_title_2 and fallback_title_2.strip() != title.strip() and
                                     self._check_translation_language(fallback_title_2, target_lang) and
-                                    self._semantic_check(title, fallback_title_2, original_lang) and
+                                    await self._semantic_check(title, fallback_title_2, original_lang) and
                                     not self._is_broken_translation(fallback_title_2)):
                                     logger.info(f"[FALLBACK2] Title second fallback successful for {target_lang}")
                                     lang_translations["title"] = fallback_title_2
@@ -183,14 +183,14 @@ class TranslationService(ITranslationService):
                         logger.warning(f"[LANG_CHECK] Content not in '{target_lang}': '{final_content[:50]}...', skipping")
                         continue
 
-                    if not self._semantic_check(content, final_content, original_lang):
+                    if not await self._semantic_check(content, final_content, original_lang):
                         logger.warning(f"[SEMANTIC] Content semantic check failed for {target_lang}")
                         # Try fallback with beam_size=1
                         fallback_contents = await self.translate_async([content], original_lang, target_lang, beam_size=1)
                         fallback_content = fallback_contents[0] if fallback_contents else ""
                         if (fallback_content and fallback_content.strip() != content.strip() and
                             self._check_translation_language(fallback_content, target_lang) and
-                            self._semantic_check(content, fallback_content, original_lang)):
+                            await self._semantic_check(content, fallback_content, original_lang)):
                             logger.info(f"[FALLBACK] Content fallback successful for {target_lang}")
                             lang_translations["content"] = fallback_content
                         else:
@@ -201,7 +201,7 @@ class TranslationService(ITranslationService):
                                 fallback_content_2 = fallback_contents_2[0] if fallback_contents_2 else ""
                                 if (fallback_content_2 and fallback_content_2.strip() != content.strip() and
                                     self._check_translation_language(fallback_content_2, target_lang) and
-                                    self._semantic_check(content, fallback_content_2, original_lang) and
+                                    await self._semantic_check(content, fallback_content_2, original_lang) and
                                     not self._is_broken_translation(fallback_content_2)):
                                     logger.info(f"[FALLBACK2] Content second fallback successful for {target_lang}")
                                     lang_translations["content"] = fallback_content_2
@@ -431,7 +431,7 @@ class TranslationService(ITranslationService):
         return text
 
     def _check_translation_language(self, translated_text: str, target_lang: str) -> bool:
-        """Check if translation contains characters of target language"""
+        """Check if translation contains sufficient characters of target language (at least 60%)"""
         if not translated_text or not target_lang:
             return False
 
@@ -447,18 +447,21 @@ class TranslationService(ITranslationService):
         if not target_chars:
             return True  # Unknown language, assume valid
 
-        # Check if translation contains target language characters
         translated_lower = translated_text.lower()
-        has_target_chars = any(char in translated_lower for char in target_chars)
 
-        # Check for wrong language characters (simplified check)
-        wrong_langs = [lang for lang in lang_chars.keys() if lang != target_lang.lower()]
-        has_wrong_chars = any(
-            any(char in translated_lower for char in lang_chars[lang])
-            for lang in wrong_langs
-        )
+        # Count only alphabetic characters (ignore numbers, punctuation, spaces)
+        alphabetic_chars = re.findall(r'[a-zа-яёäöüßàâäéèêëïîôöùûüÿç]', translated_lower)
 
-        return has_target_chars and not has_wrong_chars
+        if not alphabetic_chars:
+            return False
+
+        # Count characters of target language
+        target_count = sum(1 for char in alphabetic_chars if char in target_chars)
+        target_ratio = target_count / len(alphabetic_chars)
+
+        # Require at least 60% of characters to be in target language
+        # This allows for company names, quotes, and proper nouns in other languages
+        return target_ratio >= 0.6
 
     def _is_broken_translation(self, text: str, max_repeats: int = 15) -> bool:
         """Check if text contains suspicious repeats or gibberish"""
@@ -510,7 +513,7 @@ class TranslationService(ITranslationService):
 
         return False
 
-    def _semantic_check(self, original_text: str, translated_text: str, lang_code: str = "en") -> bool:
+    async def _semantic_check(self, original_text: str, translated_text: str, lang_code: str = "en") -> bool:
         """Check semantic similarity between original and translated text"""
         if not original_text or not translated_text:
             return False
@@ -530,10 +533,11 @@ class TranslationService(ITranslationService):
             from firefeed_embeddings_processor import FireFeedEmbeddingsProcessor
 
             processor = FireFeedEmbeddingsProcessor()
-            similarity = processor.calculate_similarity(
+            original_embedding, translated_embedding = await asyncio.gather(
                 processor.generate_embedding(original_text, lang_code),
                 processor.generate_embedding(translated_text, lang_code)
             )
+            similarity = await processor.calculate_similarity(original_embedding, translated_embedding)
 
             # Dynamic threshold based on text length
             text_length = len(original_text)

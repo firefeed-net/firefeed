@@ -18,7 +18,7 @@ active_connections_lock = asyncio.Lock()
 
 @router.websocket("/api/v1/ws/rss-items")
 async def websocket_endpoint(websocket: WebSocket):
-    # Проверяем лимит соединений
+    # Check connection limit
     async with active_connections_lock:
         if len(active_connections) >= config.MAX_WEBSOCKET_CONNECTIONS:
             logger.warning(f"[WebSocket] Connection limit reached ({config.MAX_WEBSOCKET_CONNECTIONS}). Rejecting new connection.")
@@ -99,7 +99,7 @@ async def broadcast_new_rss_items(rss_items_payload: List[dict]):
         for item in rss_items_payload:
             if params.get("original_language") and item.get("original_language") != params["original_language"]:
                 continue
-            title = item.get("original_title", "")[:100] + "..." if item.get("original_title", "") else "Без заголовка"
+            title = item.get("original_title", "")[:100] + "..." if item.get("original_title", "") else "No title"
             if params.get("use_translations", False) and params.get("display_language"):
                 trans = item.get("translations", {}).get(params["display_language"], {})
                 if trans.get("title"):
@@ -109,7 +109,7 @@ async def broadcast_new_rss_items(rss_items_payload: List[dict]):
                 {
                     "news_id": item.get("news_id"),
                     "title": title,
-                    "category": item.get("category", "Без категории"),
+                    "category": item.get("category", "No category"),
                     "published_at": item.get("published_at"),
                 }
             )

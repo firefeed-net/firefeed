@@ -1,27 +1,27 @@
-# Используем официальный образ Python 3.13 slim для уменьшения размера
+# Use official Python 3.13 slim image to reduce size
 FROM python:3.13-slim
 
-# Устанавливаем системные зависимости (если нужны для тяжелых библиотек вроде torch)
+# Install system dependencies (if needed for heavy libraries like torch)
 RUN apt-get update && apt-get install -y \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-# Устанавливаем рабочую директорию
+# Set working directory
 WORKDIR /app
 
-# Копируем requirements.txt и устанавливаем зависимости
+# Copy requirements.txt and install dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Копируем весь код проекта
+# Copy all project code
 COPY . .
 
-# Создаем директорию для данных (если нужно для изображений, но лучше монтировать volume)
+# Create directory for data (if needed for images, but better to mount volume)
 RUN mkdir -p /app/data
 
-# Экспортируем порт для API (uvicorn по умолчанию 8000)
+# Expose port for API (uvicorn default 8000)
 EXPOSE 8000
 
-# По умолчанию запускаем API через uvicorn
-# Для запуска бота или парсера можно переопределить CMD при запуске контейнера
+# By default, start API via uvicorn
+# To run bot or parser, you can override CMD when starting the container
 CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]

@@ -1,14 +1,19 @@
 import asyncio
 import logging
-from firefeed_translator import FireFeedTranslator
+from di_container import setup_di_container, get_service
+from interfaces import ITranslationService
 
 logger = logging.getLogger(__name__)
 
 
 async def test_translations():
-    translator = FireFeedTranslator(device="cpu", max_workers=2, max_concurrent_translations=1)
+    # Initialize DI container
+    setup_di_container()
 
-    # Примеры из логов - короткие тексты
+    # Get TranslationService via DI
+    translator = get_service(ITranslationService)
+
+    # Examples from logs - short texts
     test_cases = [
         ("OpenAI, AMD Announce Massive Computing Deal, Marking New Phase of AI Boom", "en", "ru"),
         (
@@ -18,7 +23,7 @@ async def test_translations():
         ),
     ]
 
-    # Длинные тексты для тестирования
+    # Long texts for testing
     long_test_cases = [
         (
             "OpenAI and AMD have announced a massive computing deal that marks a new phase in the AI boom. This partnership will bring significant changes to the industry and challenge existing market leaders like Nvidia. The agreement includes substantial investments in chip manufacturing and AI infrastructure development.",
@@ -32,23 +37,23 @@ async def test_translations():
         ),
     ]
 
-    logger.info("=== ТЕСТИРОВАНИЕ КОРОТКИХ ТЕКСТОВ ===")
+    logger.info("=== TESTING SHORT TEXTS ===")
     for text, src, tgt in test_cases:
-        logger.info(f"Тестируем: '{text}' {src} -> {tgt}")
+        logger.info(f"Testing: '{text}' {src} -> {tgt}")
         try:
             result = await translator.translate_async([text], src, tgt)
-            logger.info(f"Результат: '{result[0]}'")
+            logger.info(f"Result: '{result[0]}'")
         except Exception as e:
-            logger.error(f"Ошибка: {e}")
+            logger.error(f"Error: {e}")
 
-    logger.info("=== ТЕСТИРОВАНИЕ ДЛИННЫХ ТЕКСТОВ ===")
+    logger.info("=== TESTING LONG TEXTS ===")
     for text, src, tgt in long_test_cases:
-        logger.info(f"Тестируем длинный текст ({len(text)} символов): '{text[:100]}...' {src} -> {tgt}")
+        logger.info(f"Testing long text ({len(text)} characters): '{text[:100]}...' {src} -> {tgt}")
         try:
             result = await translator.translate_async([text], src, tgt)
-            logger.info(f"Результат: '{result[0][:200]}...'")
+            logger.info(f"Result: '{result[0][:200]}...'")
         except Exception as e:
-            logger.error(f"Ошибка: {e}")
+            logger.error(f"Error: {e}")
 
 
 if __name__ == "__main__":

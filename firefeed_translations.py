@@ -1,5 +1,5 @@
 LANG_NAMES = {"en": "English 🇬🇧", "ru": "Русский 🇷🇺", "de": "Deutsch 🇩🇪", "fr": "Français 🇫🇷"}
-# Тексты сообщений на разных языках
+# Messages in different languages
 MESSAGES = {
     "welcome": {
         "en": "👋 Hello, {user_name}!\nI am FireFeed - your personal news aggregator.\nUse the menu below to navigate:",
@@ -96,9 +96,9 @@ SELECT_CATEGORIES_LABELS = {
 }
 
 
-# Функция для получения сообщения на нужном языке
+# Function to get message in the required language
 def get_message(key, lang="en", **kwargs):
-    """Возвращает локализованное сообщение"""
+    """Returns a localized message"""
     if lang not in MESSAGES.get(key, {}):
         lang = "en"
     message = MESSAGES.get(key, {}).get(lang, "")

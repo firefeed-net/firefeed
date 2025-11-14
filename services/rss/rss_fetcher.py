@@ -10,6 +10,7 @@ from urllib.parse import urljoin, urlparse
 from interfaces import IRSSFetcher, IMediaExtractor, IDuplicateDetector
 from utils.image import ImageProcessor
 from exceptions import RSSFetchError, RSSParseError, RSSValidationError
+from api.deps import validate_rss_url
 
 logger = logging.getLogger(__name__)
 
@@ -189,6 +190,11 @@ class RSSFetcher(IRSSFetcher):
         # Convert relative URLs to absolute
         if link and not link.startswith(('http://', 'https://')):
             link = urljoin(feed_url, link)
+
+        # Validate the final URL to prevent URL poisoning
+        if link and not validate_rss_url(link):
+            logger.warning(f"[RSS] Invalid URL after processing: {link}")
+            return ''
 
         return str(link).strip() if link else ''
 

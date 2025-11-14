@@ -1,12 +1,12 @@
 #!/bin/bash
 
-# Убедимся, что pyenv загружен
+# Make sure pyenv is loaded
 export PYENV_ROOT="$HOME/.pyenv"
 export PATH="$PYENV_ROOT/bin:$PATH"
 eval "$(pyenv init -)"
 
-# Устанавливаем версию Python
+# Set Python version
 pyenv shell 3.13.6
 
-# Запускаем бота
+# Start the bot
 python /var/www/firefeed/data/integrations/telegram/bot.py

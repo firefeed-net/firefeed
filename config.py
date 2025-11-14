@@ -7,10 +7,10 @@ from dotenv import load_dotenv
 # Load environment variables from .env file
 load_dotenv()
 
-# Уровень логирования по умолчанию, переопределяемый через env var
+# Default logging level, overridable via env var
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 
-# Конфигурация подключения к БД
+# Database connection configuration
 DB_CONFIG = {
     "host": os.getenv("DB_HOST", "localhost"),
     "user": os.getenv("DB_USER"),
@@ -21,7 +21,7 @@ DB_CONFIG = {
     "maxsize": int(os.getenv("DB_MAXSIZE", 20)),
 }
 
-# Конфигурация SMTP для отправки email
+# SMTP configuration for email sending
 SMTP_CONFIG = {
     "server": os.getenv("SMTP_SERVER"),
     "port": int(os.getenv("SMTP_PORT", 465)),
@@ -30,45 +30,45 @@ SMTP_CONFIG = {
     "use_tls": os.getenv("SMTP_USE_TLS", "True").lower() == "true",
 }
 
-# Один общий пул для всех менеджеров
+# One shared pool for all managers
 _shared_db_pool = None
-# Lock для предотвращения гонки при инициализации
+# Lock to prevent race conditions during initialization
 _pool_init_lock = asyncio.Lock()
 
 
 async def get_shared_db_pool():
-    """Лениво создает и возвращает общий пул подключений к базе данных в правильном event loop."""
+    """Lazily creates and returns shared database connection pool in correct event loop."""
     global _shared_db_pool
-    # Если пул уже создан, возвращаем его
+    # If pool already created, return it
     if _shared_db_pool is not None:
         return _shared_db_pool
 
-    # Используем Lock, чтобы избежать создания нескольких пулов
+    # Use Lock to avoid creating multiple pools
     async with _pool_init_lock:
-        # Повторная проверка, может быть создан пока ждал Lock
+        # Double check, might have been created while waiting for Lock
         if _shared_db_pool is not None:
             return _shared_db_pool
 
-        # Создаем пул внутри текущего (активного) event loop
+        # Create pool inside current (active) event loop
         logger = logging.getLogger(__name__)
-        logger.info("[CONFIG] Создание shared database pool...")
+        logger.info("[CONFIG] Creating shared database pool...")
         _shared_db_pool = await aiopg.create_pool(**DB_CONFIG)
-        logger.info("[CONFIG] Shared database pool успешно создан.")
+        logger.info("[CONFIG] Shared database pool created successfully.")
         return _shared_db_pool
 
 
 async def close_shared_db_pool():
-    """Закрывает общий пул подключений."""
+    """Closes shared connection pool."""
     global _shared_db_pool
     if _shared_db_pool is not None:
         _shared_db_pool.close()
         await _shared_db_pool.wait_closed()
         _shared_db_pool = None
         logger = logging.getLogger(__name__)
-        logger.info("[DB] Общий пул подключений закрыт.")
+        logger.info("[DB] Shared connection pool closed.")
 
 
-# Конфигурация подключения к webhook
+# Webhook connection configuration
 WEBHOOK_CONFIG = {
     "listen": os.getenv("WEBHOOK_LISTEN", "127.0.0.1"),
     "port": int(os.getenv("WEBHOOK_PORT", 5000)),
@@ -76,39 +76,39 @@ WEBHOOK_CONFIG = {
     "webhook_url": os.getenv("WEBHOOK_URL"),
 }
 
-# Токен FeedFire Bot
+# FireFeed Bot Token
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 
 # :-)
 FIRE_EMOJI = "🔥"
 
-# Словарь ID каналов на разных языках
+# Default User-Agent for HTTP requests
+DEFAULT_USER_AGENT = "Mozilla/5.0 (compatible; FireFeed/1.0; +https://firefeed.net)"
+
+# Dictionary of channel IDs for different languages
 CHANNEL_IDS = {"ru": "-1002584789230", "de": "-1002959373215", "fr": "-1002910849909", "en": "-1003035894895"}
 
 CHANNEL_CATEGORIES = {"world", "technology", "lifestyle", "politics", "economy", "autos", "sports"}
 
-# Максимальное кол-во новостей из одной ленты в одной задаче мониторинга новостей
+# Maximum number of news items from one feed in one news monitoring task
 MAX_ENTRIES_PER_FEED = 5
-# Максимальное кол-во всех новостей со всех лент в одной задаче мониторинга новостей
+# Maximum number of all news items from all feeds in one news monitoring task
 MAX_TOTAL_RSS_ITEMS = 15
-# Максимальное количество RSS-лент, обрабатываемых одновременно
+# Maximum number of RSS feeds processed simultaneously
 MAX_CONCURRENT_FEEDS = 10
-# Интервал проверки RSS-элементов в API
+# RSS item check interval in API
 RSS_ITEM_CHECK_INTERVAL_SECONDS = 300
-# Максимальное количество одновременных WebSocket соединений
+# Maximum number of concurrent WebSocket connections
 MAX_WEBSOCKET_CONNECTIONS = 1000
 
-# Порог уникальности RSS-элементов по смыслу (применяется для AI модели в FireFeedDublicateDetector)
+# RSS item uniqueness threshold by meaning (applied for AI model in FireFeedDuplicateDetector)
 RSS_ITEM_SIMILARITY_THRESHOLD = 0.9
-# Абсолютный путь к директории с изображениями на сервере
+# Absolute path to images directory on server
 IMAGES_ROOT_DIR = "/var/www/firefeed/data/www/firefeed.net/data/images/"
-# Абсолютный путь к директории с изображениями на сайте
+# Absolute path to images directory on website
 HTTP_IMAGES_ROOT_DIR = "https://firefeed.net/data/images/"
-# Допустимые расширения для изображений
+# Allowed image extensions
 IMAGE_FILE_EXTENSIONS = [".jpg", ".jpeg", ".png", ".gif", ".webp"]
-
-# Настройки JWT
-JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY")
 
 VERIFICATION_CODE_EXPIRE_HOURS = 1
 
@@ -117,7 +117,7 @@ USER_DEFINED_RSS_CATEGORY_ID = 10
 # Supported languages for translations
 SUPPORTED_LANGUAGES = ["en", "ru", "de", "fr"]
 
-# Конфигурация Redis
+# Redis configuration
 REDIS_CONFIG = {
     "host": os.getenv("REDIS_HOST", "localhost"),
     "port": int(os.getenv("REDIS_PORT", 6379)),

@@ -7,21 +7,21 @@ logger = logging.getLogger(__name__)
 
 
 class DatabaseMixin:
-    """Базовый класс для работы с базой данных"""
+    """Base class for working with database"""
 
     async def get_pool(self):
-        """Получает общий пул подключений из config.py"""
+        """Gets shared connection pool from config.py"""
         return await get_shared_db_pool()
 
     async def close_pool(self):
-        """Заглушка - пул закрывается глобально"""
+        """Stub - pool is closed globally"""
         pass
 
 
 def db_operation(func: Callable) -> Callable:
     """
-    Декоратор для операций с базой данных.
-    Автоматически получает пул, обрабатывает ошибки и логирует.
+    Decorator for database operations.
+    Automatically gets pool, handles errors and logs.
     """
 
     @wraps(func)
@@ -29,14 +29,14 @@ def db_operation(func: Callable) -> Callable:
         try:
             pool = await self.get_pool()
             if pool is None:
-                logger.error("[DB] Не удалось получить пул подключений")
+                logger.error("[DB] Failed to get connection pool")
                 return None
 
-            # Вызываем оригинальную функцию с пулом
+            # Call original function with pool
             return await func(self, pool, *args, **kwargs)
 
         except Exception as e:
-            logger.error(f"[DB] Ошибка в {func.__name__}: {e}")
+            logger.error(f"[DB] Error in {func.__name__}: {e}")
             return None
 
     return wrapper

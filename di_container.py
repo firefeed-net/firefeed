@@ -112,6 +112,7 @@ def setup_di_container() -> DIContainer:
     from services.rss import MediaExtractor, RSSValidator, RSSStorage, RSSFetcher
     from services.translation import ModelManager, TranslationService, TranslationCache
     from services.database_pool_adapter import DatabasePoolAdapter
+    from services.maintenance_service import MaintenanceService
     from firefeed_translator_task_queue import FireFeedTranslatorTaskQueue
     from firefeed_dublicate_detector import FireFeedDuplicateDetector
 
@@ -167,6 +168,9 @@ def setup_di_container() -> DIContainer:
     ))
 
     di_container.register(IDuplicateDetector, FireFeedDuplicateDetector)
+
+    # Register maintenance service
+    di_container.register(IMaintenanceService, MaintenanceService)
 
     logger.info("DI container setup completed with configuration")
     return di_container

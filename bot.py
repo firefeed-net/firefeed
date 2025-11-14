@@ -20,15 +20,15 @@ from firefeed_translations import get_message, LANG_NAMES, TRANSLATED_FROM_LABEL
 from logging_config import setup_logging
 from user_manager import UserManager
 
-# Настройка логирования
+# Logging setup
 setup_logging()
 logger = logging.getLogger(__name__)
 
-# --- Конфигурация API ---
+# --- API Configuration ---
 API_BASE_URL = "http://localhost:8000/api/v1"
 BOT_API_KEY = os.getenv("BOT_API_KEY")  # API key for bot authentication
 
-# --- Глобальные переменные ---
+# --- Global variables ---
 USER_STATES = {}  # {user_id: {"current_subs": [...], "language": "en", "last_access": timestamp}}
 USER_CURRENT_MENUS = {}  # {user_id: "main", "last_access": timestamp}
 USER_LANGUAGES = {}  # {user_id: "en", "last_access": timestamp}
@@ -36,26 +36,26 @@ SEND_SEMAPHORE = asyncio.Semaphore(5)
 RSS_ITEM_PROCESSING_SEMAPHORE = asyncio.Semaphore(10)
 
 user_manager = None
-http_session = None  # Глобальная сессия для HTTP-запросов
+http_session = None  # Global session for HTTP requests
 
-# TTL для очистки устаревших данных (24 часа)
+# TTL for cleaning expired data (24 hours)
 USER_DATA_TTL_SECONDS = 24 * 60 * 60
 
 
 @dataclass
 class PreparedRSSItem:
-    """Структура для хранения подготовленного RSS-элемента."""
+    """Structure for storing prepared RSS item."""
 
     original_data: Dict[str, Any]
     translations: Dict[str, Dict[str, str]]
     image_filename: Optional[str]
 
 
-# --- Функции для работы с БД ---
+# --- Database functions ---
 async def mark_translation_as_published(translation_id: int, channel_id: int, message_id: int = None):
-    """Помечает перевод как опубликованный в Telegram-канале."""
+    """Marks translation as published in Telegram channel."""
     try:
-        # Получаем общий пул подключений
+        # Get shared connection pool
         db_pool = await get_shared_db_pool()
         async with db_pool.acquire() as connection:
             async with connection.cursor() as cursor:
@@ -69,17 +69,17 @@ async def mark_translation_as_published(translation_id: int, channel_id: int, me
                         published_at = NOW()
                 """
                 await cursor.execute(query, (translation_id, channel_id, message_id))
-                logger.info(f"Перевод {translation_id} помечен как опубликованный в канале {channel_id}")
+                logger.info(f"Translation {translation_id} marked as published in channel {channel_id}")
                 return True
     except Exception as e:
-        logger.error(f"Ошибка при пометке перевода {translation_id} как опубликованного: {e}")
+        logger.error(f"Error marking translation {translation_id} as published: {e}")
         return False
 
 
 async def mark_original_as_published(news_id: str, channel_id: int, message_id: int = None):
-    """Помечает оригинальную новость как опубликованную в Telegram-канале."""
+    """Marks original news as published in Telegram channel."""
     try:
-        # Получаем общий пул подключений
+        # Get shared connection pool
         db_pool = await get_shared_db_pool()
         async with db_pool.acquire() as connection:
             async with connection.cursor() as cursor:
@@ -93,15 +93,15 @@ async def mark_original_as_published(news_id: str, channel_id: int, message_id: 
                         created_at = NOW()
                 """
                 await cursor.execute(query, (news_id, channel_id, message_id))
-                logger.info(f"Оригинальная новость {news_id} помечена как опубликованная в канале {channel_id}")
+                logger.info(f"Original news {news_id} marked as published in channel {channel_id}")
                 return True
     except Exception as e:
-        logger.error(f"Ошибка при пометке оригинальной новости {news_id} как опубликованной: {e}")
+        logger.error(f"Error marking original news {news_id} as published: {e}")
         return False
 
 
 async def get_translation_id(news_id: str, language: str) -> int:
-    """Получает ID перевода из таблицы news_translations."""
+    """Gets translation ID from news_translations table."""
     try:
         db_pool = await get_shared_db_pool()
         async with db_pool.acquire() as connection:
@@ -114,37 +114,37 @@ async def get_translation_id(news_id: str, language: str) -> int:
                 result = await cursor.fetchone()
                 return result[0] if result else None
     except Exception as e:
-        logger.error(f"Ошибка при получении ID перевода для {news_id} на {language}: {e}")
+        logger.error(f"Error getting translation ID for {news_id} in {language}: {e}")
         return None
 
 
-# --- Функции валидации изображений ---
+# --- Image validation functions ---
 async def validate_image_url(image_url: str) -> bool:
-    """Проверяет доступность и корректность URL изображения."""
+    """Checks availability and correctness of image URL."""
     if not image_url:
         return False
 
     try:
-        # Делаем HEAD запрос для проверки доступности
+        # Make HEAD request to check availability
         timeout = aiohttp.ClientTimeout(total=5, connect=2)
         async with http_session.head(image_url, timeout=timeout) as response:
             if response.status != 200:
-                logger.debug(f"Изображение недоступно (status {response.status}): {image_url}")
+                logger.debug(f"Image unavailable (status {response.status}): {image_url}")
                 return False
 
-            # Проверяем Content-Type
+            # Check Content-Type
             content_type = response.headers.get('Content-Type', '').lower()
             if not content_type.startswith('image/'):
-                logger.debug(f"Некорректный Content-Type '{content_type}' для: {image_url}")
+                logger.debug(f"Incorrect Content-Type '{content_type}' for: {image_url}")
                 return False
 
-            # Проверяем размер (если указан)
+            # Check size (if specified)
             content_length = response.headers.get('Content-Length')
             if content_length:
                 try:
                     size = int(content_length)
                     if size > 10 * 1024 * 1024:  # 10 MB limit
-                        logger.debug(f"Изображение слишком большое ({size} bytes): {image_url}")
+                        logger.debug(f"Image too large ({size} bytes): {image_url}")
                         return False
                 except (ValueError, TypeError):
                     pass
@@ -152,14 +152,14 @@ async def validate_image_url(image_url: str) -> bool:
             return True
 
     except asyncio.TimeoutError:
-        logger.debug(f"Таймаут при проверке изображения: {image_url}")
+        logger.debug(f"Timeout checking image: {image_url}")
         return False
     except Exception as e:
-        logger.debug(f"Ошибка при проверке изображения {image_url}: {e}")
+        logger.debug(f"Error checking image {image_url}: {e}")
         return False
 
 
-# --- Функции для работы с API ---
+# --- Functions for working with API ---
 async def api_get(endpoint: str, params: dict = None) -> dict:
     """Выполняет GET-запрос к API."""
     global http_session
@@ -168,7 +168,7 @@ async def api_get(endpoint: str, params: dict = None) -> dict:
 
     url = f"{API_BASE_URL}{endpoint}"
     try:
-        # Преобразуем boolean параметры в строки
+        # Convert boolean parameters to strings
         if params:
             processed_params = {}
             for key, value in params.items():
@@ -179,18 +179,18 @@ async def api_get(endpoint: str, params: dict = None) -> dict:
         else:
             processed_params = params
 
-        # Добавляем API key в headers, если задан
+        # Add API key to headers if set
         headers = {}
         if BOT_API_KEY:
             headers["X-API-Key"] = BOT_API_KEY
 
-        timeout = aiohttp.ClientTimeout(total=10, connect=5)  # Таймаут 10 секунд для API запросов
+        timeout = aiohttp.ClientTimeout(total=10, connect=5)  # 10 second timeout for API requests
         async with http_session.get(url, params=processed_params, headers=headers, timeout=timeout) as response:
             if response.status == 200:
                 return await response.json()
             else:
                 logger.error(f"{endpoint} returned status {response.status}")
-                # Попытка получить текст ошибки для лучшего понимания проблемы
+                # Attempt to get error text for better understanding of the problem
                 error_text = await response.text()
                 logger.error(f"Error response body: {error_text}")
                 return {}
@@ -203,7 +203,7 @@ async def api_get(endpoint: str, params: dict = None) -> dict:
 
 
 async def get_rss_items_list(display_language: str = None, **filters) -> dict:
-    """Получает список RSS-элементов."""
+    """Gets list of RSS items."""
     params = {}
     if display_language is not None:
         params["display_language"] = display_language
@@ -212,32 +212,32 @@ async def get_rss_items_list(display_language: str = None, **filters) -> dict:
 
 
 async def get_rss_item_by_id(rss_item_id: str, display_language: str = "en") -> dict:
-    """Получает RSS-элемент по ID."""
+    """Gets RSS item by ID."""
     params = {"display_language": display_language}
     return await api_get(f"/rss-items/{rss_item_id}", params)
 
 
 async def get_categories() -> list:
-    """Получает список категорий."""
+    """Gets list of categories."""
     result = await api_get("/categories/")
     return result.get("results", [])
 
 
 async def get_sources() -> list:
-    """Получает список источников."""
+    """Gets list of sources."""
     result = await api_get("/sources/")
     return result.get("results", [])
 
 
 async def get_languages() -> list:
-    """Получает список языков."""
+    """Gets list of languages."""
     result = await api_get("/languages/")
     return result.get("results", [])
 
 
-# --- Функции UI ---
+# --- UI functions ---
 def get_main_menu_keyboard(lang="en"):
-    """Создает клавиатуру главного меню."""
+    """Creates main menu keyboard."""
     return ReplyKeyboardMarkup(
         [
             [KeyboardButton(get_message("menu_settings", lang)), KeyboardButton(get_message("menu_help", lang))],
@@ -249,51 +249,51 @@ def get_main_menu_keyboard(lang="en"):
 
 
 async def set_current_user_language(user_id: int, lang: str):
-    """Устанавливает язык пользователя в БД и в памяти."""
+    """Sets user language in DB and memory."""
     global user_manager
     try:
         await user_manager.set_user_language(user_id, lang)
         USER_LANGUAGES[user_id] = {"language": lang, "last_access": time.time()}
     except Exception as e:
-        logger.error(f"Ошибка установки языка для {user_id}: {e}")
+        logger.error(f"Error setting language for {user_id}: {e}")
 
 
 async def cleanup_expired_user_data(context=None):
-    """Очищает устаревшие данные пользователей (старше 24 часов)."""
+    """Clears expired user data (older than 24 hours)."""
     current_time = time.time()
     expired_threshold = current_time - USER_DATA_TTL_SECONDS
 
-    # Очищаем USER_STATES
+    # Clear USER_STATES
     expired_states = [uid for uid, data in USER_STATES.items()
                       if isinstance(data, dict) and data.get("last_access", 0) < expired_threshold]
     for uid in expired_states:
         del USER_STATES[uid]
 
-    # Очищаем USER_CURRENT_MENUS
+    # Clear USER_CURRENT_MENUS
     expired_menus = [uid for uid, data in USER_CURRENT_MENUS.items()
                     if isinstance(data, dict) and data.get("last_access", 0) < expired_threshold]
     for uid in expired_menus:
         del USER_CURRENT_MENUS[uid]
 
-    # Очищаем USER_LANGUAGES
+    # Clear USER_LANGUAGES
     expired_langs = [uid for uid, data in USER_LANGUAGES.items()
                     if isinstance(data, dict) and data.get("last_access", 0) < expired_threshold]
     for uid in expired_langs:
         del USER_LANGUAGES[uid]
 
     if expired_states or expired_menus or expired_langs:
-        logger.info(f"[CLEANUP] Очищено устаревших данных: states={len(expired_states)}, menus={len(expired_menus)}, langs={len(expired_langs)}")
+        logger.info(f"[CLEANUP] Cleared expired data: states={len(expired_states)}, menus={len(expired_menus)}, langs={len(expired_langs)}")
 
 
 async def get_current_user_language(user_id: int) -> str:
-    """Получает актуальный язык пользователя из памяти или БД."""
+    """Gets current user language from memory or DB."""
     if user_id in USER_LANGUAGES:
         data = USER_LANGUAGES[user_id]
         if isinstance(data, dict):
             data["last_access"] = time.time()
             return data["language"]
         else:
-            # Обновляем старый формат
+            # Update old format
             USER_LANGUAGES[user_id] = {"language": data, "last_access": time.time()}
             return data
 
@@ -303,13 +303,13 @@ async def get_current_user_language(user_id: int) -> str:
             USER_LANGUAGES[user_id] = {"language": lang, "last_access": time.time()}
         return lang or "en"
     except Exception as e:
-        logger.error(f"Ошибка получения языка для {user_id}: {e}")
+        logger.error(f"Error getting language for {user_id}: {e}")
         return "en"
 
 
-# --- Обработчики команд ---
+# --- Command handlers ---
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработчик команды /start."""
+    """Handler for /start command."""
     user = update.effective_user
     user_id = user.id
     lang = await get_current_user_language(user_id)
@@ -319,7 +319,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def settings_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработчик команды /settings."""
+    """Handler for /settings command."""
     global user_manager
     user_id = update.effective_user.id
     try:
@@ -332,13 +332,13 @@ async def settings_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await _show_settings_menu(context.bot, update.effective_chat.id, user_id)
         USER_CURRENT_MENUS[user_id] = "settings"
     except Exception as e:
-        logger.error(f"Ошибка команды /settings для {user_id}: {e}")
+        logger.error(f"Error in /settings command for {user_id}: {e}")
         lang = await get_current_user_language(user_id)
         await update.message.reply_text(get_message("settings_error", lang))
 
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработчик команды /help."""
+    """Handler for /help command."""
     user_id = update.effective_user.id
     lang = await get_current_user_language(user_id)
     help_text = get_message("help_text", lang)
@@ -347,7 +347,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработчик команды /status."""
+    """Handler for /status command."""
     global user_manager
     user_id = update.effective_user.id
     lang = await get_current_user_language(user_id)
@@ -362,7 +362,7 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def change_language_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработчик команды смены языка."""
+    """Handler for language change command."""
     user_id = update.effective_user.id
     lang = await get_current_user_language(user_id)
     keyboard = [
@@ -376,13 +376,13 @@ async def change_language_command(update: Update, context: ContextTypes.DEFAULT_
 
 
 async def link_telegram_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработчик команды /link для привязки Telegram аккаунта."""
+    """Handler for /link command to link Telegram account."""
     user_id = update.effective_user.id
     lang = await get_current_user_language(user_id)
 
     if not context.args:
         await update.message.reply_text(
-            "Использование: /link <код_привязки>\n\n" "Получите код привязки в личном кабинете на сайте.",
+            "Usage: /link <link_code>\n\n" "Get the link code in your personal account on the site.",
             reply_markup=get_main_menu_keyboard(lang),
         )
         USER_CURRENT_MENUS[user_id] = "main"
@@ -390,28 +390,28 @@ async def link_telegram_command(update: Update, context: ContextTypes.DEFAULT_TY
 
     link_code = context.args[0].strip()
 
-    # Проверяем код через UserManager
+    # Check code via UserManager
     success = await user_manager.confirm_telegram_link(user_id, link_code)
 
     if success:
         await update.message.reply_text(
-            "✅ Ваш Telegram аккаунт успешно привязан к аккаунту на сайте!\n\n"
-            "Теперь вы можете управлять настройками через сайт или бота.",
+            "✅ Your Telegram account has been successfully linked to your site account!\n\n"
+            "Now you can manage settings through the site or bot.",
             reply_markup=get_main_menu_keyboard(lang),
         )
     else:
         await update.message.reply_text(
-            "❌ Код привязки недействителен или истек.\n\n"
-            "Пожалуйста, сгенерируйте новый код в личном кабинете на сайте.",
+            "❌ Link code is invalid or expired.\n\n"
+            "Please generate a new code in your personal account on the site.",
             reply_markup=get_main_menu_keyboard(lang),
         )
 
     USER_CURRENT_MENUS[user_id] = "main"
 
 
-# --- Вспомогательные функции UI ---
+# --- UI helper functions ---
 async def _show_settings_menu(bot, chat_id: int, user_id: int):
-    """Отображает меню настроек."""
+    """Displays settings menu."""
     state = USER_STATES.get(user_id)
     if not state:
         return
@@ -431,17 +431,17 @@ async def _show_settings_menu(bot, chat_id: int, user_id: int):
             chat_id=chat_id, text=get_message("settings_title", current_lang), reply_markup=reply_markup
         )
     except Exception as e:
-        logger.error(f"Ошибка в _show_settings_menu для {user_id}: {e}")
+        logger.error(f"Error in _show_settings_menu for {user_id}: {e}")
 
 
 async def _show_settings_menu_from_callback(bot, chat_id: int, user_id: int):
-    """Отображает меню настроек из callback."""
+    """Displays settings menu from callback."""
     await _show_settings_menu(bot, chat_id, user_id)
 
 
-# --- Обработчики callback и сообщений ---
+# --- Callback and message handlers ---
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработчик callback кнопок."""
+    """Handler for callback buttons."""
     global user_manager
     query = update.callback_query
     await query.answer()
@@ -520,7 +520,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             USER_CURRENT_MENUS[user_id] = "language"
     except Exception as e:
-        logger.error(f"Ошибка обработки кнопки для {user_id}: {e}")
+        logger.error(f"Error processing button for {user_id}: {e}")
         current_lang = await get_current_user_language(user_id)
         await context.bot.send_message(
             chat_id=user_id,
@@ -531,7 +531,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def handle_menu_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработчик выбора пункта меню."""
+    """Handler for menu selection."""
     user_id = update.effective_user.id
     lang = await get_current_user_language(user_id)
     text = update.message.text
@@ -559,11 +559,11 @@ async def handle_menu_selection(update: Update, context: ContextTypes.DEFAULT_TY
             if new_action:
                 await new_action(update, context)
             return
-    logger.info(f"Неизвестный выбор меню для {user_id}: {text}")
+    logger.info(f"Unknown menu selection for {user_id}: {text}")
 
 
 async def debug(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработчик отладочных сообщений."""
+    """Handler for debug messages."""
     user_id = update.effective_user.id
     lang = await get_current_user_language(user_id)
     await update.message.reply_text(get_message("bot_active", lang), reply_markup=get_main_menu_keyboard(lang))
@@ -574,24 +574,24 @@ async def debug(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 @retry(stop=stop_after_attempt(5), wait=wait_exponential(multiplier=1, min=2, max=30))
 async def send_personal_rss_items(bot, prepared_rss_item: PreparedRSSItem, subscribers_cache=None):
-    """Отправляет персональные RSS-элементы подписчикам."""
+    """Sends personal RSS items to subscribers."""
     news_id = prepared_rss_item.original_data.get("id")
-    logger.info(f"Отправка персонального RSS-элемента: {prepared_rss_item.original_data['title'][:50]}...")
+    logger.info(f"Sending personal RSS item: {prepared_rss_item.original_data['title'][:50]}...")
     category = prepared_rss_item.original_data.get("category")
     if not category:
-        logger.warning(f"RSS-элемент {news_id} не имеет категории")
+        logger.warning(f"RSS item {news_id} has no category")
         return
 
-    # Используем кэш подписчиков, если он передан
+    # Use subscribers cache if provided
     if subscribers_cache is not None:
         subscribers = subscribers_cache.get(category, [])
     else:
-        # Fallback на старый способ, если кэш не передан
+        # Fallback to old method if cache not provided
         global user_manager
         subscribers = await user_manager.get_subscribers_for_category(category)
 
     if not subscribers:
-        logger.debug(f"Нет подписчиков для категории {category}")
+        logger.debug(f"No subscribers for category {category}")
         return
     translations_cache = prepared_rss_item.translations
     original_rss_item_lang = prepared_rss_item.original_data.get("lang", "")
@@ -601,23 +601,23 @@ async def send_personal_rss_items(bot, prepared_rss_item: PreparedRSSItem, subsc
             user_id = user["id"]
             user_lang = user.get("language_code", "en")
 
-            # Проверяем, есть ли у элемента контент на языке пользователя
+            # Check if item has content in user's language
             title_to_send = None
             content_to_send = None
 
-            # Если язык пользователя совпадает с языком оригинала элемента
+            # If user's language matches item's original language
             if user_lang == original_rss_item_lang:
                 title_to_send = prepared_rss_item.original_data["title"]
                 content_to_send = prepared_rss_item.original_data.get("content", "")
-            # Иначе ищем перевод на язык пользователя
+            # Otherwise, look for translation in user's language
             elif user_lang in translations_cache and translations_cache[user_lang]:
                 translation_data = translations_cache[user_lang]
                 title_to_send = translation_data.get("title", "")
                 content_to_send = translation_data.get("content", "")
 
-            # Если нет подходящего контента, пропускаем пользователя
+            # If no suitable content, skip user
             if not title_to_send or not title_to_send.strip():
-                logger.debug(f"Пропуск пользователя {user_id} - нет контента на языке {user_lang}")
+                logger.debug(f"Skipping user {user_id} - no content in language {user_lang}")
                 continue
 
             title_to_send = TextProcessor.clean(title_to_send)
@@ -639,13 +639,13 @@ async def send_personal_rss_items(bot, prepared_rss_item: PreparedRSSItem, subsc
             logger.debug(f"send_personal_rss_items image_filename = {image_filename}")
 
             if image_filename:
-                # Проверяем доступность и корректность изображения
+                # Check image availability and correctness
                 if await validate_image_url(image_filename):
-                    logger.debug(f"Изображение прошло валидацию: {image_filename}")
+                    logger.debug(f"Image passed validation: {image_filename}")
                 else:
-                    logger.warning(f"Изображение не прошло валидацию, отправляем без него: {image_filename}")
-                    image_filename = None  # Сбрасываем изображение
-                    continue  # Продолжаем без изображения
+                    logger.warning(f"Image failed validation, sending without it: {image_filename}")
+                    image_filename = None  # Reset image
+                    continue  # Continue without image
 
                 caption = content_text
                 if len(caption) > 1024:
@@ -659,49 +659,49 @@ async def send_personal_rss_items(bot, prepared_rss_item: PreparedRSSItem, subsc
                 try:
                     await bot.send_photo(chat_id=user_id, photo=image_filename, caption=caption, parse_mode="HTML")
                 except RetryAfter as e:
-                    logger.warning(f"Flood control для пользователя {user_id}, ждем {e.retry_after} секунд")
+                    logger.warning(f"Flood control for user {user_id}, waiting {e.retry_after} seconds")
                     await asyncio.sleep(e.retry_after + 1)
                     await bot.send_photo(chat_id=user_id, photo=image_filename, caption=caption, parse_mode="HTML")
                 except BadRequest as e:
                     if "Wrong type of the web page content" in str(e):
-                        logger.warning(f"Некорректный тип контента для пользователя {user_id}, отправляем без изображения: {image_filename}")
-                        # Отправляем без изображения
+                        logger.warning(f"Incorrect content type for user {user_id}, sending without image: {image_filename}")
+                        # Send without image
                         try:
                             await bot.send_message(
                                 chat_id=user_id, text=caption, parse_mode="HTML", disable_web_page_preview=True
                             )
                         except Exception as send_error:
-                            logger.error(f"Ошибка отправки сообщения пользователю {user_id}: {send_error}")
+                            logger.error(f"Error sending message to user {user_id}: {send_error}")
                     else:
-                        logger.error(f"BadRequest при отправке фото пользователю {user_id}: {e}")
+                        logger.error(f"BadRequest when sending photo to user {user_id}: {e}")
                 except Exception as e:
-                    logger.error(f"Ошибка отправки фото пользователю {user_id}: {e}")
+                    logger.error(f"Error sending photo to user {user_id}: {e}")
             else:
                 try:
                     await bot.send_message(
                         chat_id=user_id, text=content_text, parse_mode="HTML", disable_web_page_preview=True
                     )
                 except RetryAfter as e:
-                    logger.warning(f"Flood control для пользователя {user_id}, ждем {e.retry_after} секунд")
+                    logger.warning(f"Flood control for user {user_id}, waiting {e.retry_after} seconds")
                     await asyncio.sleep(e.retry_after + 1)
                     await bot.send_message(
                         chat_id=user_id, text=content_text, parse_mode="HTML", disable_web_page_preview=True
                     )
                 except Exception as e:
-                    logger.error(f"Ошибка отправки сообщения пользователю {user_id}: {e}")
+                    logger.error(f"Error sending message to user {user_id}: {e}")
 
             if i < len(subscribers) - 1:
                 await asyncio.sleep(0.5)
         except Exception as e:
-            logger.error(f"Ошибка отправки персонального RSS-элемента пользователю {user.get('id', 'Unknown ID')}: {e}")
+            logger.error(f"Error sending personal RSS item to user {user.get('id', 'Unknown ID')}: {e}")
 
 
 @retry(stop=stop_after_attempt(5), wait=wait_exponential(multiplier=1, min=2, max=30))
 async def post_to_channel(bot, prepared_rss_item: PreparedRSSItem):
-    """Публикует RSS-элемент в Telegram-каналы."""
+    """Publishes RSS item to Telegram channels."""
     original_title = prepared_rss_item.original_data["title"]
     news_id = prepared_rss_item.original_data.get("id")
-    logger.info(f"Публикация RSS-элемента в каналы: {original_title[:50]}...")
+    logger.info(f"Publishing RSS item to channels: {original_title[:50]}...")
     logger.debug(f"post_to_channel prepared_rss_item = {prepared_rss_item}")
     original_content = prepared_rss_item.original_data.get("content", "")
     category = prepared_rss_item.original_data.get("category", "")
@@ -710,18 +710,18 @@ async def post_to_channel(bot, prepared_rss_item: PreparedRSSItem):
     translations_cache = prepared_rss_item.translations
     channels_list = list(CHANNEL_IDS.items())
 
-    # Отправляем в каналы, где есть перевод или оригинал
+    # Send to channels where translation or original exists
     for target_lang, channel_id in channels_list:
         try:
-            # Определяем, использовать ли перевод или оригинал
+            # Determine whether to use translation or original
             if target_lang == original_lang:
-                # Оригинальный язык
+                # Original language
                 title = TextProcessor.clean(original_title)
                 content = TextProcessor.clean(original_content)
                 lang_note = ""
-                translation_id = None  # Для оригинального языка нет перевода
+                translation_id = None  # No translation for original language
             elif target_lang in translations_cache and translations_cache[target_lang]:
-                # Есть перевод
+                # There is translation
                 translation_data = translations_cache[target_lang]
                 title = TextProcessor.clean(translation_data.get("title", original_title))
                 content = TextProcessor.clean(translation_data.get("content", original_content))
@@ -731,11 +731,11 @@ async def post_to_channel(bot, prepared_rss_item: PreparedRSSItem):
                 # Получаем ID перевода для отслеживания публикации
                 translation_id = await get_translation_id(news_id, target_lang)
                 if not translation_id:
-                    logger.warning(f"Не найден ID перевода для {news_id} на {target_lang}, пропускаем публикацию")
+                    logger.warning(f"Translation ID not found for {news_id} in {target_lang}, skipping publication")
                     continue
             else:
-                # Нет перевода, пропускаем
-                logger.debug(f"Нет перевода для {news_id} на {target_lang}, пропускаем публикацию")
+                # No translation, skip
+                logger.debug(f"No translation for {news_id} in {target_lang}, skipping publication")
                 continue
             hashtags = f"\n#{category} #{original_source}"
             source_url = prepared_rss_item.original_data.get("link", "")
@@ -749,8 +749,8 @@ async def post_to_channel(bot, prepared_rss_item: PreparedRSSItem):
             logger.debug(f"post_to_channel image_filename = {image_filename}")
 
             if image_filename and await validate_image_url(image_filename):
-                # Изображение прошло валидацию - отправляем с фото
-                logger.debug(f"Изображение прошло валидацию: {image_filename}")
+                # Image passed validation - send with photo
+                logger.debug(f"Image passed validation: {image_filename}")
 
                 caption = content_text
                 if len(caption) > 1024:
@@ -767,7 +767,7 @@ async def post_to_channel(bot, prepared_rss_item: PreparedRSSItem):
                     )
                     message_id = message.message_id
                 except RetryAfter as e:
-                    logger.warning(f"Flood control для канала {channel_id}, ждем {e.retry_after} секунд")
+                    logger.warning(f"Flood control for channel {channel_id}, waiting {e.retry_after} seconds")
                     await asyncio.sleep(e.retry_after + 1)
                     message = await bot.send_photo(
                         chat_id=channel_id, photo=image_filename, caption=caption, parse_mode="HTML"
@@ -775,66 +775,66 @@ async def post_to_channel(bot, prepared_rss_item: PreparedRSSItem):
                     message_id = message.message_id
                 except BadRequest as e:
                     if "Wrong type of the web page content" in str(e):
-                        logger.warning(f"Некорректный тип контента для канала {channel_id}, отправляем без изображения: {image_filename}")
-                        # Отправляем без изображения
+                        logger.warning(f"Incorrect content type for channel {channel_id}, sending without image: {image_filename}")
+                        # Send without image
                         try:
                             message = await bot.send_message(
                                 chat_id=channel_id, text=content_text, parse_mode="HTML", disable_web_page_preview=True
                             )
                             message_id = message.message_id
                         except Exception as send_error:
-                            logger.error(f"Ошибка отправки сообщения в канал {channel_id}: {send_error}")
+                            logger.error(f"Error sending message to channel {channel_id}: {send_error}")
                             continue
                     else:
-                        logger.error(f"BadRequest при отправке фото в канал {channel_id}: {e}")
+                        logger.error(f"BadRequest when sending photo to channel {channel_id}: {e}")
                         continue
                 except Exception as e:
-                    logger.error(f"Ошибка отправки фото в канал {channel_id}: {e}")
+                    logger.error(f"Error sending photo to channel {channel_id}: {e}")
                     continue
             else:
-                # Нет изображения или оно не прошло валидацию - отправляем только текст
+                # No image or it failed validation - send text only
                 if image_filename:
-                    logger.warning(f"Изображение не прошло валидацию, отправляем без него: {image_filename}")
+                    logger.warning(f"Image failed validation, sending without it: {image_filename}")
                 try:
                     message = await bot.send_message(
                         chat_id=channel_id, text=content_text, parse_mode="HTML", disable_web_page_preview=True
                     )
                     message_id = message.message_id
                 except RetryAfter as e:
-                    logger.warning(f"Flood control для канала {channel_id}, ждем {e.retry_after} секунд")
+                    logger.warning(f"Flood control for channel {channel_id}, waiting {e.retry_after} seconds")
                     await asyncio.sleep(e.retry_after + 1)
                     message = await bot.send_message(
                         chat_id=channel_id, text=content_text, parse_mode="HTML", disable_web_page_preview=True
                     )
                     message_id = message.message_id
                 except Exception as e:
-                    logger.error(f"Ошибка отправки сообщения в канал {channel_id}: {e}")
+                    logger.error(f"Error sending message to channel {channel_id}: {e}")
                     continue
 
-            # Помечаем публикацию в БД
+            # Mark publication in DB
             if translation_id:
-                # Это перевод
+                # This is a translation
                 await mark_translation_as_published(translation_id, channel_id, message_id)
             else:
-                # Это оригинальная новость
+                # This is original news
                 await mark_original_as_published(news_id, channel_id, message_id)
 
-            logger.info(f"Опубликовано в {channel_id}: {title[:50]}...")
+            logger.info(f"Published to {channel_id}: {title[:50]}...")
 
-            # Добавляем задержку 5 секунд между публикациями в разные каналы
+            # Add 5 second delay between publications to different channels
             await asyncio.sleep(5)
         except Exception as e:
-            logger.error(f"Ошибка отправки в {channel_id}: {e}")
+            logger.error(f"Error sending to {channel_id}: {e}")
 
 
-# --- Основная логика обработки RSS-элементов ---
+# --- Main RSS item processing logic ---
 async def process_rss_item(context, rss_item_from_api, subscribers_cache=None, channel_categories_cache=None):
-    """Обрабатывает RSS-элемент, полученный из API."""
+    """Processes RSS item received from API."""
     async with RSS_ITEM_PROCESSING_SEMAPHORE:
-        news_id = rss_item_from_api.get("news_id")  # ID остается news_id для совместимости
-        logger.debug(f"Начало обработки RSS-элемента {news_id} из API")
+        news_id = rss_item_from_api.get("news_id")  # ID remains news_id for compatibility
+        logger.debug(f"Starting processing of RSS item {news_id} from API")
 
-        # Преобразуем данные из API в формат, ожидаемый остальным кодом
+        # Convert API data to format expected by the rest of the code
         original_data = {
             "id": rss_item_from_api.get("news_id"),
             "title": rss_item_from_api.get("original_title"),
@@ -848,7 +848,7 @@ async def process_rss_item(context, rss_item_from_api, subscribers_cache=None, c
 
         logger.debug(f"original_data = {original_data}")
 
-        # Обработка переводов
+        # Translation processing
         translations = {}
         if rss_item_from_api.get("translations"):
             for lang, translation_data in rss_item_from_api["translations"].items():
@@ -858,12 +858,12 @@ async def process_rss_item(context, rss_item_from_api, subscribers_cache=None, c
                     "category": translation_data.get("category", ""),
                 }
 
-        logger.debug(f"Подготовка RSS-элемента {news_id} завершена.")
+        logger.debug(f"Preparation of RSS item {news_id} completed.")
 
         prepared_rss_item = PreparedRSSItem(
             original_data=original_data,
             translations=translations,
-            image_filename=original_data.get("image_url"),  # потому что так возвращает API
+            image_filename=original_data.get("image_url"),  # because that's how API returns
         )
 
         async def limited_post_to_channel():
@@ -876,54 +876,54 @@ async def process_rss_item(context, rss_item_from_api, subscribers_cache=None, c
 
         tasks_to_await = []
         category = rss_item_from_api.get("category")
-        # Используем кэш для проверки пригодности категории для общего канала
+        # Use cache to check category suitability for general channel
         if category and channel_categories_cache and channel_categories_cache.get(category, False):
             tasks_to_await.append(limited_post_to_channel())
 
-        # Проверяем, есть ли подписчики для категории перед добавлением задачи персональной отправки
+        # Check if there are subscribers for category before adding personal send task
         if category and subscribers_cache and subscribers_cache.get(category):
             tasks_to_await.append(limited_send_personal_rss_items())
         else:
-            logger.debug(f"Пропуск персональной отправки для новости {news_id} - нет подписчиков для категории {category}")
+            logger.debug(f"Skipping personal send for news {news_id} - no subscribers for category {category}")
 
         if tasks_to_await:
             await asyncio.gather(*tasks_to_await, return_exceptions=True)
 
-        # Помечаем RSS-элемент как опубликованный в Telegram
-        # Для каналов публикация уже отмечена в post_to_channel
-        # Для персональных отправок не нужно отмечать публикацию в БД
+        # Mark RSS item as published in Telegram
+        # For channels, publication is already marked in post_to_channel
+        # For personal sends, no need to mark publication in DB
         pass
 
-        logger.debug(f"Завершение обработки RSS-элемента {news_id}")
+        logger.debug(f"Completion of RSS item {news_id} processing")
         return True
 
 
 async def monitor_rss_items_task(context: ContextTypes.DEFAULT_TYPE):
-    logger.info("Запуск задачи мониторинга RSS-элементов")
+    logger.info("Starting RSS items monitoring task")
     try:
-        # Получаем необработанные RSS-элементы через API
+        # Get unprocessed RSS items via API
         rss_response = await get_rss_items_list(limit=20, telegram_published="false", include_all_translations="true")
         if not isinstance(rss_response, dict):
-            logger.error(f"Неверный формат ответа от API: {type(rss_response)}")
+            logger.error(f"Invalid API response format: {type(rss_response)}")
             return
 
         unprocessed_rss_list = rss_response.get("results", [])
-        logger.info(f"Получено {len(unprocessed_rss_list)} RSS-элементов из API")
+        logger.info(f"Received {len(unprocessed_rss_list)} RSS items from API")
 
         if not unprocessed_rss_list:
-            logger.info("Нет RSS-элементов для обработки.")
+            logger.info("No RSS items to process.")
             return
 
-        # Сбор уникальных категорий для оптимизации запросов подписчиков
+        # Collect unique categories to optimize subscriber queries
         unique_categories = set()
         for rss_item in unprocessed_rss_list:
             category = rss_item.get("category")
             if category:
                 unique_categories.add(category)
 
-        # Предварительное получение подписчиков для уникальных категорий
+        # Preliminary fetching of subscribers for unique categories
         subscribers_cache = {}
-        # Кэш для проверки категорий на пригодность для общего канала
+        # Cache for checking categories suitability for general channel
         channel_categories_cache = {}
         global user_manager
         for category in unique_categories:
@@ -931,55 +931,55 @@ async def monitor_rss_items_task(context: ContextTypes.DEFAULT_TYPE):
             subscribers_cache[category] = subscribers
             channel_categories_cache[category] = category in CHANNEL_CATEGORIES
             if not subscribers:
-                logger.info(f"Нет подписчиков для категории {category}")
+                logger.info(f"No subscribers for category {category}")
             if channel_categories_cache[category]:
-                logger.info(f"Категория '{category}' подходит для общего канала")
+                logger.info(f"Category '{category}' is suitable for general channel")
             else:
-                logger.info(f"Категория '{category}' НЕ подходит для общего канала")
+                logger.info(f"Category '{category}' is NOT suitable for general channel")
 
         processing_tasks = [process_rss_item(context, rss_item, subscribers_cache, channel_categories_cache) for rss_item in unprocessed_rss_list]
 
-        logger.info(f"Запуск обработки {len(processing_tasks)} RSS-элементов...")
+        logger.info(f"Starting processing of {len(processing_tasks)} RSS items...")
         try:
             await asyncio.gather(*processing_tasks, return_exceptions=True)
-            logger.info("Все RSS-элементы из текущей партии обработаны.")
+            logger.info("All RSS items from current batch processed.")
         except Exception as e:
-            logger.error(f"Ошибка при обработке партии RSS-элементов: {e}")
+            logger.error(f"Error processing batch of RSS items: {e}")
 
     except asyncio.TimeoutError:
-        logger.error("Таймаут получения RSS-элементов")
+        logger.error("Timeout getting RSS items")
     except Exception as e:
-        logger.error(f"Ошибка в задаче мониторинга: {e}")
+        logger.error(f"Error in monitoring task: {e}")
 
 
 async def initialize_http_session():
-    """Инициализирует HTTP-сессию для работы с API."""
+    """Initializes HTTP session for API work."""
     global http_session
     if http_session is None:
-        # Добавляем повторные попытки и таймауты для более надежного соединения
+        # Add retries and timeouts for more reliable connection
         connector = aiohttp.TCPConnector(limit=100, limit_per_host=30, keepalive_timeout=30, enable_cleanup_closed=True)
         timeout = aiohttp.ClientTimeout(total=15, connect=5)
         http_session = aiohttp.ClientSession(
             connector=connector, timeout=timeout, headers={"User-Agent": "TelegramBot/1.0"}
         )
-        logger.info("HTTP-сессия для API инициализирована")
+        logger.info("HTTP session for API initialized")
 
 
 async def cleanup_http_session():
-    """Закрывает HTTP-сессию."""
+    """Closes HTTP session."""
     global http_session
     if http_session:
         try:
             await http_session.close()
             http_session = None
-            logger.info("HTTP-сессия закрыта")
+            logger.info("HTTP session closed")
         except Exception as e:
-            logger.error(f"Ошибка при закрытии HTTP-сессии: {e}")
+            logger.error(f"Error closing HTTP session: {e}")
 
 
 async def post_stop(application: Application) -> None:
-    """Вызывается при остановке приложения."""
-    logger.info("Остановка приложения и закрытие ресурсов...")
+    """Called when application stops."""
+    logger.info("Stopping application and closing resources...")
 
     await cleanup_http_session()
 
@@ -987,31 +987,31 @@ async def post_stop(application: Application) -> None:
         from config import close_shared_db_pool
 
         await close_shared_db_pool()
-        logger.info("Общий пул подключений закрыт")
+        logger.info("Shared connection pool closed")
     except Exception as e:
-        logger.error(f"Ошибка при закрытии общего пула: {e}")
+        logger.error(f"Error closing shared pool: {e}")
 
-    logger.info("Все ресурсы освобождены")
+    logger.info("All resources freed")
 
 
 async def post_init(application: Application) -> None:
-    """Вызывается после инициализации приложения."""
+    """Called after application initialization."""
     global user_manager
-    logger.info("Приложение инициализировано")
+    logger.info("Application initialized")
 
-    # Инициализируем user_manager
+    # Initialize user_manager
     try:
         user_manager = UserManager()
-        logger.info("UserManager инициализирован")
+        logger.info("UserManager initialized")
     except Exception as e:
-        logger.error(f"Ошибка инициализации UserManager: {e}")
+        logger.error(f"Error initializing UserManager: {e}")
 
     await initialize_http_session()
 
 
-# --- Точка входа ---
+# --- Entry point ---
 def main():
-    logger.info("=== НАЧАЛО ЗАПУСКА БОТА ===")
+    logger.info("=== BOT STARTUP BEGINNING ===")
     logger.info(f"Python version: {sys.version}")
     logger.info(f"Current working directory: {os.getcwd()}")
     logger.info(f"Bot token configured: {'Yes' if BOT_TOKEN else 'No'}")
@@ -1032,21 +1032,21 @@ def main():
     if job_queue:
         job_queue.run_repeating(monitor_rss_items_task, interval=180, first=1, job_kwargs={"misfire_grace_time": 600})
         job_queue.run_repeating(cleanup_expired_user_data, interval=3600, first=60)
-        logger.info("Зарегистрирована задача мониторинга RSS-элементов (каждые 3 минуты)")
-        logger.info("Зарегистрирована задача очистки устаревших данных пользователей (каждые 60 минут)")
+        logger.info("Registered RSS items monitoring task (every 3 minutes)")
+        logger.info("Registered task to clean expired user data (every 60 minutes)")
 
-    logger.info("Бот запущен в режиме Webhook")
+    logger.info("Bot started in Webhook mode")
     try:
         application.run_webhook(**WEBHOOK_CONFIG, close_loop=False)
     except (KeyboardInterrupt, SystemExit):
-        logger.info("Прервано пользователем или системой...")
+        logger.info("Interrupted by user or system...")
     except Exception as e:
-        logger.error(f"Ошибка: {e}")
+        logger.error(f"Error: {e}")
         raise
 
 
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Обработчик ошибок."""
+    """Error handler."""
     if isinstance(context.error, NetworkError):
         logger.error("Network error detected. Retrying...")
     elif isinstance(context.error, BadRequest):
@@ -1056,7 +1056,7 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> N
         else:
             logger.error(f"Bad request error: {context.error}")
     else:
-        logger.error(f"Другая ошибка: {context.error}")
+        logger.error(f"Other error: {context.error}")
 
 
 if __name__ == "__main__":

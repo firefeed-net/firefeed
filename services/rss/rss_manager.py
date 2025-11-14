@@ -4,9 +4,10 @@ import logging
 from typing import List, Dict, Any, Optional
 from datetime import datetime, timezone, timedelta
 
+from config import DEFAULT_USER_AGENT
 from interfaces import (
     IRSSFetcher, IRSSValidator, IRSSStorage, IMediaExtractor,
-    ITranslationService, IDuplicateDetector, ITranslatorQueue
+    ITranslationService, IDuplicateDetector, ITranslatorQueue, IMaintenanceService
 )
 
 logger = logging.getLogger(__name__)
@@ -23,6 +24,7 @@ class RSSManager:
                  translation_service: ITranslationService,
                  duplicate_detector: IDuplicateDetector,
                  translator_queue: ITranslatorQueue,
+                 maintenance_service: IMaintenanceService,
                  translator_task_queue=None):  # For backward compatibility
 
         self.rss_fetcher = rss_fetcher
@@ -32,6 +34,7 @@ class RSSManager:
         self.translation_service = translation_service
         self.duplicate_detector = duplicate_detector
         self.translator_queue = translator_queue
+        self.maintenance_service = maintenance_service
         self.translator_task_queue = translator_task_queue or translator_queue
 
     # Legacy methods for backward compatibility - delegate to services
@@ -91,34 +94,28 @@ class RSSManager:
             return []
 
     async def get_feeds_by_category(self, category_name: str) -> List[Dict[str, Any]]:
-        """Get feeds by category - repository method"""
-        logger.warning("get_feeds_by_category should be implemented in repository service")
-        return []
+        """Get feeds by category"""
+        return await self.rss_storage.get_feeds_by_category(category_name)
 
     async def get_feeds_by_language(self, lang: str) -> List[Dict[str, Any]]:
-        """Get feeds by language - repository method"""
-        logger.warning("get_feeds_by_language should be implemented in repository service")
-        return []
+        """Get feeds by language"""
+        return await self.rss_storage.get_feeds_by_language(lang)
 
     async def get_feeds_by_source(self, source_name: str) -> List[Dict[str, Any]]:
-        """Get feeds by source - repository method"""
-        logger.warning("get_feeds_by_source should be implemented in repository service")
-        return []
+        """Get feeds by source"""
+        return await self.rss_storage.get_feeds_by_source(source_name)
 
     async def add_feed(self, url: str, category_name: str, source_name: str, language: str, is_active: bool = True) -> bool:
-        """Add feed - repository method"""
-        logger.warning("add_feed should be implemented in repository service")
-        return False
+        """Add feed"""
+        return await self.rss_storage.add_feed(url, category_name, source_name, language, is_active)
 
     async def update_feed(self, feed_id: int, **kwargs) -> bool:
-        """Update feed - repository method"""
-        logger.warning("update_feed should be implemented in repository service")
-        return False
+        """Update feed"""
+        return await self.rss_storage.update_feed(feed_id, **kwargs)
 
     async def delete_feed(self, feed_id: int) -> bool:
-        """Delete feed - repository method"""
-        logger.warning("delete_feed should be implemented in repository service")
-        return False
+        """Delete feed"""
+        return await self.rss_storage.delete_feed(feed_id)
 
     async def validate_rss_feed(self, url: str, headers: Dict[str, str]) -> bool:
         """Validate RSS feed"""
@@ -135,7 +132,7 @@ class RSSManager:
 
         # Prepare headers (this should be configurable)
         headers = {
-            "User-Agent": "FireFeed/1.0 (RSS Aggregator)"
+            "User-Agent": DEFAULT_USER_AGENT
         }
 
         # Fetch from all feeds concurrently
@@ -179,6 +176,23 @@ class RSSManager:
         """Get recent items count for feed"""
         return await self.rss_storage.get_recent_items_count(rss_feed_id, minutes)
 
+    # Interface compatibility methods
+    async def get_feed_cooldown(self, feed_id: int) -> int:
+        """Get cooldown minutes for feed (interface compatibility)"""
+        return await self.get_feed_cooldown_minutes(feed_id)
+
+    async def get_feed_max_news_per_hour(self, feed_id: int) -> int:
+        """Get max news per hour for feed (interface compatibility)"""
+        return await self.get_max_news_per_hour_for_feed(feed_id)
+
+    async def get_last_published_time(self, feed_id: int) -> Optional[datetime]:
+        """Get last published time for feed (interface compatibility)"""
+        return await self.get_last_published_time_for_feed(feed_id)
+
+    async def get_recent_items_count(self, feed_id: int, minutes: int) -> int:
+        """Get count of recent items for feed (interface compatibility)"""
+        return await self.get_recent_rss_items_count_for_feed(feed_id, minutes)
+
     def generate_news_id(self, title: str, content: str, link: str, feed_id: int) -> str:
         """Generate news ID - delegate to fetcher"""
         return self.rss_fetcher.generate_news_id(title, content, link, feed_id)
@@ -196,20 +210,39 @@ class RSSManager:
         return self.media_extractor.extract_video(item)
 
     async def fetch_unprocessed_rss_items(self) -> List[Dict[str, Any]]:
-        """Fetch unprocessed RSS items - this should be in storage service"""
-        logger.warning("fetch_unprocessed_rss_items should be implemented in storage service")
-        return []
+        """Fetch unprocessed RSS items"""
+        return await self.rss_storage.fetch_unprocessed_rss_items()
 
     async def cleanup_duplicates(self) -> None:
-        """Cleanup duplicates - this should be in maintenance service"""
-        logger.warning("cleanup_duplicates should be implemented in maintenance service")
+        """Cleanup duplicates"""
+        await self.maintenance_service.cleanup_duplicates()
 
     # Main processing methods
     async def process_rss_feed(self, feed_info: Dict[str, Any], headers: Dict[str, str]) -> List[Dict[str, Any]]:
         """Process a single RSS feed end-to-end"""
         feed_name = feed_info.get("name", feed_info["url"])
+        feed_id = feed_info["id"]
 
         try:
+            # Check cooldown and rate limits before fetching
+            cooldown_minutes = await self.get_feed_cooldown(feed_id)
+            max_news_per_hour = await self.get_feed_max_news_per_hour(feed_id)
+            recent_count = await self.get_recent_items_count(feed_id, cooldown_minutes)
+
+            # Check rate limit (news per cooldown period)
+            if recent_count >= max_news_per_hour:
+                logger.info(f"[SKIP] Feed {feed_name} (ID: {feed_id}) reached limit {max_news_per_hour} news per {cooldown_minutes} minutes. Published: {recent_count}")
+                return []
+
+            # Check cooldown (time since last publication)
+            last_published = await self.get_last_published_time(feed_id)
+            if last_published:
+                elapsed = datetime.now(timezone.utc) - last_published
+                if elapsed < timedelta(minutes=cooldown_minutes):
+                    remaining_time = timedelta(minutes=cooldown_minutes) - elapsed
+                    logger.info(f"[SKIP] Feed {feed_name} (ID: {feed_id}) on cooldown. Remaining: {remaining_time}")
+                    return []
+
             # Fetch RSS items
             rss_items = await self.rss_fetcher.fetch_feed(feed_info, headers)
 
@@ -278,7 +311,7 @@ class RSSManager:
         if not feeds_info:
             return {"status": "no_feeds", "processed_feeds": 0, "total_items": 0}
 
-        headers = {"User-Agent": "FireFeed/1.0 (RSS Aggregator)"}
+        headers = {"User-Agent": DEFAULT_USER_AGENT}
 
         # Process feeds concurrently with some limit
         semaphore = asyncio.Semaphore(5)  # Limit concurrent feed processing

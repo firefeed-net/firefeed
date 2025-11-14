@@ -15,7 +15,7 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - DB_HOST=host.docker.internal  # Или IP хоста, если БД на хосте
+      - DB_HOST=host.docker.internal  # Or Host IP
       - DB_USER=${DB_USER}
       - DB_PASSWORD=${DB_PASSWORD}
       - DB_NAME=${DB_NAME}
@@ -33,13 +33,13 @@ services:
       - REDIS_PORT=6379
       - REDIS_PASSWORD=${REDIS_PASSWORD}
     volumes:
-      - ./data:/app/data  # Монтируем директорию для изображений
+      - ./data:/app/data  # Mount images volume
     depends_on:
       - redis
-      - db  # Если БД тоже в docker-compose
+      - db  # If DB also in docker-compose
     restart: unless-stopped
 
-  # Пример конфигурации образа БД Postgres, если планируется использовать её внутри контейнера
+  # Example configuration of Postgres DB image, if you plan to use it inside a container
   # db:
   #   image: postgres:13
   #   environment:

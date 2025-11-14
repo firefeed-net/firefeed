@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 
 
 class CachedModel:
-    """Класс для хранения модели с метаданными"""
+    """Class for storing model with metadata"""
     def __init__(self, model, tokenizer, timestamp):
         self.model = model
         self.tokenizer = tokenizer
@@ -59,15 +59,8 @@ class ModelManager(IModelManager):
                 # Use the original m2m100 multilingual model
                 model_name = "facebook/m2m100_418M"
 
-                try:
-                    tokenizer = AutoTokenizer.from_pretrained(model_name)
-                    model = AutoModelForSeq2SeqLM.from_pretrained(model_name).to(self.device)
-                except Exception as e:
-                    logger.warning(f"[MODEL] m2m100 model not found, trying Helsinki fallback: {e}")
-                    # Fallback to Helsinki model
-                    model_name = "Helsinki-NLP/opus-mt-{}-{}".format(source_lang, target_lang)
-                    tokenizer = AutoTokenizer.from_pretrained(model_name)
-                    model = AutoModelForSeq2SeqLM.from_pretrained(model_name).to(self.device)
+                tokenizer = AutoTokenizer.from_pretrained(model_name)
+                model = AutoModelForSeq2SeqLM.from_pretrained(model_name).to(self.device)
 
                 # Cache the model
                 current_time = time.time()

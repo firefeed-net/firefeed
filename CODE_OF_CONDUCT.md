@@ -1,38 +1,38 @@
-# Кодекс поведения участников FireFeed
+# FireFeed Participant Code of Conduct
 
-## Наше обязательство
+## Our Commitment
 
-Мы, как участники, мейнтейнеры и лидеры, обязуемся сделать участие в нашем проекте и сообществе свободным от притеснений для всех, независимо от возраста, телосложения, инвалидности, этнической принадлежности, половых характеристик, гендерной идентичности и выражения, уровня опыта, образования, социально-экономического статуса, национальности, внешности, расы, религии или сексуальной идентичности и ориентации.
+We, as participants, maintainers, and leaders, pledge to make participation in our project and community a harassment-free experience for everyone, regardless of age, body size, disability, ethnicity, sex characteristics, gender identity and expression, level of experience, education, socio-economic status, nationality, personal appearance, race, religion, or sexual identity and orientation.
 
-## Наши стандарты
+## Our Standards
 
-Примеры поведения, которое способствует созданию позитивной среды:
+Examples of behavior that contributes to a positive environment:
 
-- Проявление эмпатии и доброты по отношению к другим людям
-- Уважительное отношение к различным мнениям, точкам зрения и опыту
-- Конструктивное принятие и дача обратной связи
-- Принятие ответственности и извинения перед теми, кого затронули наши ошибки
-- Фокус на том, что лучше не только для нас как индивидуумов, но и для всего сообщества
+- Demonstrating empathy and kindness toward other people
+- Being respectful of differing opinions, viewpoints, and experiences
+- Giving and gracefully accepting constructive feedback
+- Accepting responsibility and apologizing to those affected by our mistakes
+- Focusing on what is best not just for us as individuals, but for the overall community
 
-Примеры неприемлемого поведения:
+Examples of unacceptable behavior include:
 
-- Использование сексуализированного языка или образов, а также сексуальные внимание или приставания любого рода
-- Троллинг, оскорбительные или уничижительные комментарии, а также личные или политические атаки
-- Публикация личной информации других лиц без явного разрешения
-- Другое поведение, которое обоснованно можно считать неуместным в профессиональной обстановке
+- The use of sexualized language or imagery, and sexual attention or advances of any kind
+- Trolling, insulting or derogatory comments, and personal or political attacks
+- Publishing others' private information, such as a physical or email address, without their explicit permission
+- Other conduct which could reasonably be considered inappropriate in a professional setting
 
-## Обязанности мейнтейнеров
+## Maintainers' Responsibilities
 
-Мейнтейнеры проекта несут ответственность за разъяснение и применение приемлемых стандартов поведения и будут предпринимать соответствующие и справедливые корректирующие действия в ответ на любые случаи неприемлемого поведения.
+Project maintainers are responsible for clarifying and enforcing our standards of acceptable behavior and will take appropriate and fair corrective action in response to any instances of unacceptable behavior.
 
-## Сфера применения
+## Scope
 
-Этот Кодекс поведения применяется в рамках всех проектных пространств, а также в публичных пространствах, когда человек представляет проект или его сообщество.
+This Code of Conduct applies within all project spaces, and also applies when an individual is representing the project or its community in public spaces.
 
-## Применение
+## Enforcement
 
-О случаях оскорбительного, притесняющего или иного неприемлемого поведения можно сообщить мейнтейнерам проекта по адресу firefeed.net@gmail.com. Все жалобы будут рассмотрены и расследованы оперативно и справедливо.
+Instances of abusive, harassing, or otherwise unacceptable behavior may be reported to the project maintainers at firefeed.net@gmail.com. All complaints will be reviewed and investigated promptly and fairly.
 
-## Атрибуция
+## Attribution
 
-Этот Кодекс поведения адаптирован из Contributor Covenant, версия 2.1, доступной по адресу https://www.contributor-covenant.org/version/2/1/code_of_conduct.html
+This Code of Conduct is adapted from the Contributor Covenant, version 2.1, available at https://www.contributor-covenant.org/version/2/1/code_of_conduct.html

@@ -11,7 +11,7 @@ class UserManager(DatabaseMixin):
     def __init__(self):
         pass
 
-    # --- Асинхронные методы для работы с БД ---
+    # --- Asynchronous methods for working with DB ---
 
     @db_operation
     async def _get_user_settings(self, pool, user_id):
@@ -76,7 +76,7 @@ class UserManager(DatabaseMixin):
                         (user_id, json.dumps(subscriptions), language),
                     )
 
-                # В aiopg транзакции управляются автоматически, commit не нужен
+                # In aiopg, transactions are managed automatically, commit not needed
                 logger.debug(
                     f"[DB] [UserManager] Сохранены настройки для пользователя {user_id}: subscriptions={subscriptions}, language={language}"
                 )
@@ -138,7 +138,7 @@ class UserManager(DatabaseMixin):
                     user_ids.append(row[0])
                 return user_ids
 
-    # --- Публичные асинхронные методы ---
+    # --- Public asynchronous methods ---
 
     async def get_user_settings(self, user_id):
         """Асинхронно возвращает все настройки пользователя"""
@@ -156,8 +156,8 @@ class UserManager(DatabaseMixin):
         """Асинхронно возвращает только подписки пользователя"""
         settings = await self.get_user_settings(user_id)
         subscriptions = settings["subscriptions"]
-        # Если subscriptions - список строк, возвращаем как есть
-        # Если список объектов, возвращаем их
+        # If subscriptions is a list of strings, return as is
+        # If list of objects, return them
         return subscriptions
 
     async def get_user_language(self, user_id):
@@ -173,7 +173,7 @@ class UserManager(DatabaseMixin):
         """Асинхронно получаем список всех пользователей"""
         return await self._get_all_users()
 
-    # --- Методы для работы с привязкой Telegram ---
+    # --- Methods for working with Telegram linking ---
 
     @db_operation
     async def generate_telegram_link_code(self, pool, user_id: int) -> str:
@@ -183,11 +183,11 @@ class UserManager(DatabaseMixin):
         link_code = secrets.token_urlsafe(16)
         async with pool.acquire() as conn:
             async with conn.cursor() as cur:
-                # Удаляем старые коды для этого пользователя
+                # Delete old codes for this user
                 await cur.execute(
                     "DELETE FROM user_telegram_links WHERE user_id = %s AND linked_at IS NULL", (user_id,)
                 )
-                # Создаем новый код
+                # Create new code
                 await cur.execute(
                     """
                     INSERT INTO user_telegram_links (user_id, link_code, created_at)
@@ -202,7 +202,7 @@ class UserManager(DatabaseMixin):
         """Подтверждает привязку Telegram аккаунта по коду"""
         async with pool.acquire() as conn:
             async with conn.cursor() as cur:
-                # Находим запись с кодом
+                # Find record with code
                 await cur.execute(
                     """
                     SELECT user_id FROM user_telegram_links
@@ -218,14 +218,14 @@ class UserManager(DatabaseMixin):
 
                 user_id = result[0]
 
-                # Проверяем, не привязан ли уже этот Telegram ID
+                # Check if this Telegram ID is already linked
                 await cur.execute(
                     "SELECT 1 FROM user_telegram_links WHERE telegram_id = %s AND linked_at IS NOT NULL", (telegram_id,)
                 )
                 if await cur.fetchone():
                     return False  # Уже привязан
 
-                # Обновляем запись
+                # Update record
                 await cur.execute(
                     """
                     UPDATE user_telegram_links

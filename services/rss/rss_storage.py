@@ -1,6 +1,6 @@
 # services/rss/rss_storage.py
 import logging
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from datetime import datetime, timezone, timedelta
 from interfaces import IRSSStorage, IDatabasePool
 
@@ -187,3 +187,264 @@ class RSSStorage(IRSSStorage):
         except Exception as e:
             logger.error(f"[STORAGE] Error getting recent items count for feed {feed_id}: {e}")
             return 0
+
+    async def get_feeds_by_category(self, category_name: str) -> List[Dict[str, Any]]:
+        """Get feeds by category name"""
+        try:
+            async with self.db_pool.acquire() as conn:
+                async with conn.cursor() as cur:
+                    query = """
+                    SELECT
+                        rf.id,
+                        rf.url,
+                        rf.name,
+                        rf.language,
+                        rf.source_id,
+                        rf.category_id,
+                        s.name as source_name,
+                        c.name as category_name
+                    FROM rss_feeds rf
+                    JOIN categories c ON rf.category_id = c.id
+                    JOIN sources s ON rf.source_id = s.id
+                    WHERE c.name = %s AND rf.is_active = TRUE
+                    """
+                    await cur.execute(query, (category_name,))
+                    feeds = []
+                    async for row in cur:
+                        feeds.append({
+                            "id": row[0],
+                            "url": row[1].strip(),
+                            "name": row[2],
+                            "lang": row[3],
+                            "source_id": row[4],
+                            "category_id": row[5],
+                            "source": row[6],
+                            "category": row[7] if row[7] else "uncategorized"
+                        })
+                    logger.info(f"Found {len(feeds)} feeds for category '{category_name}'")
+                    return feeds
+        except Exception as e:
+            logger.error(f"[STORAGE] Error getting feeds by category '{category_name}': {e}")
+            return []
+
+    async def get_feeds_by_language(self, lang: str) -> List[Dict[str, Any]]:
+        """Get feeds by language"""
+        try:
+            async with self.db_pool.acquire() as conn:
+                async with conn.cursor() as cur:
+                    query = """
+                    SELECT
+                        rf.id,
+                        rf.url,
+                        rf.name,
+                        rf.language,
+                        rf.source_id,
+                        rf.category_id,
+                        s.name as source_name,
+                        c.name as category_name
+                    FROM rss_feeds rf
+                    JOIN categories c ON rf.category_id = c.id
+                    JOIN sources s ON rf.source_id = s.id
+                    WHERE rf.language = %s AND rf.is_active = TRUE
+                    """
+                    await cur.execute(query, (lang,))
+                    feeds = []
+                    async for row in cur:
+                        feeds.append({
+                            "id": row[0],
+                            "url": row[1].strip(),
+                            "name": row[2],
+                            "lang": row[3],
+                            "source_id": row[4],
+                            "category_id": row[5],
+                            "source": row[6],
+                            "category": row[7] if row[7] else "uncategorized"
+                        })
+                    logger.info(f"Found {len(feeds)} feeds for language '{lang}'")
+                    return feeds
+        except Exception as e:
+            logger.error(f"[STORAGE] Error getting feeds by language '{lang}': {e}")
+            return []
+
+    async def get_feeds_by_source(self, source_name: str) -> List[Dict[str, Any]]:
+        """Get feeds by source name"""
+        try:
+            async with self.db_pool.acquire() as conn:
+                async with conn.cursor() as cur:
+                    query = """
+                    SELECT
+                        rf.id,
+                        rf.url,
+                        rf.name,
+                        rf.language,
+                        rf.source_id,
+                        rf.category_id,
+                        s.name as source_name,
+                        c.name as category_name
+                    FROM rss_feeds rf
+                    JOIN categories c ON rf.category_id = c.id
+                    JOIN sources s ON rf.source_id = s.id
+                    WHERE s.name = %s AND rf.is_active = TRUE
+                    """
+                    await cur.execute(query, (source_name,))
+                    feeds = []
+                    async for row in cur:
+                        feeds.append({
+                            "id": row[0],
+                            "url": row[1].strip(),
+                            "name": row[2],
+                            "lang": row[3],
+                            "source_id": row[4],
+                            "category_id": row[5],
+                            "source": row[6],
+                            "category": row[7] if row[7] else "uncategorized"
+                        })
+                    logger.info(f"Found {len(feeds)} feeds for source '{source_name}'")
+                    return feeds
+        except Exception as e:
+            logger.error(f"[STORAGE] Error getting feeds by source '{source_name}': {e}")
+            return []
+
+    async def add_feed(self, url: str, category_name: str, source_name: str, language: str, is_active: bool = True) -> bool:
+        """Add new RSS feed"""
+        try:
+            async with self.db_pool.acquire() as conn:
+                async with conn.cursor() as cur:
+                    # Get category_id
+                    await cur.execute("SELECT id FROM categories WHERE name = %s", (category_name,))
+                    cat_result = await cur.fetchone()
+                    if not cat_result:
+                        logger.error(f"[STORAGE] Category '{category_name}' not found")
+                        return False
+                    category_id = cat_result[0]
+
+                    # Get or create source
+                    await cur.execute("SELECT id FROM sources WHERE name = %s", (source_name,))
+                    source_result = await cur.fetchone()
+                    if source_result:
+                        source_id = source_result[0]
+                    else:
+                        # Create new source
+                        await cur.execute(
+                            "INSERT INTO sources (name, created_at) VALUES (%s, NOW()) RETURNING id",
+                            (source_name,)
+                        )
+                        source_id = (await cur.fetchone())[0]
+
+                    # Insert RSS feed
+                    query = """
+                    INSERT INTO rss_feeds (url, name, language, source_id, category_id, is_active, created_at, updated_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, NOW(), NOW())
+                    """
+                    await cur.execute(query, (url, f"{source_name} Feed", language, source_id, category_id, is_active))
+
+                    logger.info(f"[STORAGE] RSS feed added: {url}")
+                    return True
+        except Exception as e:
+            logger.error(f"[STORAGE] Error adding RSS feed '{url}': {e}")
+            return False
+
+    async def update_feed(self, feed_id: int, **kwargs) -> bool:
+        """Update RSS feed"""
+        try:
+            async with self.db_pool.acquire() as conn:
+                async with conn.cursor() as cur:
+                    # Build update query dynamically
+                    if not kwargs:
+                        logger.warning(f"[STORAGE] No fields to update for feed {feed_id}")
+                        return True
+
+                    set_parts = []
+                    values = []
+                    for key, value in kwargs.items():
+                        set_parts.append(f"{key} = %s")
+                        values.append(value)
+
+                    set_clause = ", ".join(set_parts)
+                    values.append(feed_id)  # Add feed_id at the end
+
+                    query = f"""
+                    UPDATE rss_feeds
+                    SET {set_clause}, updated_at = NOW()
+                    WHERE id = %s
+                    """
+                    await cur.execute(query, values)
+
+                    if cur.rowcount > 0:
+                        logger.info(f"[STORAGE] RSS feed {feed_id} updated")
+                        return True
+                    else:
+                        logger.warning(f"[STORAGE] RSS feed {feed_id} not found")
+                        return False
+        except Exception as e:
+            logger.error(f"[STORAGE] Error updating RSS feed {feed_id}: {e}")
+            return False
+
+    async def delete_feed(self, feed_id: int) -> bool:
+        """Delete RSS feed"""
+        try:
+            async with self.db_pool.acquire() as conn:
+                async with conn.cursor() as cur:
+                    # Check if feed exists and has published items
+                    await cur.execute("SELECT COUNT(*) FROM published_news_data WHERE rss_feed_id = %s", (feed_id,))
+                    count = (await cur.fetchone())[0]
+
+                    if count > 0:
+                        logger.warning(f"[STORAGE] Cannot delete feed {feed_id} - has {count} published items")
+                        return False
+
+                    # Delete the feed
+                    await cur.execute("DELETE FROM rss_feeds WHERE id = %s", (feed_id,))
+
+                    if cur.rowcount > 0:
+                        logger.info(f"[STORAGE] RSS feed {feed_id} deleted")
+                        return True
+                    else:
+                        logger.warning(f"[STORAGE] RSS feed {feed_id} not found")
+                        return False
+        except Exception as e:
+            logger.error(f"[STORAGE] Error deleting RSS feed {feed_id}: {e}")
+            return False
+
+    async def fetch_unprocessed_rss_items(self) -> List[Dict[str, Any]]:
+        """Fetch unprocessed RSS items (not published to Telegram)"""
+        try:
+            async with self.db_pool.acquire() as conn:
+                async with conn.cursor() as cur:
+                    query = """
+                    SELECT
+                        p.news_id,
+                        p.original_title,
+                        p.original_content,
+                        p.original_language,
+                        p.category_id,
+                        p.image_filename,
+                        p.source_url,
+                        c.name as category_name,
+                        rf.name as feed_name
+                    FROM published_news_data p
+                    LEFT JOIN rss_feeds rf ON p.rss_feed_id = rf.id
+                    LEFT JOIN categories c ON p.category_id = c.id
+                    WHERE p.telegram_published = FALSE
+                    ORDER BY p.created_at DESC
+                    LIMIT 100
+                    """
+                    await cur.execute(query)
+                    items = []
+                    async for row in cur:
+                        items.append({
+                            "news_id": row[0],
+                            "title": row[1],
+                            "content": row[2],
+                            "language": row[3],
+                            "category_id": row[4],
+                            "image_filename": row[5],
+                            "source_url": row[6],
+                            "category": row[7],
+                            "feed_name": row[8]
+                        })
+                    logger.info(f"Found {len(items)} unprocessed RSS items")
+                    return items
+        except Exception as e:
+            logger.error(f"[STORAGE] Error fetching unprocessed RSS items: {e}")
+            return []

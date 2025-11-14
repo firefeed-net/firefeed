@@ -20,22 +20,22 @@ class FireFeedTranslatorTaskQueue:
         self.translator = translator
 
     async def start(self):
-        """Запуск очереди задач"""
+        """Start task queue"""
         self.running = True
         for i in range(self.max_workers):
             worker = asyncio.create_task(self._worker(f"worker-{i}"))
             self.workers.append(worker)
-        logger.info(f"[QUEUE] 🔧 Запущено {self.max_workers} рабочих потоков перевода")
+        logger.info(f"[QUEUE] 🔧 Started {self.max_workers} translation worker threads")
 
     async def _worker(self, worker_id):
-        """Рабочий поток для обработки задач"""
+        """Worker thread for processing tasks"""
         while self.running:
             try:
-                # Получаем задачу с таймаутом
+                # Get task with timeout
                 task = await asyncio.wait_for(self.queue.get(), timeout=1.0)
                 start_time = time.time()
                 task_id = task.get("task_id", "unknown")
-                logger.info(f"[{worker_id}] 📥 Начало обработки задачи: {task_id[:20]}")
+                logger.info(f"[{worker_id}] 📥 Starting task processing: {task_id[:20]}")
 
                 try:
                     # Prepare target languages (all except original)
@@ -57,38 +57,38 @@ class FireFeedTranslatorTaskQueue:
                         try:
                             await task["callback"](result, task_id=task_id)
                         except Exception as callback_error:
-                            logger.error(f"[{worker_id}] ❌ Ошибка в callback для задачи {task_id[:20]}: {callback_error}")
+                            logger.error(f"[{worker_id}] ❌ Error in callback for task {task_id[:20]}: {callback_error}")
 
-                    # Статистика
+                    # Statistics
                     self.stats["processed"] += 1
 
                     duration = time.time() - start_time
-                    logger.info(f"[{worker_id}] ✅ Задача {task_id[:20]} завершена за {duration:.2f} сек")
+                    logger.info(f"[{worker_id}] ✅ Task {task_id[:20]} completed in {duration:.2f} sec")
                 except Exception as e:
                     # Call error callback if provided
                     if task.get("error_callback"):
                         try:
                             await task["error_callback"]({"error": str(e), "task_id": task_id}, task_id=task_id)
                         except Exception as callback_error:
-                            logger.error(f"[{worker_id}] ❌ Ошибка в error_callback для задачи {task_id[:20]}: {callback_error}")
+                            logger.error(f"[{worker_id}] ❌ Error in error_callback for task {task_id[:20]}: {callback_error}")
 
-                    # Статистика ошибок
+                    # Error statistics
                     self.stats["errors"] += 1
-                    logger.error(f"[{worker_id}] ❌ Ошибка перевода для задачи {task_id[:20]}: {e}")
+                    logger.error(f"[{worker_id}] ❌ Translation error for task {task_id[:20]}: {e}")
 
                 finally:
                     self.queue.task_done()
             except asyncio.TimeoutError:
-                # Продолжаем цикл если таймаут
+                # Continue loop if timeout
                 continue
             except Exception as e:
-                logger.error(f"[{worker_id}] ❌ Критическая ошибка воркера: {e}")
-                # traceback.print_exc() # Убрал, так как ошибка выше уже логируется
+                logger.error(f"[{worker_id}] ❌ Critical worker error: {e}")
+                # traceback.print_exc() # Removed, as the error above is already logged
                 if not self.queue.empty():
                     self.queue.task_done()
 
     async def add_task(self, title, content, original_lang, callback=None, error_callback=None, task_id=None):
-        """Добавление задачи перевода в очередь"""
+        """Adding translation task to queue"""
         if self.translator is None:
             logger.error("[QUEUE] ❌ Translator not set, cannot add task")
             return False
@@ -103,48 +103,48 @@ class FireFeedTranslatorTaskQueue:
         try:
             await self.queue.put(task)
             self.stats["queued"] += 1
-            logger.info(f"[QUEUE] 📨 Добавлена задача перевода (в очереди: {self.queue.qsize()})")
+            logger.info(f"[QUEUE] 📨 Translation task added (in queue: {self.queue.qsize()})")
             return True
         except asyncio.QueueFull:
-            logger.warning("⚠️ [QUEUE] Очередь перевода переполнена!")
+            logger.warning("⚠️ [QUEUE] Translation queue is full!")
             return False
 
     async def wait_completion(self):
-        """Ожидание завершения всех задач в очереди"""
+        """Waiting for all tasks in queue to complete"""
         if self.queue.qsize() > 0:
-            logger.info(f"[QUEUE] ⏳ Ожидание завершения {self.queue.qsize()} задач...")
+            logger.info(f"[QUEUE] ⏳ Waiting for {self.queue.qsize()} tasks to complete...")
             await self.queue.join()
-            logger.info("[QUEUE] ✅ Все задачи завершены")
+            logger.info("[QUEUE] ✅ All tasks completed")
 
     async def stop(self):
-        """Остановка очереди"""
-        logger.info("[QUEUE] 🛑 Остановка очереди задач...")
+        """Stopping the queue"""
+        logger.info("[QUEUE] 🛑 Stopping task queue...")
         self.running = False
 
-        # Отменяем все рабочие потоки
+        # Cancel all worker threads
         for worker in self.workers:
             if not worker.done():
                 worker.cancel()
 
-        # Ждем завершения с таймаутом
+        # Wait for completion with timeout
         try:
             await asyncio.wait_for(asyncio.gather(*self.workers, return_exceptions=True), timeout=10.0)
         except asyncio.TimeoutError:
-            logger.warning("[QUEUE] ⚠️ Принудительная остановка воркеров")
+            logger.warning("[QUEUE] ⚠️ Force stopping workers")
 
-        logger.info("[QUEUE] ✅ Очередь задач остановлена")
+        logger.info("[QUEUE] ✅ Task queue stopped")
 
     def get_stats(self):
-        """Получение статистики очереди"""
+        """Getting queue statistics"""
         return self.stats.copy()
 
     def print_stats(self):
-        """Вывод статистики"""
+        """Output statistics"""
         stats = self.get_stats()
-        logger.info(f"[QUEUE] 📊 Статистика:")
-        logger.info(f"  Обработано: {stats['processed']}")
-        logger.info(f"  Ошибок: {stats['errors']}")
-        logger.info(f"  В очереди: {stats['queued']}")
+        logger.info(f"[QUEUE] 📊 Statistics:")
+        logger.info(f"  Processed: {stats['processed']}")
+        logger.info(f"  Errors: {stats['errors']}")
+        logger.info(f"  In queue: {stats['queued']}")
         if stats["processed"] + stats["errors"] > 0:
             success_rate = (stats["processed"] / (stats["processed"] + stats["errors"])) * 100
-            logger.info(f"  Успешность: {success_rate:.1f}%")
+            logger.info(f"  Success rate: {success_rate:.1f}%")

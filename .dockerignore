@@ -1,4 +1,4 @@
-# Исключаем ненужные файлы для сборки образа
+# Exclude unnecessary files for image build
 .git
 .gitignore
 README.md
@@ -25,11 +25,11 @@ coverage.xml
 .mypy_cache
 .pytest_cache
 .hypothesis
-# Исключаем директории с данными, если они не нужны в образе
+# Exclude data directories if not needed in image
 data/
-# Исключаем тесты, если не нужны в продакшене
+# Exclude tests if not needed in production
 test_*.py
-# Исключаем скрипты запуска, если используем CMD в Dockerfile
+# Exclude run scripts if using CMD in Dockerfile
 run_*.sh
-# Исключаем chrome-extension, если не нужна в контейнере
+# Exclude chrome-extension if not needed in container
 chrome-extension/

@@ -4,12 +4,12 @@ import os
 import logging
 import traceback
 
-# Добавляем корень проекта в путь поиска модулей
+# Add project root to module search path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from api.email_service.sender import send_verification_email
 
-# Настраиваем логирование
+# Set up logging
 logging.basicConfig(
     level=logging.DEBUG,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
@@ -18,27 +18,27 @@ logger = logging.getLogger(__name__)
 
 
 async def test_email():
-    # Замени на свой email для тестирования
-    test_email = "yurem@bk.ru"  # <-- Замени на реальный email
+    # Replace with your email for testing
+    test_email = "yurem@bk.ru"  # <-- test email
     verification_code = "123456"
 
-    logger.info(f"Отправляем тестовое письмо на {test_email}")
-    logger.info(f"Код подтверждения: {verification_code}")
+    logger.info(f"Sending test email to {test_email}")
+    logger.info(f"Verification code: {verification_code}")
 
-    # Тестируем отправку на разных языках
+    # Test sending in different languages
     for language in ["en", "ru", "de"]:
-        logger.info(f"Тестируем отправку на языке: {language}")
+        logger.info(f"Testing sending in language: {language}")
         try:
             success = await send_verification_email(test_email, verification_code, language)
             if success:
-                logger.info(f"✅ Письмо на {language} успешно отправлено!")
+                logger.info(f"✅ Email in {language} sent successfully!")
             else:
-                logger.error(f"❌ Ошибка при отправке письма на {language}")
+                logger.error(f"❌ Error sending email in {language}")
         except Exception as e:
-            logger.error(f"❌ Исключение при отправке письма на {language}: {e}")
-            logger.error(f"Полный traceback: {traceback.format_exc()}")
+            logger.error(f"❌ Exception sending email in {language}: {e}")
+            logger.error(f"Full traceback: {traceback.format_exc()}")
 
-    logger.info("Тест завершен!")
+    logger.info("Test completed!")
 
 
 if __name__ == "__main__":

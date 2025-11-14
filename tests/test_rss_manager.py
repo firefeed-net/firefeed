@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from datetime import datetime
-from rss_manager import RSSManager
+from services.rss import RSSManager
 from utils.media_extractors import extract_image_from_rss_item, extract_video_from_rss_item
 
 

@@ -7,166 +7,166 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Tests](https://img.shields.io/badge/Tests-Passing-green.svg)](https://github.com/yuremweiland/firefeed/actions)
 
-Современный новостной агрегатор с поддержкой искусственного интеллекта для автоматического сбора, обработки и распространения новостей на нескольких языках.
+A modern news aggregator with AI support for automatic collection, processing, and distribution of news in multiple languages.
 
-**Официальный сайт**: https://firefeed.net
+**Official website**: https://firefeed.net
 
-## Содержание
+## Table of Contents
 
-- [Обзор проекта](#обзор-проекта)
-- [Основные возможности](#основные-возможности)
-- [Технический стек](#технический-стек)
-- [Архитектура](#архитектура)
-- [Установка и запуск](#установка-и-запуск)
-- [Конфигурация](#конфигурация)
-- [API документация](#api-документация)
-- [Разработка](#разработка)
-- [Лицензия](#лицензия)
+- [Project Overview](#project-overview)
+- [Key Features](#key-features)
+- [Technology Stack](#technology-stack)
+- [Architecture](#architecture)
+- [Installation and Setup](#installation-and-setup)
+- [Configuration](#configuration)
+- [API Documentation](#api-documentation)
+- [Development](#development)
+- [License](#license)
 
-## Обзор проекта
+## Project Overview
 
-FireFeed - это высокопроизводительная система для автоматического сбора, обработки и распространения новостного контента. Проект использует современные технологии машинного обучения для интеллектуальной обработки текста и обеспечивает многоязычную поддержку для международной аудитории.
+FireFeed is a high-performance system for automatic collection, processing, and distribution of news content. The project uses modern machine learning technologies for intelligent text processing and provides multilingual support for international audiences.
 
-## Основные возможности
+## Key Features
 
-### AI-powered обработка контента
+### AI-powered Content Processing
 
-- **Автоматический перевод новостей** на 4 языка (русский, немецкий, французский, английский) с использованием современных моделей машинного обучения (Helsinki-NLP OPUS-MT, M2M100)
-- **Обнаружение дубликатов** с помощью семантического анализа и векторных эмбеддингов (Sentence Transformers)
-- **Интеллектуальная обработка изображений** с автоматическим извлечением и оптимизацией
+- **Automatic news translation** to 4 languages (Russian, German, French, English) using modern machine learning models (Helsinki-NLP OPUS-MT, M2M100)
+- **Duplicate detection** using semantic analysis and vector embeddings (Sentence Transformers)
+- **Intelligent image processing** with automatic extraction and optimization
 
-### Многоязычная поддержка
+### Multilingual Support
 
-- Полностью локализованный Telegram-бот с поддержкой 4 языков
-- REST API с многоязычным интерфейсом
-- Адаптивная система переводов с учетом терминологии
+- Fully localized Telegram bot with support for 4 languages
+- REST API with multilingual interface
+- Adaptive translation system with terminology consideration
 
-### Гибкая система RSS
+### Flexible RSS System
 
-- **Автоматический парсинг** более 50 RSS-лент различных источников
-- **Категоризация новостей** по темам (мировые новости, технологии, спорт, экономика и др.)
-- **Персонализированные подписки** пользователей на категории и источники
-- **Пользовательские RSS-ленты** - возможность добавления собственных источников
+- **Automatic parsing** of over 50 RSS feeds from various sources
+- **News categorization** by topics (world news, technology, sports, economy, etc.)
+- **Personalized user subscriptions** to categories and sources
+- **Custom RSS feeds** - ability to add personal sources
 
-### Безопасная архитектура
+### Secure Architecture
 
-- **JWT-аутентификация** для API
-- **Шифрование паролей** с использованием bcrypt
-- **Валидация email** с кодом подтверждения
-- **Защищенное хранение секретов** через переменные окружения
+- **JWT authentication** for API
+- **Password encryption** using bcrypt
+- **Email validation** with confirmation codes
+- **Secure secret storage** through environment variables
 
-### Высокая производительность
+### High Performance
 
-- **Асинхронная архитектура** на базе asyncio
-- **Пул соединений PostgreSQL** для эффективной работы с БД
-- **Очереди задач** для параллельной обработки переводов
-- **Кэширование моделей** ML для оптимизации памяти
+- **Asynchronous architecture** based on asyncio
+- **PostgreSQL connection pool** for efficient database operations
+- **Task queues** for parallel translation processing
+- **ML model caching** for memory optimization
 
-## Технический стек
+## Technology Stack
 
 ### Backend
-- Python 3.8+ с asyncio
-- FastAPI для REST API
-- PostgreSQL с pgvector для семантического поиска
-- Redis для хранения данных об использовании API keys
-- aiopg для асинхронных запросов к БД
+- Python 3.8+ with asyncio
+- FastAPI for REST API
+- PostgreSQL with pgvector for semantic search
+- Redis for storing API key usage data
+- aiopg for asynchronous database queries
 
 ### AI/ML
 - Transformers (Hugging Face)
-- Sentence Transformers для эмбеддингов
-- SpaCy для обработки текста
-- Torch для вычислений
+- Sentence Transformers for embeddings
+- SpaCy for text processing
+- Torch for computations
 
-### Интеграции
+### Integrations
 - Telegram Bot API
-- SMTP для email-уведомлений
-- Webhook-поддержка
+- SMTP for email notifications
+- Webhook support
 
-### Инфраструктура
-- Docker-контейнеризация
-- systemd для управления сервисами
-- nginx для проксирования
+### Infrastructure
+- Docker containerization
+- systemd for service management
+- nginx for proxying
 
-## Архитектура
+## Architecture
 
-Проект состоит из нескольких ключевых компонентов:
+The project consists of several key components:
 
-1. **Telegram Bot** (`bot.py`) - основной интерфейс взаимодействия с пользователями
-2. **RSS Parser Service** (`rss_parser.py`) - фоновая служба парсинга RSS-лент
-3. **REST API** (`api/main.py`) - веб-API для внешних интеграций
-4. **Translation Engine** (`firefeed_translator.py`) - система переводов с кэшированием
-5. **Duplicate Detector** (`firefeed_dublicate_detector.py`) - обнаружение дубликатов через ML
-6. **User Management** (`user_manager.py`) - управление пользователями и подписками
+1. **Telegram Bot** (`bot.py`) - main user interaction interface
+2. **RSS Parser Service** (`rss_parser.py`) - background service for RSS feed parsing
+3. **REST API** (`api/main.py`) - web API for external integrations
+4. **Translation Engine** (`firefeed_translator.py`) - translation system with caching
+5. **Duplicate Detector** (`firefeed_dublicate_detector.py`) - ML-based duplicate detection
+6. **User Management** (`user_manager.py`) - user and subscription management
 
-### Масштабируемость и надежность
+### Scalability and Reliability
 
-- **Горизонтальное масштабирование** через микросервисную архитектуру
-- **Отказоустойчивость** с автоматическими перезапусками и логированием
-- **Мониторинг производительности** с подробной телеметрией
-- **Graceful shutdown** для корректного завершения работы
+- **Horizontal scaling** through microservice architecture
+- **Fault tolerance** with automatic restarts and logging
+- **Performance monitoring** with detailed telemetry
+- **Graceful shutdown** for proper service termination
 
-## Архитектура сервисов
+## Service Architecture
 
-Проект использует современную сервис-ориентированную архитектуру с dependency injection для обеспечения высокой тестируемости и поддерживаемости.
+The project uses modern service-oriented architecture with dependency injection to ensure high testability and maintainability.
 
-### Сервисы RSS
+### RSS Services
 
 #### RSSFetcher (`services/rss/rss_fetcher.py`)
-Сервис для получения и парсинга RSS-лент.
+Service for fetching and parsing RSS feeds.
 
-**Основные функции:**
-- Асинхронное получение RSS-лент с поддержкой семафоров для ограничения конкурентности
-- Парсинг XML-структур с извлечением заголовков, контента и метаданных
-- Обнаружение дубликатов через встроенный детектор
-- Извлечение медиа-контента (изображения, видео)
+**Key Features:**
+- Asynchronous RSS feed fetching with semaphore support for concurrency control
+- XML structure parsing with extraction of titles, content, and metadata
+- Duplicate detection through built-in detector
+- Media content extraction (images, videos)
 
-**Конфигурация:**
+**Configuration:**
 ```env
 RSS_MAX_CONCURRENT_FEEDS=10
 RSS_MAX_ENTRIES_PER_FEED=50
 ```
 
 #### RSSValidator (`services/rss/rss_validator.py`)
-Сервис для валидации RSS-лент.
+Service for RSS feed validation.
 
-**Основные функции:**
-- Проверка доступности URL с таймаутами
-- Кэширование результатов валидации
-- Определение корректности RSS-структуры
+**Key Features:**
+- URL availability checking with timeouts
+- Validation result caching
+- RSS structure correctness determination
 
-**Конфигурация:**
+**Configuration:**
 ```env
 RSS_VALIDATION_CACHE_TTL=300
 RSS_REQUEST_TIMEOUT=15
 ```
 
 #### RSSStorage (`services/rss/rss_storage.py`)
-Сервис для работы с базой данных RSS-данных.
+Service for RSS data database operations.
 
-**Основные функции:**
-- Сохранение RSS-элементов в БД
-- Управление переводами новостей
-- Получение настроек RSS-лент (кулдауны, лимиты)
+**Key Features:**
+- Saving RSS items to database
+- News translation management
+- RSS feed settings retrieval (cooldowns, limits)
 
 #### MediaExtractor (`services/rss/media_extractor.py`)
-Сервис для извлечения медиа-контента из RSS-элементов.
+Service for extracting media content from RSS items.
 
-**Основные функции:**
-- Извлечение URL изображений из различных RSS-форматов (media:thumbnail, enclosure)
-- Извлечение URL видео с проверкой размера
-- Поддержка Atom и RSS форматов
+**Key Features:**
+- Image URL extraction from various RSS formats (media:thumbnail, enclosure)
+- Video URL extraction with size checking
+- Atom and RSS format support
 
-### Сервисы перевода
+### Translation Services
 
 #### ModelManager (`services/translation/model_manager.py`)
-Менеджер ML-моделей для переводов.
+ML model manager for translations.
 
-**Основные функции:**
-- Ленивая загрузка моделей перевода
-- Кэширование моделей в памяти с автоматической очисткой
-- Управление памятью GPU/CPU
+**Key Features:**
+- Lazy loading of translation models
+- In-memory model caching with automatic cleanup
+- GPU/CPU memory management
 
-**Конфигурация:**
+**Configuration:**
 ```env
 TRANSLATION_MAX_CACHED_MODELS=15
 TRANSLATION_MODEL_CLEANUP_INTERVAL=1800
@@ -174,138 +174,138 @@ TRANSLATION_DEVICE=cpu
 ```
 
 #### TranslationService (`services/translation/translation_service.py`)
-Основной сервис для выполнения переводов.
+Main service for performing translations.
 
-**Основные функции:**
-- Пакетная обработка переводов для оптимизации производительности
-- Предварительная и постобработка текста
-- Управление конкурентностью переводов
+**Key Features:**
+- Batch translation processing for performance optimization
+- Text preprocessing and postprocessing
+- Translation concurrency management
 
-**Конфигурация:**
+**Configuration:**
 ```env
 TRANSLATION_MAX_CONCURRENT=3
 ```
 
 #### TranslationCache (`services/translation/translation_cache.py`)
-Кэширование результатов переводов.
+Translation result caching.
 
-**Основные функции:**
-- Кэширование переводов с TTL
-- Ограничение размера кэша
-- Автоматическая очистка устаревших записей
+**Key Features:**
+- Translation caching with TTL
+- Cache size limitation
+- Automatic cleanup of expired entries
 
-**Конфигурация:**
+**Configuration:**
 ```env
 CACHE_DEFAULT_TTL=3600
 CACHE_MAX_SIZE=10000
 ```
 
-### Система dependency injection
+### Dependency Injection System
 
 #### DI Container (`di_container.py`)
-Контейнер внедрения зависимостей для управления сервисами.
+Dependency injection container for service management.
 
-**Основные функции:**
-- Регистрация сервисов и фабрик
-- Автоматическое разрешение зависимостей
-- Управление жизненным циклом сервисов
+**Key Features:**
+- Service and factory registration
+- Automatic dependency resolution
+- Service lifecycle management
 
-#### Конфигурация сервисов (`config_services.py`)
-Централизованная конфигурация всех сервисов через переменные окружения.
+#### Service Configuration (`config_services.py`)
+Centralized configuration of all services through environment variables.
 
-**Пример конфигурации:**
+**Configuration Example:**
 ```env
-# RSS сервисы
+# RSS services
 RSS_MAX_CONCURRENT_FEEDS=10
 RSS_MAX_ENTRIES_PER_FEED=50
 RSS_VALIDATION_CACHE_TTL=300
 RSS_REQUEST_TIMEOUT=15
 
-# Сервисы перевода
+# Translation services
 TRANSLATION_MAX_CONCURRENT=3
 TRANSLATION_MAX_CACHED_MODELS=15
 TRANSLATION_MODEL_CLEANUP_INTERVAL=1800
 TRANSLATION_DEVICE=cpu
 
-# Кэширование
+# Caching
 CACHE_DEFAULT_TTL=3600
 CACHE_MAX_SIZE=10000
 CACHE_CLEANUP_INTERVAL=300
 
-# Очереди задач
+# Task queues
 QUEUE_MAX_SIZE=30
 QUEUE_DEFAULT_WORKERS=1
 QUEUE_TASK_TIMEOUT=300
 ```
 
-### Интерфейсы (`interfaces.py`)
-Абстрактные интерфейсы для всех сервисов, обеспечивающие:
-- **Принцип инверсии зависимостей**
-- **Легкость тестирования** через mock-объекты
-- **Гибкость замены реализаций**
+### Interfaces (`interfaces.py`)
+Abstract interfaces for all services, providing:
+- **Dependency Inversion Principle**
+- **Easy testing** through mock objects
+- **Implementation replacement flexibility**
 
-### Обработка ошибок (`exceptions.py`)
-Иерархия кастомных исключений для различных типов ошибок:
-- `RSSException` - ошибки RSS-обработки
-- `TranslationException` - ошибки перевода
-- `DatabaseException` - ошибки БД
-- `CacheException` - ошибки кэширования
+### Error Handling (`exceptions.py`)
+Hierarchy of custom exceptions for different error types:
+- `RSSException` - RSS processing errors
+- `TranslationException` - translation errors
+- `DatabaseException` - database errors
+- `CacheException` - caching errors
 
-### Преимущества новой архитектуры
+### Benefits of New Architecture
 
-1. **Высокая тестируемость** - каждый сервис тестируется изолированно
-2. **Гибкость конфигурации** - все параметры настраиваются через переменные окружения
-3. **Легкость поддержки** - четкое разделение ответственности
-4. **Масштабируемость** - сервисы могут быть легко заменены или расширены
-5. **Надежность** - специфическая обработка ошибок и graceful degradation
+1. **High testability** - each service is tested in isolation
+2. **Configuration flexibility** - all parameters configurable via environment variables
+3. **Easy maintenance** - clear separation of responsibilities
+4. **Scalability** - services can be easily replaced or extended
+5. **Reliability** - specific error handling and graceful degradation
 
-## Установка и запуск
+## Installation and Setup
 
-### Предварительные требования
+### Prerequisites
 
-- Python 3.8 или выше
-- PostgreSQL 12+ с расширением pgvector
-- Токен Telegram Bot API
+- Python 3.8 or higher
+- PostgreSQL 12+ with pgvector extension
+- Telegram Bot API token
 
-### Установка зависимостей
+### Installing Dependencies
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### Базовый запуск
+### Basic Setup
 
-1. Скопировать .env.example в .env
-2. Настроить реальные значения переменных в файле .env
+1. Copy .env.example to .env
+2. Configure real values for variables in .env file
 
 ```bash
-# Создание виртуального окружения
+# Create virtual environment
 python -m venv venv
-source venv/bin/activate  # для Windows: venv\Scripts\activate
+source venv/bin/activate  # for Windows: venv\Scripts\activate
 
-# Запуск Telegram бота
+# Run Telegram bot
 python bot.py
 ```
 
-### Запуск через скрипты
+### Running via Scripts
 
 ```bash
-# Дать права на выполнение
+# Make scripts executable
 chmod +x ./run_bot.sh
 chmod +x ./run_api.sh
 
-# Запуск бота
+# Run bot
 ./run_bot.sh
 
-# Запуск API
+# Run API
 ./run_api.sh
 ```
 
-## Конфигурация
+## Configuration
 
-### Переменные окружения
+### Environment Variables
 
-Создайте файл `.env` в корневой директории проекта:
+Create a `.env` file in the project root directory:
 
 ```env
 # Logging level (DEBUG, INFO, WARNING, ERROR)
@@ -355,11 +355,11 @@ SITE_API_KEY=your_site_api_key
 BOT_API_KEY=your_bot_api_key
 ```
 
-### Systemd сервисы
+### Systemd Services
 
-Для продакшн-окружения рекомендуется использовать systemd сервисы.
+For production environments, systemd services are recommended.
 
-**Сервис Telegram-бота** (`/etc/systemd/system/firefeed-bot.service`):
+**Telegram Bot Service** (`/etc/systemd/system/firefeed-bot.service`):
 
 ```ini
 [Unit]
@@ -386,7 +386,7 @@ SendSIGKILL=yes
 WantedBy=multi-user.target
 ```
 
-**Сервис API** (`/etc/systemd/system/firefeed-api.service`):
+**API Service** (`/etc/systemd/system/firefeed-api.service`):
 
 ```ini
 [Unit]
@@ -413,9 +413,9 @@ StandardError=journal
 WantedBy=multi-user.target
 ```
 
-### Nginx конфигурация
+### Nginx Configuration
 
-Пример конфигурации для работы через webhook и FastAPI:
+Example configuration for webhook and FastAPI operation:
 
 ```nginx
 upstream fastapi_app {
@@ -451,85 +451,85 @@ server {
 }
 ```
 
-## API документация
+## API Documentation
 
-После запуска API сервера документация доступна по адресам:
+After starting the API server, documentation is available at:
 
 - **Swagger UI**: http://localhost:8000/docs
 - **ReDoc**: http://localhost:8000/redoc
 
-Основные endpoints:
+Main endpoints:
 
-- `GET /api/v1/news` - получение списка новостей
-- `POST /api/v1/users/register` - регистрация пользователя
-- `GET /api/v1/subscriptions` - управление подписками
+- `GET /api/v1/news` - get news list
+- `POST /api/v1/users/register` - user registration
+- `GET /api/v1/subscriptions` - subscription management
 
-## Разработка
+## Development
 
-### Установка для разработки
+### Development Setup
 
 ```bash
-# Клонируйте репозиторий c GitHub
+# Clone repository from GitHub
 git clone https://github.com/yuremweiland/firefeed.git
-# или GitVerse
+# or GitVerse
 git clone https://gitverse.ru/yuryweiland/firefeed.git
 cd firefeed
 
-# Установка зависимостей
+# Install dependencies
 pip install -r requirements.txt
 ```
 
-### Запуск тестов
+### Running Tests
 
-Все тесты
+All tests
 
 ```bash
 pytest tests/
 ```
 
-Конкретный модуль
+Specific module
 
 ```bash
 pytest tests/test_models.py
 ```
 
-С остановкой на первой ошибке
+Stop on first failure
 
 ```bash
 pytest tests/ -x
 ```
 
-С кратким выводом
+Short output
 
 ```bash
 pytest tests/ --tb=short
 ```
 
-### Структура проекта
+### Project Structure
 
 ```
 firefeed/
-├── services/                    # Сервис-ориентированная архитектура
-│   ├── rss/                    # RSS сервисы
+├── services/                    # Service-oriented architecture
+│   ├── rss/                    # RSS services
 │   │   ├── __init__.py
-│   │   ├── rss_fetcher.py     # Парсер RSS
-│   │   ├── rss_validator.py   # Валидатор
-│   │   ├── rss_storage.py     # Хранилище
-│   │   ├── media_extractor.py # Извлечение медиа
-│   │   └── rss_manager.py     # Композитный менеджер
-│   └── translation/           # Сервисы переводов
+│   │   ├── rss_fetcher.py     # RSS parser
+│   │   ├── rss_validator.py   # Validator
+│   │   ├── rss_storage.py     # Storage
+│   │   ├── media_extractor.py # Media extraction
+│   │   └── rss_manager.py     # Composite manager
+│   └── translation/           # Translation services
 │       ├── __init__.py
-│       ├── model_manager.py   # Менеджер ML моделей
-│       ├── translation_service.py # Сервис переводов
-│       └── translation_cache.py   # Кэширование
-├── interfaces.py              # Абстрактные интерфейсы
+│       ├── model_manager.py   # ML model manager
+│       ├── translation_service.py # Translation service
+│       └── translation_cache.py   # Caching
+├── interfaces.py              # Abstract interfaces
 ├── di_container.py            # Dependency injection
-├── config_services.py         # Конфигурация через env
-├── exceptions.py              # Кастомные исключения
-├── rss_manager.py             # Адаптер совместимости
-└── tests/test_services.py     # Новые тесты для сервисов
+├── config_services.py         # Environment-based configuration
+├── exceptions.py              # Custom exceptions
+├── rss_manager.py             # Compatibility adapter
+└── tests/test_services.py     # New service tests
 ```
 
-## Лицензия
+## License
 
-Этот проект распространяется под лицензией MIT. Подробнее см. в файле LICENSE.
+This project is distributed under the MIT license. See LICENSE file for details.

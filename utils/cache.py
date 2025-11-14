@@ -6,31 +6,31 @@ logger = logging.getLogger(__name__)
 
 
 class SpacyModelCache:
-    """LRU-кэш для spaCy моделей"""
+    """LRU cache for spaCy models"""
 
     def __init__(self, max_cache_size: int = 3):
         self.max_cache_size = max_cache_size
         self.models: Dict[str, Any] = {}
-        self.usage_order: list = []  # LRU: последний использованный в конце
+        self.usage_order: list = []  # LRU: last used at the end
 
     def get_model(self, lang_code: str) -> Optional[Any]:
         """
-        Получает spaCy модель для языка с LRU-кэшированием
+        Gets spaCy model for language with LRU caching
 
         Args:
-            lang_code: Код языка ('en', 'ru', 'de', 'fr')
+            lang_code: Language code ('en', 'ru', 'de', 'fr')
 
         Returns:
-            spaCy модель или None если не найдена
+            spaCy model or None if not found
         """
         if lang_code in self.models:
-            # Обновляем порядок использования (LRU)
+            # Update usage order (LRU)
             if lang_code in self.usage_order:
                 self.usage_order.remove(lang_code)
             self.usage_order.append(lang_code)
             return self.models[lang_code]
 
-        # Сопоставление языкового кода с моделью spacy
+        # Mapping language code to spacy model
         spacy_model_map = {
             "en": "en_core_web_sm",
             "ru": "ru_core_news_sm",
@@ -40,33 +40,33 @@ class SpacyModelCache:
 
         model_name = spacy_model_map.get(lang_code)
         if not model_name:
-            logger.warning(f"[CACHE] Языковая модель для '{lang_code}' не найдена, используем 'en_core_web_sm'")
+            logger.warning(f"[CACHE] Language model for '{lang_code}' not found, using 'en_core_web_sm'")
             model_name = "en_core_web_sm"
 
         try:
-            # Загружаем модель
+            # Load model
             nlp = spacy.load(model_name)
             self.models[lang_code] = nlp
             self.usage_order.append(lang_code)
 
-            # Очищаем кэш если превышен лимит
+            # Clear cache if limit exceeded
             if len(self.models) > self.max_cache_size:
-                # Удаляем наименее недавно использованную модель
+                # Remove least recently used model
                 oldest_lang = self.usage_order.pop(0)
                 del self.models[oldest_lang]
-                logger.info(f"[CACHE] Очищена spacy модель для языка '{oldest_lang}' (превышен лимит кэша)")
+                logger.info(f"[CACHE] Cleared spacy model for language '{oldest_lang}' (cache limit exceeded)")
 
-            logger.info(f"[CACHE] Загружена spacy модель для языка '{lang_code}': {model_name}")
+            logger.info(f"[CACHE] Loaded spacy model for language '{lang_code}': {model_name}")
             return nlp
 
         except OSError:
             logger.error(
-                f"[CACHE] Модель '{model_name}' не найдена. Установите её командой: python -m spacy download {model_name}"
+                f"[CACHE] Model '{model_name}' not found. Install it with: python -m spacy download {model_name}"
             )
             return None
 
     def cleanup(self):
-        """Очистка всего кэша"""
+        """Clear entire cache"""
         self.models.clear()
         self.usage_order.clear()
-        logger.info("[CACHE] Кэш spaCy моделей очищен")
+        logger.info("[CACHE] spaCy models cache cleared")

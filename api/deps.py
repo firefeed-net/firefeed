@@ -112,18 +112,7 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     try:
         return bcrypt.checkpw(plain_password.encode("utf-8"), hashed_password.encode("utf-8"))
     except ValueError:
-        try:
-            import hashlib
-
-            SECRET_KEY_LOCAL = getattr(config, "JWT_SECRET_KEY", "your-secret-key-change-in-production")
-            return (
-                hashlib.pbkdf2_hmac(
-                    "sha256", plain_password.encode("utf-8"), SECRET_KEY_LOCAL.encode("utf-8"), 100000
-                )
-                == bytes.fromhex(hashed_password)
-            )
-        except (ValueError, TypeError):
-            return False
+        return False
 
 
 def get_password_hash(password: str) -> str:
@@ -171,7 +160,7 @@ def validate_rss_items_query_params(display_language, from_date, cursor_publishe
     if display_language is not None and display_language not in supported_languages:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Неподдерживаемый язык отображения. Допустимые значения: {', '.join(supported_languages)}.",
+            detail=f"Unsupported display language. Valid values: {', '.join(supported_languages)}.",
         )
 
     from_datetime = None
@@ -190,7 +179,7 @@ def validate_rss_items_query_params(display_language, from_date, cursor_publishe
         except (ValueError, OSError):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Некорректный формат timestamp в параметре cursor_published_at",
+                detail="Invalid timestamp format in cursor_published_at parameter",
             )
 
     return from_datetime, before_published_at

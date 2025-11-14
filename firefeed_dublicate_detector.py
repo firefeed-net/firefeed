@@ -28,12 +28,12 @@ class FireFeedDuplicateDetector(DatabaseMixin):
         self.processor = FireFeedEmbeddingsProcessor(model_name, device)
         self.similarity_threshold = similarity_threshold
 
-    def _combine_text_fields(self, title: str, content: str, lang_code: str = "en") -> str:
+    async def _combine_text_fields(self, title: str, content: str, lang_code: str = "en") -> str:
         """Комбинирование заголовка и содержания для создания эмбеддинга"""
-        return self.processor.combine_texts(title, content, lang_code)
+        return await self.processor.combine_texts(title, content, lang_code)
 
     async def _get_embedding_by_id(self, rss_item_id: str) -> Optional[List[float]]:
-        """Получение существующего эмбеддинга по ID RSS-элемента"""
+        """Getting existing embedding by RSS item ID"""
         pool = await self.get_pool()
         async with pool.acquire() as conn:
             async with conn.cursor() as cur:
@@ -48,7 +48,7 @@ class FireFeedDuplicateDetector(DatabaseMixin):
 
                 result = await cur.fetchone()
                 if result and result[0] is not None:
-                    # Преобразуем из строки в список, если нужно
+                    # Convert from string to list if needed
                     if isinstance(result[0], str):
                         return json.loads(result[0])
                     return result[0]
@@ -60,16 +60,16 @@ class FireFeedDuplicateDetector(DatabaseMixin):
         """Проверка дубликата с уже имеющимся эмбеддингом"""
         try:
             pool = await self.get_pool()
-            # Ищем похожие RSS-элементы, исключая текущий
+            # Search for similar RSS items, excluding current
             similar_rss_items = await self.get_similar_rss_items(embedding, current_rss_item_id=rss_item_id, limit=5, pool=pool)
 
-            # Динамический threshold
+            # Dynamic threshold
             threshold = self.processor.get_dynamic_threshold(text_length, text_type)
 
-            # Проверяем схожесть
+            # Check similarity
             for rss_item in similar_rss_items:
                 if rss_item["embedding"] is not None:
-                    # Преобразуем эмбеддинг
+                    # Convert embedding
                     try:
                         if isinstance(rss_item["embedding"], str):
                             stored_embedding = json.loads(rss_item["embedding"])
@@ -82,45 +82,45 @@ class FireFeedDuplicateDetector(DatabaseMixin):
                         else:
                             continue
                     except (json.JSONDecodeError, ValueError) as e:
-                        logger.error(f"[DUBLICATE_DETECTOR] Ошибка преобразования эмбеддинга из БД: {e}")
+                        logger.error(f"[DUBLICATE_DETECTOR] Error converting embedding from DB: {e}")
                         continue
 
-                    similarity = self.processor.calculate_similarity(stored_embedding, embedding)
+                    similarity = await self.processor.calculate_similarity(stored_embedding, embedding)
 
                     if similarity > threshold:
                         logger.info(
-                            f"[DUBLICATE_DETECTOR] Найден дубликат с схожестью {similarity:.4f} (threshold: {threshold:.4f})"
+                            f"[DUBLICATE_DETECTOR] Duplicate found with similarity {similarity:.4f} (threshold: {threshold:.4f})"
                         )
                         return True, rss_item
 
             return False, None
 
         except Exception as e:
-            logger.error(f"[DUBLICATE_DETECTOR] Ошибка при проверке дубликата с эмбеддингом: {e}")
+            logger.error(f"[DUBLICATE_DETECTOR] Error checking duplicate with embedding: {e}")
             raise
 
     async def generate_embedding(self, title: str, content: str, lang_code: str = "en") -> List[float]:
         """
-        Генерация эмбеддинга для RSS-элемента
+        Generating embedding for RSS item
 
         Args:
-            title: Заголовок RSS-элемента
-            content: Содержание RSS-элемента
-            lang_code: Код языка
+            title: RSS item title
+            content: RSS item content
+            lang_code: Language code
 
         Returns:
-            Эмбеддинг RSS-элемента в виде списка float
+            RSS item embedding as list of float
         """
-        combined_text = self._combine_text_fields(title, content, lang_code)
-        return self.processor.generate_embedding(combined_text, lang_code)
+        combined_text = await self._combine_text_fields(title, content, lang_code)
+        return await self.processor.generate_embedding(combined_text, lang_code)
 
     async def save_embedding(self, rss_item_id: str, embedding: List[float]):
         """
-        Сохранение эмбеддинга в базу данных
+        Saving embedding to database
 
         Args:
-            rss_item_id: ID RSS-элемента
-            embedding: Эмбеддинг RSS-элемента
+            rss_item_id: RSS item ID
+            embedding: RSS item embedding
         """
         pool = await self.get_pool()
         async with pool.acquire() as conn:
@@ -133,8 +133,8 @@ class FireFeedDuplicateDetector(DatabaseMixin):
                 """,
                     (embedding, rss_item_id),
                 )
-                # Убираем await conn.commit() - в aiopg транзакции управляются автоматически
-                logger.debug(f"Эмбеддинг для RSS-элемента {rss_item_id} успешно сохранен")
+                # Remove await conn.commit() - transactions are managed automatically in aiopg
+                logger.debug(f"Embedding for RSS item {rss_item_id} successfully saved")
 
     async def get_similar_rss_items(
         self, embedding: List[float], current_rss_item_id: str = None, limit: int = 10, pool=None
@@ -152,14 +152,14 @@ class FireFeedDuplicateDetector(DatabaseMixin):
             Список похожих RSS-элементов
         """
         try:
-            # Используем переданный пул или получаем новый
+            # Use provided pool or get new one
             if pool is None:
                 pool = await self.get_pool()
 
             async with pool.acquire() as conn:
                 async with conn.cursor() as cur:
                     if current_rss_item_id:
-                        # Исключаем текущий RSS-элемент из поиска
+                        # Exclude current RSS item from search
                         await cur.execute(
                             """
                             SELECT news_id, original_title, original_content, embedding
@@ -172,7 +172,7 @@ class FireFeedDuplicateDetector(DatabaseMixin):
                             (current_rss_item_id, embedding, limit),
                         )
                     else:
-                        # Если ID не предоставлен, ищем среди всех RSS-элементов
+                        # If ID not provided, search among all RSS items
                         await cur.execute(
                             """
                             SELECT news_id, original_title, original_content, embedding
@@ -187,39 +187,62 @@ class FireFeedDuplicateDetector(DatabaseMixin):
                     results = await cur.fetchall()
                     return [dict(zip([column[0] for column in cur.description], row)) for row in results]
         except Exception as e:
-            logger.error(f"[DUBLICATE_DETECTOR] Ошибка при поиске похожих RSS-элементов: {e}")
+            logger.error(f"[DUBLICATE_DETECTOR] Error searching for similar RSS items: {e}")
             raise
 
     async def is_duplicate(
-        self, rss_item_id: str, title: str, content: str, lang_code: str = "en"
+        self, title: str, content: str, link: str, lang_code: str = "en"
     ) -> Tuple[bool, Optional[Dict[str, Any]]]:
         """
         Проверка, является ли RSS-элемент дубликатом
 
         Args:
-            rss_item_id: ID RSS-элемента (для исключения из поиска)
             title: Заголовок RSS-элемента
             content: Содержание RSS-элемента
+            link: Ссылка RSS-элемента
             lang_code: Код языка
 
         Returns:
             Кортеж: (является_дубликатом, информация_о_дубликате)
         """
         try:
-            # Генерируем эмбеддинг для нового RSS-элемента
+            # First check by URL (if link matches - definitely duplicate)
+            if link:
+                try:
+                    pool = await self.get_pool()
+                    async with pool.acquire() as conn:
+                        async with conn.cursor() as cur:
+                            await cur.execute(
+                                """
+                                SELECT news_id, original_title
+                                FROM published_news_data
+                                WHERE source_url = %s AND source_url IS NOT NULL
+                                LIMIT 1
+                                """,
+                                (link,),
+                            )
+
+                            result = await cur.fetchone()
+                            if result:
+                                return True, {"news_id": result[0], "title": result[1], "reason": "same_url"}
+
+                except Exception as e:
+                    logger.error(f"Error checking by URL: {e}")
+
+            # Generate embedding for new RSS item
             embedding = await self.generate_embedding(title, content, lang_code)
 
-            # Ищем похожие RSS-элементы, исключая текущий
-            similar_rss_items = await self.get_similar_rss_items(embedding, current_rss_item_id=rss_item_id, limit=5)
+            # Search for similar RSS items (without excluding current, since it doesn't exist yet)
+            similar_rss_items = await self.get_similar_rss_items(embedding, limit=5)
 
-            # Длина текста для динамического threshold
+            # Text length for dynamic threshold
             text_length = len(title) + len(content)
             threshold = self.processor.get_dynamic_threshold(text_length, "content")
 
-            # Проверяем схожесть
+            # Check similarity
             for rss_item in similar_rss_items:
                 if rss_item["embedding"] is not None:
-                    # Преобразуем эмбеддинг
+                    # Convert embedding
                     try:
                         if isinstance(rss_item["embedding"], str):
                             stored_embedding = json.loads(rss_item["embedding"])
@@ -231,60 +254,27 @@ class FireFeedDuplicateDetector(DatabaseMixin):
                             )
                         else:
                             logger.warning(
-                                f"[DUBLICATE_DETECTOR] Неизвестный тип данных для эмбеддинга: {type(rss_item['embedding'])}"
+                                f"[DUBLICATE_DETECTOR] Unknown data type for embedding: {type(rss_item['embedding'])}"
                             )
                             continue
                     except (json.JSONDecodeError, ValueError) as e:
-                        logger.error(f"[DUBLICATE_DETECTOR] Ошибка преобразования эмбеддинга из БД: {e}")
+                        logger.error(f"[DUBLICATE_DETECTOR] Error converting embedding from DB: {e}")
                         continue
 
-                    similarity = self.processor.calculate_similarity(stored_embedding, embedding)
+                    similarity = await self.processor.calculate_similarity(stored_embedding, embedding)
 
                     if similarity > threshold:
                         logger.info(
-                            f"[DUBLICATE_DETECTOR] Найден дубликат с схожестью {similarity:.4f} (threshold: {threshold:.4f})"
+                            f"[DUBLICATE_DETECTOR] Duplicate found with similarity {similarity:.4f} (threshold: {threshold:.4f})"
                         )
                         return True, rss_item
 
             return False, None
 
         except Exception as e:
-            logger.error(f"[DUBLICATE_DETECTOR] Ошибка при проверке дубликата: {e}")
+            logger.error(f"[DUBLICATE_DETECTOR] Error checking duplicate: {e}")
             raise
 
-    async def is_duplicate_strict(
-        self, title: str, content: str, link: str, lang_code: str = "en"
-    ) -> Tuple[bool, Optional[Dict[str, Any]]]:
-        """Строгая проверка на дубликаты с учетом ссылки"""
-
-        # Сначала проверяем по эмбеддингам
-        is_dup, dup_info = await self.is_duplicate("temp", title, content, lang_code)
-        if is_dup:
-            return True, dup_info
-
-        # Дополнительно проверяем по ссылке (если ссылка совпадает - точно дубликат)
-        try:
-            pool = await self.get_pool()
-            async with pool.acquire() as conn:
-                async with conn.cursor() as cur:
-                    await cur.execute(
-                        """
-                        SELECT news_id, original_title
-                        FROM published_news_data
-                        WHERE source_url = %s AND source_url IS NOT NULL
-                        LIMIT 1
-                    """,
-                        (link,),
-                    )
-
-                    result = await cur.fetchone()
-                    if result:
-                        return True, {"news_id": result[0], "title": result[1], "reason": "same_url"}
-
-        except Exception as e:
-            logger.error(f"Ошибка при проверке по URL: {e}")
-
-        return False, None
 
     async def process_rss_item(self, rss_item_id: str, title: str, content: str, lang_code: str = "en") -> bool:
         """
@@ -300,46 +290,46 @@ class FireFeedDuplicateDetector(DatabaseMixin):
             True если RSS-элемент уникален, False если дубликат
         """
         try:
-            # Сначала проверяем, есть ли уже эмбеддинг для этого RSS-элемента
+            # First check if embedding already exists for this RSS item
             existing_embedding = await self._get_embedding_by_id(rss_item_id)
 
             text_length = len(title) + len(content)
 
-            # Если эмбеддинг уже существует, используем его для проверки дубликатов
+            # If embedding already exists, use it for duplicate checking
             if existing_embedding is not None:
-                logger.debug(f"[DUBLICATE_DETECTOR] Эмбеддинг для RSS-элемента {rss_item_id} уже существует")
-                # Проверяем на дубликат, используя существующий эмбеддинг
+                logger.debug(f"[DUBLICATE_DETECTOR] Embedding for RSS item {rss_item_id} already exists")
+                # Check for duplicate using existing embedding
                 is_dup, duplicate_info = await self._is_duplicate_with_embedding(
                     rss_item_id, existing_embedding, text_length, "content"
                 )
             else:
-                # Если эмбеддинга нет, генерируем новый
-                logger.debug(f"[DUBLICATE_DETECTOR] Генерируем новый эмбеддинг для RSS-элемента {rss_item_id}")
+                # If no embedding, generate new one
+                logger.debug(f"[DUBLICATE_DETECTOR] Generating new embedding for RSS item {rss_item_id}")
                 embedding = await self.generate_embedding(title, content, lang_code)
 
-                # Проверяем на дубликат с новым эмбеддингом
+                # Check for duplicate with new embedding
                 is_dup, duplicate_info = await self._is_duplicate_with_embedding(
                     rss_item_id, embedding, text_length, "content"
                 )
 
-                # Если не дубликат, сохраняем эмбеддинг
+                # If not duplicate, save embedding
                 if not is_dup:
                     await self.save_embedding(rss_item_id, embedding)
 
             if is_dup:
                 logger.info(
-                    f"[DUBLICATE_DETECTOR] RSS-элемент {title[:50]} является дубликатом RSS-элемента {duplicate_info['news_id']}"
+                    f"[DUBLICATE_DETECTOR] RSS item {title[:50]} is a duplicate of RSS item {duplicate_info['news_id']}"
                 )
                 return False
 
-            # logger.info(f"[DUBLICATE_DETECTOR] RSS-элемент {rss_item_id} уникален")
+            # logger.info(f"[DUBLICATE_DETECTOR] RSS item {rss_item_id} is unique")
             return True
 
         except Exception as e:
-            logger.error(f"[DUBLICATE_DETECTOR] Ошибка при обработке RSS-элемента {rss_item_id}: {e}")
+            logger.error(f"[DUBLICATE_DETECTOR] Error processing RSS item {rss_item_id}: {e}")
             raise
 
-    # --- Методы для пакетной обработки ---
+    # --- Methods for batch processing ---
 
     async def get_rss_items_without_embeddings(self, limit: int = 100) -> List[Dict[str, Any]]:
         """
@@ -359,20 +349,20 @@ class FireFeedDuplicateDetector(DatabaseMixin):
                     SELECT news_id, original_title, original_content
                     FROM published_news_data
                     WHERE embedding IS NULL
-                    ORDER BY created_at ASC -- Обрабатываем самые старые записи первыми
+                    ORDER BY created_at ASC -- Process oldest records first
                     LIMIT %s
                 """
                 await cur.execute(query, (limit,))
                 results = await cur.fetchall()
 
-                # Получаем имена колонок
-                # cur.description доступен после execute
+                # Get column names
+                # cur.description available after execute
                 column_names = [desc[0] for desc in cur.description]
 
-                # Преобразуем результаты в список словарей
+                # Convert results to list of dictionaries
                 rss_items_list = [dict(zip(column_names, row)) for row in results]
 
-                logger.info(f"[BATCH_EMBEDDING] Получено {len(rss_items_list)} RSS-элементов без эмбеддингов.")
+                logger.info(f"[BATCH_EMBEDDING] Retrieved {len(rss_items_list)} RSS items without embeddings.")
                 return rss_items_list
 
     async def process_single_rss_item_batch(self, rss_item: Dict[str, Any], lang_code: str = "en") -> bool:
@@ -392,57 +382,57 @@ class FireFeedDuplicateDetector(DatabaseMixin):
         content = rss_item["original_content"]
 
         try:
-            logger.debug(f"[BATCH_EMBEDDING] Начало обработки RSS-элемента {rss_item_id}...")
+            logger.debug(f"[BATCH_EMBEDDING] Starting processing of RSS item {rss_item_id}...")
 
-            # 1. Генерируем эмбеддинг
+            # 1. Generate embedding
             embedding = await self.generate_embedding(title, content, lang_code)
-            logger.debug(f"[BATCH_EMBEDDING] Эмбеддинг для {rss_item_id} сгенерирован.")
+            logger.debug(f"[BATCH_EMBEDDING] Embedding for {rss_item_id} generated.")
 
-            # 2. Сохраняем эмбеддинг
+            # 2. Save embedding
             await self.save_embedding(rss_item_id, embedding)
-            logger.info(f"[BATCH_EMBEDDING] Эмбеддинг для RSS-элемента {rss_item_id} успешно сохранен.")
+            logger.info(f"[BATCH_EMBEDDING] Embedding for RSS item {rss_item_id} successfully saved.")
             return True
 
         except Exception as e:
-            logger.error(f"[BATCH_EMBEDDING] Ошибка при обработке RSS-элемента {rss_item_id}: {e}", exc_info=True)
+            logger.error(f"[BATCH_EMBEDDING] Error processing RSS item {rss_item_id}: {e}", exc_info=True)
             return False
 
     async def process_missing_embeddings_batch(
         self, batch_size: int = 50, delay_between_items: float = 0.1
     ) -> Tuple[int, int]:
         """
-        Асинхронно обрабатывает одну партию RSS-элементов без эмбеддингов.
+        Asynchronously processes one batch of RSS items without embeddings.
 
         Args:
-            batch_size: Количество RSS-элементов для обработки за один "прогон".
-            delay_between_items: Задержка (в секундах) между обработкой каждого RSS-элемента
-                                внутри партии для снижения нагрузки.
+            batch_size: Number of RSS items to process in one "run".
+            delay_between_items: Delay (in seconds) between processing each RSS item
+                                within batch to reduce load.
 
         Returns:
-            Кортеж (успешно обработано, ошибок).
+            Tuple (successfully processed, errors).
         """
-        logger.info(f"[BATCH_EMBEDDING] Запуск пакетной обработки: размер партии {batch_size}.")
+        logger.info(f"[BATCH_EMBEDDING] Starting batch processing: batch size {batch_size}.")
 
-        # 1. Получаем список RSS-элементов без эмбеддингов (асинхронно)
+        # 1. Get list of RSS items without embeddings (asynchronously)
         try:
             rss_items_without_embeddings = await self.get_rss_items_without_embeddings(limit=batch_size)
         except Exception as e:
-            logger.error(f"[BATCH_EMBEDDING] Не удалось получить список RSS-элементов: {e}")
-            return 0, 0  # Возвращаем 0, 0 в случае ошибки получения списка
+            logger.error(f"[BATCH_EMBEDDING] Failed to retrieve RSS items list: {e}")
+            return 0, 0  # Return 0, 0 on list retrieval error
 
         if not rss_items_without_embeddings:
-            logger.info("[BATCH_EMBEDDING] RSS-элементы без эмбеддингов не найдены.")
+            logger.info("[BATCH_EMBEDDING] No RSS items without embeddings found.")
             return 0, 0
 
-        logger.info(f"[BATCH_EMBEDDING] Найдено {len(rss_items_without_embeddings)} RSS-элементов для обработки.")
+        logger.info(f"[BATCH_EMBEDDING] Found {len(rss_items_without_embeddings)} RSS items for processing.")
 
         success_count = 0
         error_count = 0
 
-        # 3. Обрабатываем каждый RSS-элемент в партии
+        # 3. Process each RSS item in batch
         for i, rss_item in enumerate(rss_items_without_embeddings):
             rss_item_id = rss_item["news_id"]
-            logger.debug(f"[BATCH_EMBEDDING] Обработка RSS-элемента {i+1}/{len(rss_items_without_embeddings)}: {rss_item_id}")
+            logger.debug(f"[BATCH_EMBEDDING] Processing RSS item {i+1}/{len(rss_items_without_embeddings)}: {rss_item_id}")
 
             success = await self.process_single_rss_item_batch(rss_item)
             if success:
@@ -450,11 +440,11 @@ class FireFeedDuplicateDetector(DatabaseMixin):
             else:
                 error_count += 1
 
-            # Добавляем небольшую задержку между обработками RSS-элементов в партии
+            # Add small delay between processing RSS items in batch
             if delay_between_items > 0 and (i + 1) < len(rss_items_without_embeddings):
                 await asyncio.sleep(delay_between_items)
 
-        logger.info(f"[BATCH_EMBEDDING] Партия обработана. Успешно: {success_count}, Ошибок: {error_count}")
+        logger.info(f"[BATCH_EMBEDDING] Batch processed. Successful: {success_count}, Errors: {error_count}")
         return success_count, error_count
 
     async def run_batch_processor_continuously(
@@ -468,23 +458,23 @@ class FireFeedDuplicateDetector(DatabaseMixin):
             delay_between_batches: Задержка (в секундах) между обработкой партий.
             delay_between_items: Задержка (в секундах) между обработкой каждого RSS-элемента внутри партии.
         """
-        logger.info("[BATCH_EMBEDDING] Запуск непрерывной пакетной обработки...")
+        logger.info("[BATCH_EMBEDDING] Starting continuous batch processing...")
         while True:
             try:
                 success, errors = await self.process_missing_embeddings_batch(
                     batch_size=batch_size, delay_between_items=delay_between_items
                 )
-                # Даже если обработано 0 новостей, всё равно ждем перед следующей итерацией
-                logger.debug(f"[BATCH_EMBEDDING] Ожидание {delay_between_batches} секунд до следующей партии...")
+                # Even if 0 news processed, still wait before next iteration
+                logger.debug(f"[BATCH_EMBEDDING] Waiting {delay_between_batches} seconds until next batch...")
                 await asyncio.sleep(delay_between_batches)
 
             except asyncio.CancelledError:
-                logger.info("[BATCH_EMBEDDING] Непрерывная пакетная обработка отменена.")
+                logger.info("[BATCH_EMBEDDING] Continuous batch processing cancelled.")
                 break  # Выходим из цикла при отмене задачи
             except Exception as e:
-                logger.error(f"[BATCH_EMBEDDING] Неожиданная ошибка в непрерывной обработке: {e}", exc_info=True)
+                logger.error(f"[BATCH_EMBEDDING] Unexpected error in continuous processing: {e}", exc_info=True)
                 # Ждем перед повторной попыткой в случае ошибки
-                logger.debug(f"[BATCH_EMBEDDING] Ожидание {delay_between_batches} секунд перед повторной попыткой...")
+                logger.debug(f"[BATCH_EMBEDDING] Waiting {delay_between_batches} seconds before retry...")
                 await asyncio.sleep(delay_between_batches)
 
     async def run_batch_processor_once(
@@ -500,15 +490,15 @@ class FireFeedDuplicateDetector(DatabaseMixin):
         Returns:
             Кортеж (успешно обработано, ошибок).
         """
-        logger.info("[BATCH_EMBEDDING] Запуск однократной пакетной обработки...")
+        logger.info("[BATCH_EMBEDDING] Starting one-time batch processing...")
         try:
             success, errors = await self.process_missing_embeddings_batch(
                 batch_size=batch_size, delay_between_items=delay_between_items
             )
-            logger.info(f"[BATCH_EMBEDDING] Однократная обработка завершена. Успешно: {success}, Ошибок: {errors}")
+            logger.info(f"[BATCH_EMBEDDING] One-time processing completed. Successful: {success}, Errors: {errors}")
             return success, errors
         except Exception as e:
-            logger.error(f"[BATCH_EMBEDDING] Ошибка в однократной обработке: {e}", exc_info=True)
+            logger.error(f"[BATCH_EMBEDDING] Error in one-time processing: {e}", exc_info=True)
             raise  # Повторно выбрасываем исключение, чтобы вызывающая сторона могла его обработать
 
     @classmethod

@@ -60,6 +60,41 @@ class IRSSStorage(ABC):
         """Get count of recent items for feed"""
         pass
 
+    @abstractmethod
+    async def get_feeds_by_category(self, category_name: str) -> List[Dict[str, Any]]:
+        """Get feeds by category name"""
+        pass
+
+    @abstractmethod
+    async def get_feeds_by_language(self, lang: str) -> List[Dict[str, Any]]:
+        """Get feeds by language"""
+        pass
+
+    @abstractmethod
+    async def get_feeds_by_source(self, source_name: str) -> List[Dict[str, Any]]:
+        """Get feeds by source name"""
+        pass
+
+    @abstractmethod
+    async def add_feed(self, url: str, category_name: str, source_name: str, language: str, is_active: bool = True) -> bool:
+        """Add new RSS feed"""
+        pass
+
+    @abstractmethod
+    async def update_feed(self, feed_id: int, **kwargs) -> bool:
+        """Update RSS feed"""
+        pass
+
+    @abstractmethod
+    async def delete_feed(self, feed_id: int) -> bool:
+        """Delete RSS feed"""
+        pass
+
+    @abstractmethod
+    async def fetch_unprocessed_rss_items(self) -> List[Dict[str, Any]]:
+        """Fetch unprocessed RSS items"""
+        pass
+
 
 class IMediaExtractor(ABC):
     """Interface for media extraction from RSS items"""
@@ -203,4 +238,13 @@ class ITranslatorQueue(ABC):
     @abstractmethod
     def print_stats(self) -> None:
         """Print queue statistics"""
+        pass
+
+
+class IMaintenanceService(ABC):
+    """Interface for maintenance operations"""
+
+    @abstractmethod
+    async def cleanup_duplicates(self) -> None:
+        """Clean up duplicate RSS items"""
         pass

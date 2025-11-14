@@ -5,36 +5,37 @@ from urllib.parse import urlparse, urljoin
 from config import IMAGES_ROOT_DIR, IMAGE_FILE_EXTENSIONS
 from datetime import datetime
 import aiohttp
+import aiofiles
 from bs4 import BeautifulSoup
 
 logger = logging.getLogger(__name__)
 
 
 class ImageProcessor:
-    """Класс для обработки и скачивания изображений"""
+    """Class for processing and downloading images"""
 
     @staticmethod
     async def download_and_save_image(url, rss_item_id, save_directory=IMAGES_ROOT_DIR):
         """
-        Скачивает изображение и сохраняет его локально с именем файла на основе rss_item_id.
-        Сохраняет по пути: save_directory/YYYY/MM/DD/{rss_item_id}{ext}
+        Downloads the image and saves it locally with a filename based on rss_item_id.
+        Saves to path: save_directory/YYYY/MM/DD/{rss_item_id}{ext}
 
-        :param url: URL изображения
-        :param rss_item_id: уникальный ID RSS-элемента для БД
-        :param save_directory: директория для сохранения изображений
-        :return: путь к сохраненному файлу или None
+        :param url: Image URL
+        :param rss_item_id: Unique RSS item ID for DB
+        :param save_directory: Directory for saving images
+        :return: Path to saved file or None
         """
         if not url or not rss_item_id:
-            logger.debug(f"[DEBUG] Пропущено сохранение изображения: нет URL ({url}) или rss_item_id ({rss_item_id})")
+            logger.debug(f"[DEBUG] Image saving skipped: no URL ({url}) or rss_item_id ({rss_item_id})")
             return None
 
         try:
-            # Используем текущее время для формирования пути
+            # Use current time to form path
             created_at = datetime.now()
             date_path = created_at.strftime("%Y/%m/%d")
             full_save_directory = os.path.join(save_directory, date_path)
 
-            logger.debug(f"[DEBUG] Начинаем сохранять изображение из {url} в {full_save_directory}")
+            logger.debug(f"[DEBUG] Starting to save image from {url} to {full_save_directory}")
             os.makedirs(full_save_directory, exist_ok=True)
 
             headers = {
@@ -45,7 +46,7 @@ class ImageProcessor:
                 "Connection": "keep-alive",
             }
 
-            # Используем aiohttp для асинхронного скачивания
+            # Use aiohttp for asynchronous downloading
             timeout = aiohttp.ClientTimeout(total=10)
             async with aiohttp.ClientSession(timeout=timeout) as session:
                 async with session.get(url, headers=headers) as response:
@@ -55,13 +56,13 @@ class ImageProcessor:
                     content_lower = content_type.lower()
                     extension = ".jpg"
 
-                    # Проверяем content_type
+                    # Check content_type
                     for ext in IMAGE_FILE_EXTENSIONS:
                         if ext[1:] in content_lower:
                             extension = ext
                             break
                     else:
-                        # Проверяем URL
+                        # Check URL
                         parsed_url = urlparse(url)
                         path = parsed_url.path
                         if path.lower().endswith(tuple(IMAGE_FILE_EXTENSIONS)):
@@ -74,32 +75,32 @@ class ImageProcessor:
                     filename = f"{safe_rss_item_id}{extension}"
                     file_path = os.path.join(full_save_directory, filename)
 
-                    # Проверяем, существует ли файл уже
+                    # Check if file already exists
                     if os.path.exists(file_path):
-                        logger.info(f"[LOG] Изображение уже существует на сервере: {file_path}")
-                        # Возвращаем относительный путь от save_directory
+                        logger.info(f"[LOG] Image already exists on server: {file_path}")
+                        # Return relative path from save_directory
                         relative_path = os.path.relpath(file_path, save_directory)
                         return relative_path
 
-                    # Читаем контент асинхронно
+                    # Read content asynchronously
                     content = await response.read()
 
-                    # Сохраняем файл асинхронно
-                    with open(file_path, "wb") as f:
-                        f.write(content)
+                    # Save file asynchronously
+                    async with aiofiles.open(file_path, "wb") as f:
+                        await f.write(content)
 
-            logger.info(f"[LOG] Изображение успешно сохранено: {file_path}")
-            # Возвращаем относительный путь от save_directory
+            logger.info(f"[LOG] Image successfully saved: {file_path}")
+            # Return relative path from save_directory
             relative_path = os.path.relpath(file_path, save_directory)
             return relative_path
 
         except OSError as e:
             logger.warning(
-                f"[WARN] Ошибка файловой системы при сохранении изображения {url} в {full_save_directory}: {e}"
+                f"[WARN] Filesystem error when saving image {url} to {full_save_directory}: {e}"
             )
             return None
         except Exception as e:
-            logger.warning(f"[WARN] Неожиданная ошибка при скачивании/сохранении изображения {url}: {e}")
+            logger.warning(f"[WARN] Unexpected error when downloading/saving image {url}: {e}")
             return None
 
     @staticmethod
@@ -119,10 +120,10 @@ class ImageProcessor:
     @staticmethod
     async def extract_image_from_preview(url):
         """
-        Извлекает URL изображения из web preview страницы.
+        Extracts image URL from web preview page.
 
-        :param url: URL страницы для парсинга
-        :return: URL изображения или None
+        :param url: URL of the page to parse
+        :return: Image URL or None
         """
         if not url:
             return None
@@ -147,22 +148,22 @@ class ImageProcessor:
             loop = asyncio.get_event_loop()
             soup = await loop.run_in_executor(None, BeautifulSoup, html_content, "html.parser")
 
-            # Ищем og:image
+            # Search for og:image
             og_image = soup.find("meta", property="og:image")
             if og_image and og_image.get("content"):
                 return og_image["content"]
 
-            # Ищем twitter:image
+            # Search for twitter:image
             twitter_image = soup.find("meta", property="twitter:image")
             if twitter_image and twitter_image.get("content"):
                 return twitter_image["content"]
 
-            # Ищем первый img с src, содержащим "image" или "photo"
+            # Search for first img with src containing "image" or "photo"
             image_tags = soup.find_all("img")
             for img in image_tags:
                 src = img.get("src") or img.get("data-src")
                 if src and ("image" in src.lower() or "photo" in src.lower()):
-                    # Конвертируем относительные URL в абсолютные
+                    # Convert relative URLs to absolute
                     if src.startswith("//"):
                         return "https:" + src
                     elif src.startswith("/"):
@@ -171,5 +172,5 @@ class ImageProcessor:
 
             return None
         except Exception as e:
-            logger.warning(f"[WARN] Ошибка при извлечении изображения из {url}: {e}")
+            logger.warning(f"[WARN] Error extracting image from {url}: {e}")
             return None

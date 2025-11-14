@@ -7,7 +7,7 @@ from jinja2 import Environment, FileSystemLoader
 from datetime import datetime
 from config import SMTP_CONFIG
 
-# Настройка логирования
+# Logging setup
 logger = logging.getLogger("email_service.sender")
 logger.setLevel(logging.INFO)
 
@@ -17,45 +17,45 @@ class EmailSender:
         self.smtp_config = SMTP_CONFIG
         self.sender_email = self.smtp_config["email"]
 
-        # Настройка Jinja2 для загрузки шаблонов
+        # Setting up Jinja2 for template loading
         template_dir = os.path.join(os.path.dirname(__file__), "templates")
         self.jinja_env = Environment(loader=FileSystemLoader(template_dir))
 
     async def send_password_reset_email(self, to_email: str, reset_token: str, language: str = "en") -> bool:
         """
-        Отправляет email с ссылкой для сброса пароля
+        Sends email with password reset link
 
         Args:
-            to_email (str): Email получателя
-            reset_token (str): Токен сброса пароля
-            language (str): Язык письма ('en', 'ru', 'de')
+            to_email (str): Recipient email
+            reset_token (str): Password reset token
+            language (str): Email language ('en', 'ru', 'de')
 
         Returns:
-            bool: True если письмо отправлено успешно, False в случае ошибки
+            bool: True if email sent successfully, False on error
         """
         start_ts = datetime.utcnow()
         logger.info(f"[EmailSender] Password reset email start: to={to_email} at {start_ts.isoformat()}Z")
         try:
-            # Создаем сообщение
+            # Create message
             message = MIMEMultipart("alternative")
             message["Subject"] = self._get_reset_subject(language)
             message["From"] = self.sender_email
             message["To"] = to_email
 
-            # Получаем содержимое письма из шаблонов
+            # Get email content from templates
             text_content = self._get_reset_text_content(reset_token, language)
             html_content = self._render_reset_html_template(reset_token, language)
 
-            # Создаем части письма
+            # Create email parts
             text_part = MIMEText(text_content, "plain", "utf-8")
             html_part = MIMEText(html_content, "html", "utf-8")
 
-            # Добавляем части в сообщение
+            # Add parts to message
             message.attach(text_part)
             message.attach(html_part)
 
-            # Отправляем email асинхронно с таймаутами (connect/read/write по 10 секунд)
-            # Для порта 465 используем SSL, для других портов - TLS
+            # Send email asynchronously with timeouts (connect/read/write 10 seconds each)
+            # Use SSL for port 465, TLS for other ports
             use_ssl = self.smtp_config["port"] == 465
             use_start_tls = self.smtp_config.get("use_tls", False) and not use_ssl
 
@@ -84,39 +84,39 @@ class EmailSender:
 
     async def send_verification_email(self, to_email: str, verification_code: str, language: str = "en") -> bool:
         """
-        Отправляет email с кодом подтверждения регистрации
+        Sends email with registration verification code
 
         Args:
-            to_email (str): Email получателя
-            verification_code (str): Код подтверждения
-            language (str): Язык письма ('en', 'ru', 'de')
+            to_email (str): Recipient email
+            verification_code (str): Verification code
+            language (str): Email language ('en', 'ru', 'de')
 
         Returns:
-            bool: True если письмо отправлено успешно, False в случае ошибки
+            bool: True if email sent successfully, False on error
         """
         start_ts = datetime.utcnow()
         logger.info(f"[EmailSender] Verification email start: to={to_email} at {start_ts.isoformat()}Z")
         try:
-            # Создаем сообщение
+            # Create message
             message = MIMEMultipart("alternative")
             message["Subject"] = self._get_subject(language)
             message["From"] = self.sender_email
             message["To"] = to_email
 
-            # Получаем содержимое письма из шаблонов
+            # Get email content from templates
             text_content = self._get_text_content(verification_code, language)
             html_content = self._render_html_template(verification_code, language)
 
-            # Создаем части письма
+            # Create email parts
             text_part = MIMEText(text_content, "plain", "utf-8")
             html_part = MIMEText(html_content, "html", "utf-8")
 
-            # Добавляем части в сообщение
+            # Add parts to message
             message.attach(text_part)
             message.attach(html_part)
 
-            # Отправляем email асинхронно с таймаутом 10 секунд
-            # Для порта 465 используем SSL, для других портов - TLS
+            # Send email asynchronously with 10 second timeout
+            # Use SSL for port 465, TLS for other ports
             use_ssl = self.smtp_config["port"] == 465
             use_start_tls = self.smtp_config.get("use_tls", False) and not use_ssl
 
@@ -145,38 +145,38 @@ class EmailSender:
 
     async def send_registration_success_email(self, to_email: str, language: str = "en") -> bool:
         """
-        Отправляет email с поздравлением об успешной регистрации
+        Sends email with successful registration congratulations
 
         Args:
-            to_email (str): Email получателя
-            language (str): Язык письма ('en', 'ru', 'de')
+            to_email (str): Recipient email
+            language (str): Email language ('en', 'ru', 'de')
 
         Returns:
-            bool: True если письмо отправлено успешно, False в случае ошибки
+            bool: True if email sent successfully, False on error
         """
         start_ts = datetime.utcnow()
         logger.info(f"[EmailSender] Registration success email start: to={to_email} at {start_ts.isoformat()}Z")
         try:
-            # Создаем сообщение
+            # Create message
             message = MIMEMultipart("alternative")
             message["Subject"] = self._get_registration_success_subject(language)
             message["From"] = self.sender_email
             message["To"] = to_email
 
-            # Получаем содержимое письма из шаблонов
+            # Get email content from templates
             text_content = self._get_registration_success_text_content(language)
             html_content = self._render_registration_success_html_template(language)
 
-            # Создаем части письма
+            # Create email parts
             text_part = MIMEText(text_content, "plain", "utf-8")
             html_part = MIMEText(html_content, "html", "utf-8")
 
-            # Добавляем части в сообщение
+            # Add parts to message
             message.attach(text_part)
             message.attach(html_part)
 
-            # Отправляем email асинхронно с таймаутом 10 секунд
-            # Для порта 465 используем SSL, для других портов - TLS
+            # Send email asynchronously with 10 second timeout
+            # Use SSL for port 465, TLS for other ports
             use_ssl = self.smtp_config["port"] == 465
             use_start_tls = self.smtp_config.get("use_tls", False) and not use_ssl
 
@@ -204,7 +204,7 @@ class EmailSender:
             return False
 
     def _get_reset_subject(self, language: str) -> str:
-        """Возвращает тему письма сброса пароля в зависимости от языка"""
+        """Returns password reset email subject based on language"""
         subjects = {
             "en": "FireFeed - Password Reset",
             "ru": "FireFeed - Сброс пароля",
@@ -213,7 +213,7 @@ class EmailSender:
         return subjects.get(language, subjects["en"])
 
     def _get_subject(self, language: str) -> str:
-        """Возвращает тему письма в зависимости от языка"""
+        """Returns email subject based on language"""
         subjects = {
             "en": "FireFeed - Account Verification Code",
             "ru": "FireFeed - Код подтверждения аккаунта",
@@ -222,7 +222,7 @@ class EmailSender:
         return subjects.get(language, subjects["en"])
 
     def _get_reset_text_content(self, reset_token: str, language: str) -> str:
-        """Возвращает текстовую версию письма сброса пароля"""
+        """Returns text version of password reset email"""
         reset_link = f"https://firefeed.net/reset-password/confirm/{reset_token}"
         if language == "ru":
             return f"""
@@ -274,7 +274,7 @@ FireFeed Team
             """.strip()
 
     def _get_text_content(self, verification_code: str, language: str) -> str:
-        """Возвращает текстовую версию письма"""
+        """Returns text version of email"""
         if language == "ru":
             return f"""
 Добро пожаловать в FireFeed!
@@ -310,8 +310,8 @@ FireFeed Team
             """.strip()
 
     def _render_reset_html_template(self, reset_token: str, language: str) -> str:
-        """Рендерит HTML шаблон сброса пароля с помощью Jinja2"""
-        # Определяем имя файла шаблона
+        """Renders password reset HTML template using Jinja2"""
+        # Define template file name
         template_files = {
             "en": "password_reset_email_en.html",
             "ru": "password_reset_email_ru.html",
@@ -321,17 +321,17 @@ FireFeed Team
         template_name = template_files.get(language, template_files["en"])
 
         try:
-            # Загружаем и рендерим шаблон
+            # Load and render template
             template = self.jinja_env.get_template(template_name)
             return template.render(reset_token=reset_token, current_year=datetime.now().year)
         except Exception as e:
             logger.error(f"Failed to render template {template_name}: {str(e)}")
-            # Возвращаем базовый HTML контент если шаблон не найден
+            # Return basic HTML content if template not found
             return self._get_fallback_reset_html_content(reset_token, language)
 
     def _render_html_template(self, verification_code: str, language: str) -> str:
-        """Рендерит HTML шаблон с помощью Jinja2"""
-        # Определяем имя файла шаблона
+        """Renders HTML template using Jinja2"""
+        # Define template file name
         template_files = {
             "en": "verification_email_en.html",
             "ru": "verification_email_ru.html",
@@ -341,16 +341,16 @@ FireFeed Team
         template_name = template_files.get(language, template_files["en"])
 
         try:
-            # Загружаем и рендерим шаблон
+            # Load and render template
             template = self.jinja_env.get_template(template_name)
             return template.render(verification_code=verification_code, current_year=datetime.now().year)
         except Exception as e:
             logger.error(f"Failed to render template {template_name}: {str(e)}")
-            # Возвращаем базовый HTML контент если шаблон не найден
+            # Return basic HTML content if template not found
             return self._get_fallback_html_content(verification_code, language)
 
     def _get_registration_success_subject(self, language: str) -> str:
-        """Возвращает тему письма успешной регистрации в зависимости от языка"""
+        """Returns successful registration email subject based on language"""
         subjects = {
             "en": "FireFeed - Registration Successful",
             "ru": "FireFeed - Регистрация успешна",
@@ -359,7 +359,7 @@ FireFeed Team
         return subjects.get(language, subjects["en"])
 
     def _get_registration_success_text_content(self, language: str) -> str:
-        """Возвращает текстовую версию письма успешной регистрации"""
+        """Returns text version of successful registration email"""
         if language == "ru":
             return f"""
 FireFeed - Регистрация успешна
@@ -404,8 +404,8 @@ FireFeed Team
             """.strip()
 
     def _render_registration_success_html_template(self, language: str) -> str:
-        """Рендерит HTML шаблон успешной регистрации с помощью Jinja2"""
-        # Определяем имя файла шаблона
+        """Renders successful registration HTML template using Jinja2"""
+        # Define template file name
         template_files = {
             "en": "registration_success_email_en.html",
             "ru": "registration_success_email_ru.html",
@@ -415,16 +415,16 @@ FireFeed Team
         template_name = template_files.get(language, template_files["en"])
 
         try:
-            # Загружаем и рендерим шаблон
+            # Load and render template
             template = self.jinja_env.get_template(template_name)
             return template.render(current_year=datetime.now().year)
         except Exception as e:
             logger.error(f"Failed to render template {template_name}: {str(e)}")
-            # Возвращаем базовый HTML контент если шаблон не найден
+            # Return basic HTML content if template not found
             return self._get_fallback_registration_success_html_content(language)
 
     def _get_fallback_html_content(self, verification_code: str, language: str) -> str:
-        """Возвращает базовый HTML контент если шаблон не найден"""
+        """Returns basic HTML content if template not found"""
         year = datetime.now().year
         if language == "ru":
             return f"""
@@ -533,7 +533,7 @@ FireFeed Team
             """.strip()
 
     def _get_fallback_reset_html_content(self, reset_token: str, language: str) -> str:
-        """Возвращает базовый HTML контент для сброса пароля если шаблон не найден"""
+        """Returns basic HTML content for password reset if template not found"""
         year = datetime.now().year
         reset_link = f"https://firefeed.net/reset-password/confirm/{reset_token}"
         if language == "ru":
@@ -643,7 +643,7 @@ FireFeed Team
             """.strip()
 
     def _get_fallback_registration_success_html_content(self, language: str) -> str:
-        """Возвращает базовый HTML контент для успешной регистрации если шаблон не найден"""
+        """Returns basic HTML content for successful registration if template not found"""
         year = datetime.now().year
         if language == "ru":
             return f"""
@@ -761,50 +761,50 @@ FireFeed Team
             """.strip()
 
 
-# Создаем глобальный экземпляр отправщика
+# Create global sender instance
 email_sender = EmailSender()
 
 
-# Удобная функция для отправки письма
+# Convenient function for sending email
 async def send_verification_email(to_email: str, verification_code: str, language: str = "en") -> bool:
     """
-    Удобная функция для отправки email с кодом подтверждения
+    Convenient function for sending email with verification code
 
     Args:
-        to_email (str): Email получателя
-        verification_code (str): Код подтверждения
-        language (str): Язык письма ('en', 'ru', 'de')
+        to_email (str): Recipient email
+        verification_code (str): Verification code
+        language (str): Email language ('en', 'ru', 'de')
 
     Returns:
-        bool: True если письмо отправлено успешно, False в случае ошибки
+        bool: True if email sent successfully, False on error
     """
     return await email_sender.send_verification_email(to_email, verification_code, language)
 
 
 async def send_password_reset_email(to_email: str, reset_token: str, language: str = "en") -> bool:
     """
-    Удобная функция для отправки email с ссылкой сброса пароля
+    Convenient function for sending email with password reset link
 
     Args:
-        to_email (str): Email получателя
-        reset_token (str): Токен сброса пароля
-        language (str): Язык письма ('en', 'ru', 'de')
+        to_email (str): Recipient email
+        reset_token (str): Password reset token
+        language (str): Email language ('en', 'ru', 'de')
 
     Returns:
-        bool: True если письмо отправлено успешно, False в случае ошибки
+        bool: True if email sent successfully, False on error
     """
     return await email_sender.send_password_reset_email(to_email, reset_token, language)
 
 
 async def send_registration_success_email(to_email: str, language: str = "en") -> bool:
     """
-    Удобная функция для отправки email с поздравлением об успешной регистрации
+    Convenient function for sending email with successful registration congratulations
 
     Args:
-        to_email (str): Email получателя
-        language (str): Язык письма ('en', 'ru', 'de')
+        to_email (str): Recipient email
+        language (str): Email language ('en', 'ru', 'de')
 
     Returns:
-        bool: True если письмо отправлено успешно, False в случае ошибки
+        bool: True if email sent successfully, False on error
     """
     return await email_sender.send_registration_success_email(to_email, language)

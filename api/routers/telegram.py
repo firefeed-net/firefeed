@@ -59,7 +59,7 @@ async def generate_telegram_link_code(request: Request, current_user: dict = Dep
         raise HTTPException(status_code=500, detail="Failed to generate link code")
 
     return models.TelegramLinkResponse(
-        link_code=link_code, instructions="Отправьте этот код в Telegram бота командой: /link <код>"
+        link_code=link_code, instructions="Send this code to the Telegram bot with the command: /link <code>"
     )
 
 

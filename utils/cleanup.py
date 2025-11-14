@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Модуль для периодической очистки базы данных.
+Module for periodic database cleanup.
 
-Включает функции для удаления неверифицированных и удаленных пользователей.
+Includes functions for deleting unverified and deleted users.
 """
 
 import asyncio
@@ -16,43 +16,43 @@ logger = logging.getLogger(__name__)
 
 
 async def cleanup_users():
-    """Удаляет неверифицированных и удаленных пользователей."""
+    """Deletes unverified and deleted users."""
     pool = await database.get_db_pool()
     if pool is None:
-        logger.error("Не удалось получить пул подключений к БД")
+        logger.error("Failed to get DB connection pool")
         return
 
     try:
         async with pool.acquire() as conn:
             async with conn.cursor() as cur:
-                # Удаляем пользователей с is_deleted = TRUE
+                # Delete users with is_deleted = TRUE
                 await cur.execute("DELETE FROM users WHERE is_deleted = TRUE")
                 deleted_count = cur.rowcount
-                logger.info(f"Удалено {deleted_count} удаленных пользователей")
+                logger.info(f"Deleted {deleted_count} deleted users")
 
-                # Удаляем неверифицированных пользователей, зарегистрированных более 24 часов назад
+                # Delete unverified users registered more than 24 hours ago
                 cutoff_time = datetime.utcnow() - timedelta(hours=24)
                 await cur.execute(
                     "DELETE FROM users WHERE is_verified = FALSE AND created_at < %s",
                     (cutoff_time,)
                 )
                 unverified_count = cur.rowcount
-                logger.info(f"Удалено {unverified_count} неверифицированных пользователей (старше 24 часов)")
+                logger.info(f"Deleted {unverified_count} unverified users (older than 24 hours)")
 
                 total_deleted = deleted_count + unverified_count
-                logger.info(f"Всего удалено пользователей: {total_deleted}")
+                logger.info(f"Total users deleted: {total_deleted}")
 
     except Exception as e:
-        logger.error(f"Ошибка при очистке пользователей: {e}")
+        logger.error(f"Error cleaning users: {e}")
     finally:
         await database.close_db_pool()
 
 
 async def periodic_cleanup_users():
-    """Периодическая задача очистки пользователей (раз в 24 часа)."""
+    """Periodic user cleanup task (every 24 hours)."""
     while True:
-        await asyncio.sleep(24 * 60 * 60)  # 24 часа
+        await asyncio.sleep(24 * 60 * 60)  # 24 hours
         try:
             await cleanup_users()
         except Exception as e:
-            logger.error(f"Ошибка в периодической очистке пользователей: {e}")
+            logger.error(f"Error in periodic user cleanup: {e}")

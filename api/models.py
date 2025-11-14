@@ -2,17 +2,17 @@ from pydantic import BaseModel, EmailStr, Field
 from typing import List, Optional, Generic, TypeVar, Dict, Set
 from datetime import datetime
 
-# Определяем типовой параметр для Generic
+# Define type parameter for Generic
 T = TypeVar("T")
 
 
-# Модель для представления перевода на конкретный язык
+# Model for representing translation to a specific language
 class LanguageTranslation(BaseModel):
     title: Optional[str] = None
     content: Optional[str] = None
 
 
-# Модель для представления новости в API
+# Model for representing news in API
 class RSSItem(BaseModel):
     news_id: str
     original_title: str
@@ -20,9 +20,9 @@ class RSSItem(BaseModel):
     original_language: str
     image_url: Optional[str] = None
     category: Optional[str] = None
-    source: Optional[str] = None  # Имя источника новости
+    source: Optional[str] = None  # News source name
     source_url: Optional[str] = None
-    published_at: Optional[str] = None  # ISO формат даты-времени
+    published_at: Optional[str] = None  # ISO date-time format
     translations: Optional[Dict[str, LanguageTranslation]] = None
 
     class Config:
@@ -49,12 +49,12 @@ class PaginatedResponse(BaseModel, Generic[T]):
     results: List[T]
 
 
-# Модель для ответа с ошибкой (опционально, но полезно)
+# Model for error response (optional, but useful)
 class HTTPError(BaseModel):
     detail: str
 
 
-# --- Модели для пользователей ---
+# --- User models ---
 
 
 class UserBase(BaseModel):
@@ -107,29 +107,29 @@ class PasswordResetConfirm(BaseModel):
     new_password: str = Field(..., min_length=8)
 
 
-# --- Модели для верификации пользователей ---
+# --- User verification models ---
 
 
 class EmailVerificationRequest(BaseModel):
-    """Модель для запроса верификации email пользователя."""
+    """Model for user email verification request."""
 
     email: EmailStr
     code: str = Field(..., min_length=6, max_length=6, description="6-digit verification code")
 
 
 class ResendVerificationRequest(BaseModel):
-    """Модель для запроса повторной отправки кода верификации."""
+    """Model for requesting resend of verification code."""
 
     email: EmailStr
 
 
 class SuccessResponse(BaseModel):
-    """Модель для ответа об успешной операции."""
+    """Model for successful operation response."""
 
     message: str
 
 
-# --- Модели для пользовательских RSS-лент ---
+# --- User RSS feeds models ---
 
 
 class UserRSSFeedBase(BaseModel):
@@ -168,7 +168,7 @@ class UserCategoriesResponse(BaseModel):
     category_ids: List[int]
 
 
-# --- Модели для привязки Telegram ---
+# --- Telegram linking models ---
 
 
 class TelegramLinkResponse(BaseModel):
@@ -182,7 +182,7 @@ class TelegramLinkStatusResponse(BaseModel):
     linked_at: Optional[str] = None
 
 
-# --- Модели для API-ключей ---
+# --- API keys models ---
 
 
 class UserApiKeyBase(BaseModel):

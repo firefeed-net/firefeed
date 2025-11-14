@@ -1,116 +1,116 @@
-# Руководство по внесению вклада в FireFeed
+# Contributing Guide to FireFeed
 
-Благодарим за интерес к проекту FireFeed! Мы приветствуем вклады от сообщества.
+Thank you for your interest in the FireFeed project! We welcome contributions from the community.
 
-## Способы внести вклад
+## Ways to Contribute
 
-### Сообщение об ошибках
-Если вы обнаружили ошибку, пожалуйста:
-1. Проверьте, не была ли ошибка уже reported в Issues
-2. Создайте новое Issue с четким описанием:
-   - Шаги для воспроизведения
-   - Ожидаемое поведение
-   - Фактическое поведение
-   - Версии Python и зависимостей
-   - Логи ошибок (если есть)
+### Reporting Bugs
+If you find a bug, please:
+1. Check if the bug has already been reported in Issues
+2. Create a new Issue with a clear description:
+   - Steps to reproduce
+   - Expected behavior
+   - Actual behavior
+   - Python and dependency versions
+   - Error logs (if any)
 
-### Предложение новых функций
-Для предложения новых функций:
-1. Опишите проблему, которую решает функция
-2. Предложите конкретную реализацию
-3. Объясните, как это улучшит проект
-4. Укажите приоритет (низкий/средний/высокий)
+### Suggesting New Features
+For suggesting new features:
+1. Describe the problem the feature solves
+2. Suggest a specific implementation
+3. Explain how this will improve the project
+4. Specify priority (low/medium/high)
 
-### Участие в разработке
-1. Выберите Issue из списка "good first issue" или обсудите свою идею
-2. Сообщите, что работаете над Issue
-3. Следуйте стандартам кода проекта
+### Participating in Development
+1. Choose an Issue from the "good first issue" list or discuss your idea
+2. Report that you are working on the Issue
+3. Follow the project's code standards
 
-## Процесс разработки
+## Development Process
 
-### Настройка окружения
+### Environment Setup
 ```bash
-# Клонируйте репозиторий c GitHub
+# Clone the repository from GitHub
 git clone https://github.com/yuremweiland/firefeed.git
-# или GitVerse
+# or GitVerse
 git clone https://gitverse.ru/yuryweiland/firefeed.git
 cd firefeed
 
-# Создайте виртуальное окружение
+# Create a virtual environment
 python -m venv venv
 source venv/bin/activate  # Linux/MacOS
 # venv\Scripts\activate  # Windows
 
-# Установите зависимости
+# Install dependencies
 pip install -r requirements.txt
 ```
 
-### Создание ветки
+### Creating a Branch
 git checkout -b feature/your-feature-name
-# или
+# or
 git checkout -b fix/issue-description
 
-### Стандарты кода
+### Code Standards
 
-- Следуйте PEP 8 для Python кода
-- Используйте type hints для всех новых функций
-- Пишите docstrings для всех публичных методов
-- Добавляйте тесты для нового функционала
+- Follow PEP 8 for Python code
+- Use type hints for all new functions
+- Write docstrings for all public methods
+- Add tests for new functionality
 
-### Коммиты
+### Commits
 
-Используйте понятные сообщения коммитов:
+Use clear commit messages:
 
 ```
-feat: добавить поддержку новых RSS источников
-fix: исправить утечку памяти в переводчике
-docs: обновить документацию API
-test: добавить тесты для парсера
+feat: add support for new RSS sources
+fix: fix memory leak in translator
+docs: update API documentation
+test: add tests for parser
 ```
 
-### Тестирование
+### Testing
 
 ```bash
-# Запуск всех тестов
+# Run all tests
 pytest
 
-# Запуск с покрытием
+# Run with coverage
 pytest --cov=.
 
-# Проверка стиля кода
+# Check code style
 flake8 .
 black --check .
 mypy .
 ```
 
-### Создание Pull Request
+### Creating a Pull Request
 
-1. Обновите свою ветку с main: git pull origin main
-2. Убедитесь, что все тесты проходят
-3. Создайте PR с описанием изменений
-4. Укажите связанные Issues
-5. Ждите review от мейнтейнеров
+1. Update your branch with main: git pull origin main
+2. Make sure all tests pass
+3. Create a PR with a description of changes
+4. Specify related Issues
+5. Wait for review from maintainers
 
-### Структура проекта
+### Project Structure
 
 ```
 firefeed/
-├── api/                 # FastAPI приложение
-├── tests/                 # Unit-тесты
-├── bot.py              # Telegram бот
-├── rss_parser.py       # RSS парсер
-├── firefeed_translator.py    # Переводчик
-├── firefeed_dublicate_detector.py  # Детектор дубликатов
-├── user_manager.py     # Менеджер пользователей
-├── requirements.txt    # Зависимости
-└── config/            # Конфигурации
+├── api/                 # FastAPI application
+├── tests/                 # Unit tests
+├── bot.py              # Telegram bot
+├── rss_parser.py       # RSS parser
+├── firefeed_translator.py    # Translator
+├── firefeed_dublicate_detector.py  # Duplicate detector
+├── user_manager.py     # User manager
+├── requirements.txt    # Dependencies
+└── config/            # Configurations
 ```
 
-## Контакты
+## Contacts
 
-Для вопросов по разработке:
+For development questions:
 
-- Создайте Issue в GitHub
-- Укажите @yuremweiland для срочных вопросов
+- Create an Issue in GitHub
+- Mention @yuremweiland for urgent questions
 
-Спасибо за ваш вклад!
+Thank you for your contribution!

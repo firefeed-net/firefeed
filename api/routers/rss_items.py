@@ -160,7 +160,7 @@ async def get_rss_items(
 
     pool = await database.get_db_pool()
     if pool is None:
-        raise HTTPException(status_code=500, detail="Ошибка подключения к базе данных")
+        raise HTTPException(status_code=500, detail="Database connection error")
 
     try:
         total_count, results, columns = await database.get_all_rss_items_list(
@@ -179,8 +179,8 @@ async def get_rss_items(
             page_offset,
         )
     except Exception as e:
-        logger.error(f"[API] Ошибка при выполнении запроса в get_rss_items: {e}")
-        raise HTTPException(status_code=500, detail="Внутренняя ошибка сервера")
+        logger.error(f"[API] Error executing query in get_rss_items: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
     rss_items_list = process_rss_items_results(results, columns, display_language, original_language, include_all_translations)
     return {"count": len(rss_items_list), "results": rss_items_list}
@@ -217,7 +217,7 @@ async def get_rss_items(
 async def get_rss_item_by_id(request: Request, rss_item_id: str, current_user: dict = Depends(get_current_user_by_api_key)):
     pool = await database.get_db_pool()
     if pool is None:
-        raise HTTPException(status_code=500, detail="Ошибка подключения к базе данных")
+        raise HTTPException(status_code=500, detail="Database connection error")
 
     try:
         full_result = await database.get_rss_item_by_id_full(pool, rss_item_id)
@@ -238,8 +238,8 @@ async def get_rss_item_by_id(request: Request, rss_item_id: str, current_user: d
             "translations": build_translations_dict(row_dict),
         }
     except Exception as e:
-        logger.error(f"[API] Ошибка при выполнении запроса в get_rss_item_by_id: {e}")
-        raise HTTPException(status_code=500, detail="Внутренняя ошибка сервера")
+        logger.error(f"[API] Error executing query in get_rss_item_by_id: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
     return models.RSSItem(**item_data)
 
 
@@ -302,13 +302,13 @@ async def get_categories(
 
     pool = await database.get_db_pool()
     if pool is None:
-        raise HTTPException(status_code=500, detail="Ошибка подключения к базе данных")
+        raise HTTPException(status_code=500, detail="Database connection error")
 
     try:
         total_count, results = await database.get_all_categories_list(pool, limit, offset, source_ids_list)
     except Exception as e:
-        logger.error(f"[API] Ошибка при выполнении запроса в get_categories: {e}")
-        raise HTTPException(status_code=500, detail="Внутренняя ошибка сервера")
+        logger.error(f"[API] Error executing query in get_categories: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
     return {"count": total_count, "results": results}
 
@@ -377,13 +377,13 @@ async def get_sources(
 
     pool = await database.get_db_pool()
     if pool is None:
-        raise HTTPException(status_code=500, detail="Ошибка подключения к базе данных")
+        raise HTTPException(status_code=500, detail="Database connection error")
 
     try:
         total_count, results = await database.get_all_sources_list(pool, limit, offset, category_ids)
     except Exception as e:
-        logger.error(f"[API] Ошибка при выполнении запроса в get_sources: {e}")
-        raise HTTPException(status_code=500, detail="Внутренняя ошибка сервера")
+        logger.error(f"[API] Error executing query in get_sources: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
     return {"count": total_count, "results": results}
 

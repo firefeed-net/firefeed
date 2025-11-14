@@ -1,9 +1,9 @@
-# Терминологический словарь для новостного переводчика
-# Мультиязычный словарь: ключ - английский термин, значение - dict с переводами
-# Регистронезависимый (используется re.IGNORECASE)
+# Terminology dictionary for news translator
+# Multilingual dictionary: key - English term, value - dict with translations
+# Case-insensitive (uses re.IGNORECASE)
 
 TERMINOLOGY_DICT = {
-    # Компании и бренды (бренды часто остаются на английском)
+    # Companies and brands (brands often remain in English)
     "Apple": {"en": "Apple", "ru": "Apple", "de": "Apple", "fr": "Apple"},
     "Google": {"en": "Google", "ru": "Google", "de": "Google", "fr": "Google"},
     "Microsoft": {"en": "Microsoft", "ru": "Microsoft", "de": "Microsoft", "fr": "Microsoft"},
@@ -69,7 +69,7 @@ TERMINOLOGY_DICT = {
     "Opera": {"en": "Opera", "ru": "Opera", "de": "Opera", "fr": "Opera"},
     "Brave": {"en": "Brave", "ru": "Brave", "de": "Brave", "fr": "Brave"},
     "Tor Browser": {"en": "Tor Browser", "ru": "Tor Browser", "de": "Tor Browser", "fr": "Tor Browser"},
-    # Криптовалюты
+    # Cryptocurrencies
     "Bitcoin": {"en": "Bitcoin", "ru": "Bitcoin", "de": "Bitcoin", "fr": "Bitcoin"},
     "Ethereum": {"en": "Ethereum", "ru": "Ethereum", "de": "Ethereum", "fr": "Ethereum"},
     "Dogecoin": {"en": "Dogecoin", "ru": "Dogecoin", "de": "Dogecoin", "fr": "Dogecoin"},
@@ -80,7 +80,7 @@ TERMINOLOGY_DICT = {
     "Polkadot": {"en": "Polkadot", "ru": "Polkadot", "de": "Polkadot", "fr": "Polkadot"},
     "Chainlink": {"en": "Chainlink", "ru": "Chainlink", "de": "Chainlink", "fr": "Chainlink"},
     "Uniswap": {"en": "Uniswap", "ru": "Uniswap", "de": "Uniswap", "fr": "Uniswap"},
-    # ИИ и технологии (с переводами)
+    # AI and technology (with translations)
     "OpenAI": {"en": "OpenAI", "ru": "OpenAI", "de": "OpenAI", "fr": "OpenAI"},
     "ChatGPT": {"en": "ChatGPT", "ru": "ChatGPT", "de": "ChatGPT", "fr": "ChatGPT"},
     "GPT-3": {"en": "GPT-3", "ru": "GPT-3", "de": "GPT-3", "fr": "GPT-3"},

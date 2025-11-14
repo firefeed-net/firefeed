@@ -5,31 +5,31 @@ T = TypeVar("T")
 
 
 class APIResponse(BaseModel):
-    """Базовый класс для стандартизации API ответов"""
+    """Base class for standardizing API responses"""
 
     @staticmethod
     def paginated_response(count: int, results: List) -> dict:
-        """Форматирует ответ с пагинацией"""
+        """Formats a paginated response"""
         return {"count": count, "results": results}
 
     @staticmethod
     def single_item_response(item) -> dict:
-        """Форматирует ответ с одним элементом"""
+        """Formats a response with a single item"""
         return {"result": item}
 
     @staticmethod
     def success_response(message: str = "Success") -> dict:
-        """Форматирует успешный ответ"""
+        """Formats a success response"""
         return {"message": message}
 
     @staticmethod
     def error_response(message: str, status_code: int = 400) -> dict:
-        """Форматирует ответ с ошибкой"""
+        """Formats an error response"""
         return {"error": message, "status_code": status_code}
 
 
 class PaginatedResponse(BaseModel, Generic[T]):
-    """Стандартизированная модель для пагинированных ответов"""
+    """Standardized model for paginated responses"""
 
     count: int
     results: List[T]
