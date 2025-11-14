@@ -98,6 +98,64 @@ The project consists of several key components:
 5. **Duplicate Detector** (`firefeed_dublicate_detector.py`) - ML-based duplicate detection
 6. **User Management** (`user_manager.py`) - user and subscription management
 
+### Telegram Bot
+
+The Telegram bot serves as the primary interface for users to interact with the FireFeed system. It provides personalized news delivery, subscription management, and multilingual support.
+
+#### Key Features
+
+- **Personalized News Delivery**: Users receive news based on their category subscriptions in their preferred language
+- **Multilingual Interface**: Full localization support for English, Russian, German, and French
+- **Subscription Management**: Easy category-based subscription configuration through inline keyboards
+- **Automatic Publishing**: News items are automatically published to configured Telegram channels
+
+#### Publication Rate Limiting
+
+To prevent spam and ensure fair usage, the bot implements sophisticated rate limiting for news publications:
+
+##### Feed-Level Limits
+Each RSS feed has configurable limits:
+- `cooldown_minutes`: Minimum time between processing feed items (default: 60 minutes)
+- `max_news_per_hour`: Maximum number of news items per hour from this feed (default: 10)
+
+##### Telegram Publication Checks
+Before publishing any news item to Telegram channels, the system performs two types of checks:
+
+1. **Count-based Limiting**:
+   - Counts recent publications from the same feed within the `cooldown_minutes` period
+   - If count >= `max_news_per_hour`, skips publication
+   - Uses data from `rss_items_telegram_published` and `rss_items_telegram_published_originals` tables
+
+2. **Time-based Limiting**:
+   - Checks time since last publication from the same feed
+   - Minimum interval = `60 / max_news_per_hour` minutes (e.g., 6 minutes for 10 news/hour)
+   - Effective limit = minimum of time-based interval and `cooldown_minutes`
+   - If elapsed time < effective limit, skips publication
+
+##### How It Works
+```python
+# Example: feed with cooldown_minutes=120, max_news_per_hour=1
+# - Maximum 1 publication per 120 minutes
+# - Minimum 60 minutes between publications (60/1 = 60)
+# - Effective minimum interval: min(60, 120) = 60 minutes
+
+# Before each publication attempt:
+recent_count = get_recent_telegram_publications_count(feed_id, 120)
+if recent_count >= 1:
+    skip_publication()
+
+last_time = get_last_telegram_publication_time(feed_id)
+if last_time:
+    elapsed = now - last_time
+    min_interval = timedelta(minutes=60/1)  # 60 minutes
+    cooldown_limit = timedelta(minutes=120)
+    effective_limit = min(min_interval, cooldown_limit)
+    if elapsed < effective_limit:
+        skip_publication()
+```
+
+This ensures that even if multiple news items are processed simultaneously from the same feed, only the allowed number will be published to Telegram, preventing rate limit violations and maintaining quality user experience.
+
 ### Scalability and Reliability
 
 - **Horizontal scaling** through microservice architecture

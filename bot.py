@@ -6,6 +6,7 @@ import re
 import sys
 import time
 from dataclasses import dataclass
+from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, Optional
 
 import aiohttp
@@ -49,6 +50,7 @@ class PreparedRSSItem:
     original_data: Dict[str, Any]
     translations: Dict[str, Dict[str, str]]
     image_filename: Optional[str]
+    feed_id: int
 
 
 # --- Database functions ---
@@ -116,6 +118,88 @@ async def get_translation_id(news_id: str, language: str) -> int:
     except Exception as e:
         logger.error(f"Error getting translation ID for {news_id} in {language}: {e}")
         return None
+
+
+async def get_feed_cooldown_and_max_news(feed_id: int) -> tuple[int, int]:
+    """Gets cooldown minutes and max news per hour for feed."""
+    try:
+        db_pool = await get_shared_db_pool()
+        async with db_pool.acquire() as connection:
+            async with connection.cursor() as cursor:
+                query = """
+                    SELECT COALESCE(cooldown_minutes, 60), COALESCE(max_news_per_hour, 10)
+                    FROM rss_feeds WHERE id = %s
+                """
+                await cursor.execute(query, (feed_id,))
+                result = await cursor.fetchone()
+                return (result[0], result[1]) if result else (60, 10)
+    except Exception as e:
+        logger.error(f"Error getting cooldown and max_news for feed {feed_id}: {e}")
+        return (60, 10)
+
+
+async def get_last_telegram_publication_time(feed_id: int) -> Optional[datetime]:
+    """Get last Telegram publication time for feed."""
+    try:
+        db_pool = await get_shared_db_pool()
+        async with db_pool.acquire() as connection:
+            async with connection.cursor() as cursor:
+                # Get latest publication time from both tables
+                query = """
+                SELECT GREATEST(
+                    COALESCE((
+                        SELECT MAX(rtp.published_at)
+                        FROM rss_items_telegram_published rtp
+                        JOIN news_translations nt ON rtp.translation_id = nt.id
+                        JOIN published_news_data pnd ON nt.news_id = pnd.news_id
+                        WHERE pnd.rss_feed_id = %s
+                    ), '1970-01-01'::timestamp),
+                    COALESCE((
+                        SELECT MAX(rtpo.created_at)
+                        FROM rss_items_telegram_published_originals rtpo
+                        JOIN published_news_data pnd ON rtpo.news_id = pnd.news_id
+                        WHERE pnd.rss_feed_id = %s
+                    ), '1970-01-01'::timestamp)
+                ) as last_time
+                """
+                await cursor.execute(query, (feed_id, feed_id))
+                row = await cursor.fetchone()
+                if row and row[0] and row[0] > datetime(1970, 1, 1, tzinfo=timezone.utc):
+                    return row[0]
+                return None
+    except Exception as e:
+        logger.error(f"Error getting last Telegram publication time for feed {feed_id}: {e}")
+        return None
+
+
+async def get_recent_telegram_publications_count(feed_id: int, minutes: int) -> int:
+    """Get count of recent Telegram publications for feed."""
+    try:
+        db_pool = await get_shared_db_pool()
+        async with db_pool.acquire() as connection:
+            async with connection.cursor() as cursor:
+                time_threshold = datetime.now(timezone.utc) - timedelta(minutes=minutes)
+                # Count publications from both tables
+                query = """
+                SELECT COUNT(*) FROM (
+                    SELECT rtp.published_at
+                    FROM rss_items_telegram_published rtp
+                    JOIN news_translations nt ON rtp.translation_id = nt.id
+                    JOIN published_news_data pnd ON nt.news_id = pnd.news_id
+                    WHERE pnd.rss_feed_id = %s AND rtp.published_at >= %s
+                    UNION ALL
+                    SELECT rtpo.created_at as published_at
+                    FROM rss_items_telegram_published_originals rtpo
+                    JOIN published_news_data pnd ON rtpo.news_id = pnd.news_id
+                    WHERE pnd.rss_feed_id = %s AND rtpo.created_at >= %s
+                ) as combined_publications
+                """
+                await cursor.execute(query, (feed_id, time_threshold, feed_id, time_threshold))
+                row = await cursor.fetchone()
+                return row[0] if row else 0
+    except Exception as e:
+        logger.error(f"Error getting recent Telegram publications count for feed {feed_id}: {e}")
+        return 0
 
 
 # --- Image validation functions ---
@@ -701,7 +785,29 @@ async def post_to_channel(bot, prepared_rss_item: PreparedRSSItem):
     """Publishes RSS item to Telegram channels."""
     original_title = prepared_rss_item.original_data["title"]
     news_id = prepared_rss_item.original_data.get("id")
+    feed_id = prepared_rss_item.feed_id
     logger.info(f"Publishing RSS item to channels: {original_title[:50]}...")
+
+    # Check Telegram publication limits
+    cooldown_minutes, max_news_per_hour = await get_feed_cooldown_and_max_news(feed_id)
+    recent_telegram_count = await get_recent_telegram_publications_count(feed_id, cooldown_minutes)
+
+    if recent_telegram_count >= max_news_per_hour:
+        logger.info(f"[SKIP] Feed {feed_id} reached Telegram publication limit {max_news_per_hour} in {cooldown_minutes} minutes. Published: {recent_telegram_count}")
+        return
+
+    # Check time-based limit
+    last_telegram_time = await get_last_telegram_publication_time(feed_id)
+    if last_telegram_time:
+        elapsed = datetime.now(timezone.utc) - last_telegram_time
+        min_interval = timedelta(minutes=60 / max_news_per_hour)
+        cooldown_limit = timedelta(minutes=cooldown_minutes)
+        effective_limit = min(min_interval, cooldown_limit)
+        if elapsed < effective_limit:
+            remaining_time = effective_limit - elapsed
+            logger.info(f"[SKIP] Feed {feed_id} on Telegram cooldown. Remaining: {remaining_time}")
+            return
+
     logger.debug(f"post_to_channel prepared_rss_item = {prepared_rss_item}")
     original_content = prepared_rss_item.original_data.get("content", "")
     category = prepared_rss_item.original_data.get("category", "")
@@ -864,6 +970,7 @@ async def process_rss_item(context, rss_item_from_api, subscribers_cache=None, c
             original_data=original_data,
             translations=translations,
             image_filename=original_data.get("image_url"),  # because that's how API returns
+            feed_id=rss_item_from_api.get("feed_id"),
         )
 
         async def limited_post_to_channel():
