@@ -39,6 +39,7 @@ def process_rss_items_results(results, columns, display_language, original_langu
             "image_url": get_full_image_url(row_dict["image_filename"]),
             "category": row_dict["category_name"],
             "source": row_dict["source_name"],
+            "source_alias": row_dict["source_alias"],
             "source_url": row_dict["source_url"],
             "published_at": format_datetime(row_dict["published_at"]),
             "feed_id": row_dict["rss_feed_id"],  # Add feed_id for proper grouping in bot processing
@@ -89,6 +90,7 @@ def process_rss_items_results(results, columns, display_language, original_langu
                                 "image_url": "https://firefeed.net/data/images/2024/01/01/abc123.jpg",
                                 "category": "Technology",
                                 "source": "Tech News",
+                                "source_alias": "bbc",
                                 "source_url": "https://technews.com/article123",
                                 "published_at": "2024-01-01T12:00:00Z",
                                 "translations": {
@@ -234,6 +236,7 @@ async def get_rss_item_by_id(request: Request, rss_item_id: str, current_user: d
             "image_url": get_full_image_url(row_dict["image_filename"]),
             "category": row_dict["category_name"],
             "source": row_dict["source_name"],
+            "source_alias": row_dict["source_alias"],
             "source_url": row_dict["source_url"],
             "published_at": format_datetime(row_dict["published_at"]),
             "translations": build_translations_dict(row_dict),

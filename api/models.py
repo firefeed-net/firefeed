@@ -23,6 +23,7 @@ class RSSItem(BaseModel):
     image_url: Optional[str] = None
     category: Optional[str] = None
     source: Optional[str] = None  # News source name
+    source_alias: Optional[str] = None  # News source alias
     source_url: Optional[str] = None
     published_at: Optional[str] = None  # ISO date-time format
     feed_id: Optional[int] = None  # RSS feed ID for grouping and processing
