@@ -25,6 +25,7 @@ class RSSItem(BaseModel):
     source: Optional[str] = None  # News source name
     source_url: Optional[str] = None
     published_at: Optional[str] = None  # ISO date-time format
+    feed_id: Optional[int] = None  # RSS feed ID for grouping and processing
     translations: Optional[Dict[str, LanguageTranslation]] = None
 
     class Config:

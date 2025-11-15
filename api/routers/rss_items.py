@@ -41,6 +41,7 @@ def process_rss_items_results(results, columns, display_language, original_langu
             "source": row_dict["source_name"],
             "source_url": row_dict["source_url"],
             "published_at": format_datetime(row_dict["published_at"]),
+            "feed_id": row_dict["rss_feed_id"],  # Add feed_id for proper grouping in bot processing
             "translations": translations,
         }
         rss_items_list.append(models.RSSItem(**item_data))
