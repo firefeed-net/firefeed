@@ -445,6 +445,14 @@ class FireFeedDuplicateDetector(DatabaseMixin):
                 await asyncio.sleep(delay_between_items)
 
         logger.info(f"[BATCH_EMBEDDING] Batch processed. Successful: {success_count}, Errors: {error_count}")
+
+        # Unload unused models after batch embedding processing
+        try:
+            unloaded = await self.processor.model_manager.unload_unused_models(max_age_seconds=1800)
+            logger.info(f"[BATCH_EMBEDDING] Unloaded {unloaded} unused models after batch processing")
+        except Exception as e:
+            logger.error(f"[BATCH_EMBEDDING] Error unloading models: {e}")
+
         return success_count, error_count
 
     async def run_batch_processor_continuously(

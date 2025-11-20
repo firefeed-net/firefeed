@@ -101,6 +101,22 @@ class ModelManager(IModelManager):
         logger.info(f"[MODEL] Clearing cache ({len(self.model_cache)} models)")
         self.model_cache.clear()
 
+    async def unload_unused_models(self, max_age_seconds: int = 3600) -> int:
+        """Unload models that haven't been used recently"""
+        current_time = time.time()
+        models_to_remove = []
+
+        for direction, cached in self.model_cache.items():
+            if current_time - cached.last_used > max_age_seconds:
+                models_to_remove.append(direction)
+
+        for direction in models_to_remove:
+            logger.info(f"[MODEL] Unloading unused model for {direction}")
+            del self.model_cache[direction]
+
+        logger.info(f"[MODEL] Unloaded {len(models_to_remove)} unused models")
+        return len(models_to_remove)
+
     def get_stats(self) -> Dict[str, Any]:
         """Get model cache statistics"""
         total_models = len(self.model_cache)

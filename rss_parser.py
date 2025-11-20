@@ -56,6 +56,10 @@ class RSSParserService:
                 result = await self.rss_manager.process_all_feeds()
                 logger.info(f"[RSS_PARSER] RSS feeds parsing completed: {result}")
 
+                # Unload unused translation models to free memory
+                unloaded = await self.translation_service.model_manager.unload_unused_models(max_age_seconds=1800)
+                logger.info(f"[RSS_PARSER] Unloaded {unloaded} unused translation models after parsing")
+
                 # Wait 3 minutes before next parsing or until self.running = False is set
                 for _ in range(180):
                     if not self.running:
@@ -178,6 +182,13 @@ class RSSParserService:
             logger.info("[RSS_PARSER] Translation queue started via DI")
         else:
             logger.warning("[RSS_PARSER] Translator queue does not have start method")
+
+        # Preload popular translation models to reduce I/O during runtime
+        try:
+            await self.translation_service.model_manager.preload_popular_models()
+            logger.info("[RSS_PARSER] Popular translation models preloaded successfully")
+        except Exception as e:
+            logger.error(f"[RSS_PARSER] Error preloading translation models: {e}")
 
         # Create tasks
         self.parse_task = asyncio.create_task(self.parse_rss_task())
@@ -305,6 +316,13 @@ class RSSParserService:
                     logger.info(f"[RSS_PARSER] Manager {name} closed (stub)")
             except Exception as e:
                 logger.error(f"[RSS_PARSER] Error closing manager {name}: {e}")
+
+        # Unload all unused models before shutdown
+        try:
+            unloaded = await self.translation_service.model_manager.unload_unused_models(max_age_seconds=0)
+            logger.info(f"[RSS_PARSER] Unloaded {unloaded} models before shutdown")
+        except Exception as e:
+            logger.error(f"[RSS_PARSER] Error unloading models during cleanup: {e}")
 
         # Close shared connection pool
         try:

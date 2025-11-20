@@ -158,6 +158,15 @@ async def get_rss_items(
     if search_phrase:
         search_phrase = sanitize_search_phrase(search_phrase)
 
+    # Set default from_date to 24 hours ago if not provided (to avoid scanning entire table)
+    import time
+    if from_date is None:
+        from_date = int(time.time()) - 86400  # 24 hours in seconds
+        logger.info(f"[API] RSS items: using default from_date={from_date} (24h ago)")
+
+    logger.info(f"[API] RSS items request: display_language={display_language}, original_language={original_language}, "
+                f"category_id={category_id}, source_id={source_id}, from_date={from_date}, limit={limit}, offset={offset}")
+
     from_datetime, before_published_at = validate_rss_items_query_params(display_language, from_date, cursor_published_at)
     page_offset = 0 if (cursor_published_at is not None or cursor_rss_item_id is not None) else offset
 
@@ -165,6 +174,8 @@ async def get_rss_items(
     if pool is None:
         raise HTTPException(status_code=500, detail="Database connection error")
 
+    import time
+    start_time = time.time()
     try:
         total_count, results, columns = await database.get_all_rss_items_list(
             pool,
@@ -181,6 +192,8 @@ async def get_rss_items(
             limit,
             page_offset,
         )
+        query_time = time.time() - start_time
+        logger.info(f"[API] RSS items query completed in {query_time:.2f} seconds, returned {len(results)} items")
     except Exception as e:
         logger.error(f"[API] Error executing query in get_rss_items: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")

@@ -242,6 +242,10 @@ class TranslationService(ITranslationService):
         total_duration = time.time() - start_time
         logger.info(f"[TRANSLATE] prepare_translations completed in {total_duration:.2f}s. Total translations: {len(translations)}")
 
+        # Unload unused models after batch translation processing
+        unloaded = await self.model_manager.unload_unused_models(max_age_seconds=1800)
+        logger.info(f"[TRANSLATE] Unloaded {unloaded} unused models after prepare_translations")
+
         return translations
 
     def _preprocess_text_with_terminology(self, text: str, target_lang: str) -> str:

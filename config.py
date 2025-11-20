@@ -97,7 +97,7 @@ MAX_TOTAL_RSS_ITEMS = 15
 # Maximum number of RSS feeds processed simultaneously
 MAX_CONCURRENT_FEEDS = 10
 # RSS item check interval in API
-RSS_ITEM_CHECK_INTERVAL_SECONDS = 300
+RSS_ITEM_CHECK_INTERVAL_SECONDS = 600
 # Maximum number of concurrent WebSocket connections
 MAX_WEBSOCKET_CONNECTIONS = 1000
 

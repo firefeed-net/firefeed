@@ -27,7 +27,7 @@ setup_logging()
 logger = logging.getLogger(__name__)
 
 # --- API Configuration ---
-API_BASE_URL = "http://localhost:8000/api/v1"
+API_BASE_URL = "http://127.0.0.1:8000/api/v1"
 BOT_API_KEY = os.getenv("BOT_API_KEY")  # API key for bot authentication
 
 # --- Global variables ---
@@ -271,7 +271,7 @@ async def api_get(endpoint: str, params: dict = None) -> dict:
         if BOT_API_KEY:
             headers["X-API-Key"] = BOT_API_KEY
 
-        timeout = aiohttp.ClientTimeout(total=10, connect=5)  # 10 second timeout for API requests
+        timeout = aiohttp.ClientTimeout(total=30, connect=10)  # 30 second timeout for API requests
         async with http_session.get(url, params=processed_params, headers=headers, timeout=timeout) as response:
             if response.status == 200:
                 return await response.json()
@@ -283,6 +283,9 @@ async def api_get(endpoint: str, params: dict = None) -> dict:
                 return {}
     except asyncio.TimeoutError:
         logger.error(f"Timeout error calling {endpoint}")
+        logger.error(f"API_BASE_URL: {API_BASE_URL}, url: {url}, params: {processed_params}, headers: {headers}")
+        import traceback
+        logger.error(f"Timeout traceback: {traceback.format_exc()}")
         return {}
     except Exception as e:
         logger.error(f"Failed to call {endpoint}: {e}")
@@ -1254,3 +1257,4 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> N
 
 if __name__ == "__main__":
     main()
+
