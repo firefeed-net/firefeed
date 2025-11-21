@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 
 async def get_db_pool():
-    """Получает общий пул подключений к базе данных."""
+    """Getting shared DB pool"""
     try:
         pool = await config.get_shared_db_pool()
         return pool
@@ -899,6 +899,25 @@ async def get_all_rss_items_list(
                         ]
                     )
 
+                # Add publication JOINs if telegram_published filter is used
+                telegram_published_value = None
+                if telegram_published is not None:
+                    telegram_published_value = (
+                        bool(str(telegram_published).lower() == "true")
+                        if isinstance(telegram_published, str)
+                        else bool(telegram_published)
+                    )
+                    if display_language:
+                        join_parts.extend([
+                            "LEFT JOIN rss_items_telegram_published pub_lang ON pub_lang.translation_id = nt_display.id",
+                            "LEFT JOIN rss_items_telegram_published_originals rtpo ON rtpo.news_id = nd.news_id"
+                        ])
+                    else:
+                        join_parts.extend([
+                            "LEFT JOIN (SELECT DISTINCT news_id FROM rss_items_telegram_published rtp JOIN news_translations nt ON rtp.translation_id = nt.id) pub_trans ON nd.news_id = pub_trans.news_id",
+                            "LEFT JOIN (SELECT DISTINCT news_id FROM rss_items_telegram_published_originals) pub_orig ON nd.news_id = pub_orig.news_id"
+                        ])
+
                 query = f"""
                 SELECT {', '.join(select_parts)}
                 FROM published_news_data nd
@@ -927,29 +946,19 @@ async def get_all_rss_items_list(
                         query += f" AND rf.source_id IN ({placeholders})"
                         params.extend(source_id)
 
-                telegram_published_value = None
                 if telegram_published is not None:
-                    telegram_published_value = (
-                        bool(str(telegram_published).lower() == "true")
-                        if isinstance(telegram_published, str)
-                        else bool(telegram_published)
-                    )
                     if telegram_published_value:
                         # For published: check either translations or originals
                         if display_language:
-                            # If display_language is specified, check translation in that language
-                            query += " AND (EXISTS (SELECT 1 FROM rss_items_telegram_published rtp WHERE rtp.translation_id = nt_display.id) OR EXISTS (SELECT 1 FROM rss_items_telegram_published_originals rtpo WHERE rtpo.news_id = nd.news_id))"
+                            query += " AND (pub_lang.translation_id IS NOT NULL OR rtpo.news_id IS NOT NULL)"
                         else:
-                            # If display_language not specified, check for ANY publications (translations or originals)
-                            query += " AND (EXISTS (SELECT 1 FROM rss_items_telegram_published rtp WHERE rtp.translation_id IN (SELECT id FROM news_translations WHERE news_id = nd.news_id)) OR EXISTS (SELECT 1 FROM rss_items_telegram_published_originals rtpo WHERE rtpo.news_id = nd.news_id))"
+                            query += " AND (pub_trans.news_id IS NOT NULL OR pub_orig.news_id IS NOT NULL)"
                     else:
                         # For unpublished: check absence of both translations and originals
                         if display_language:
-                            # If display_language specified, check absence of translation in that language AND absence of original
-                            query += " AND (NOT EXISTS (SELECT 1 FROM rss_items_telegram_published rtp WHERE rtp.translation_id = nt_display.id) AND NOT EXISTS (SELECT 1 FROM rss_items_telegram_published_originals rtpo WHERE rtpo.news_id = nd.news_id))"
+                            query += " AND pub_lang.translation_id IS NULL AND rtpo.news_id IS NULL"
                         else:
-                            # If display_language not specified, check absence of ANY publications (translations or originals)
-                            query += " AND (NOT EXISTS (SELECT 1 FROM rss_items_telegram_published rtp WHERE rtp.translation_id IN (SELECT id FROM news_translations WHERE news_id = nd.news_id)) AND NOT EXISTS (SELECT 1 FROM rss_items_telegram_published_originals rtpo WHERE rtpo.news_id = nd.news_id))"
+                            query += " AND pub_trans.news_id IS NULL AND pub_orig.news_id IS NULL"
 
                 if from_date is not None:
                     query += " AND nd.created_at > %s"
@@ -982,9 +991,23 @@ async def get_all_rss_items_list(
                 FROM published_news_data nd
                 LEFT JOIN rss_feeds rf ON nd.rss_feed_id = rf.id
                 LEFT JOIN news_translations nt_display ON nd.news_id = nt_display.news_id AND nt_display.language = %s
-                WHERE 1=1
                 """
                 count_params = [display_language]
+
+                # Add publication JOINs if telegram_published filter is used
+                if telegram_published is not None:
+                    if display_language:
+                        count_query += """
+                LEFT JOIN rss_items_telegram_published pub_lang ON pub_lang.translation_id = nt_display.id
+                LEFT JOIN rss_items_telegram_published_originals rtpo ON rtpo.news_id = nd.news_id
+                        """
+                    else:
+                        count_query += """
+                LEFT JOIN (SELECT DISTINCT news_id FROM rss_items_telegram_published rtp JOIN news_translations nt ON rtp.translation_id = nt.id) pub_trans ON nd.news_id = pub_trans.news_id
+                LEFT JOIN (SELECT DISTINCT news_id FROM rss_items_telegram_published_originals) pub_orig ON nd.news_id = pub_orig.news_id
+                        """
+
+                count_query += "WHERE 1=1"
 
                 if original_language:
                     count_query += " AND nd.original_language = %s"
@@ -1009,19 +1032,15 @@ async def get_all_rss_items_list(
                     if telegram_published_value:
                         # For published: check either translations or originals
                         if display_language:
-                            # If display_language specified, check translation in that language
-                            count_query += " AND (EXISTS (SELECT 1 FROM rss_items_telegram_published rtp WHERE rtp.translation_id = nt_display.id) OR EXISTS (SELECT 1 FROM rss_items_telegram_published_originals rtpo WHERE rtpo.news_id = nd.news_id))"
+                            count_query += " AND (pub_lang.translation_id IS NOT NULL OR rtpo.news_id IS NOT NULL)"
                         else:
-                            # If display_language not specified, check for ANY publications (translations or originals)
-                            count_query += " AND (EXISTS (SELECT 1 FROM rss_items_telegram_published rtp WHERE rtp.translation_id IN (SELECT id FROM news_translations WHERE news_id = nd.news_id)) OR EXISTS (SELECT 1 FROM rss_items_telegram_published_originals rtpo WHERE rtpo.news_id = nd.news_id))"
+                            count_query += " AND (pub_trans.news_id IS NOT NULL OR pub_orig.news_id IS NOT NULL)"
                     else:
                         # For unpublished: check absence of both translations and originals
                         if display_language:
-                            # If display_language specified, check absence of translation in that language AND absence of original
-                            count_query += " AND (NOT EXISTS (SELECT 1 FROM rss_items_telegram_published rtp WHERE rtp.translation_id = nt_display.id) AND NOT EXISTS (SELECT 1 FROM rss_items_telegram_published_originals rtpo WHERE rtpo.news_id = nd.news_id))"
+                            count_query += " AND pub_lang.translation_id IS NULL AND rtpo.news_id IS NULL"
                         else:
-                            # If display_language not specified, check absence of ANY publications (translations or originals)
-                            count_query += " AND (NOT EXISTS (SELECT 1 FROM rss_items_telegram_published rtp WHERE rtp.translation_id IN (SELECT id FROM news_translations WHERE news_id = nd.news_id)) AND NOT EXISTS (SELECT 1 FROM rss_items_telegram_published_originals rtpo WHERE rtpo.news_id = nd.news_id))"
+                            count_query += " AND pub_trans.news_id IS NULL AND pub_orig.news_id IS NULL"
                 if from_date is not None:
                     count_query += " AND nd.created_at > %s"
                     count_params.append(from_date)
