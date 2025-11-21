@@ -134,7 +134,7 @@ def get_full_image_url(image_filename: str) -> str:
     return f"{base_url}/{filename}"
 
 
-def build_translations_dict(row_dict, display_language=None):
+def build_translations_dict(row_dict):
     translations = {}
     languages = ["ru", "en", "de", "fr"]
     original_language = row_dict.get("original_language")
@@ -144,32 +144,15 @@ def build_translations_dict(row_dict, display_language=None):
         content_key = f"content_{lang}"
         title = row_dict.get(title_key)
         content = row_dict.get(content_key)
-        if (title is None or content is None) and lang == original_language:
-            title = row_dict.get("original_title")
-            content = row_dict.get("original_content")
         if title is not None or content is not None:
             translations[lang] = {"title": title, "content": content}
-
-    # Handle display_language if provided and not already in translations
-    if display_language and display_language not in translations:
-        display_title = row_dict.get("display_title")
-        display_content = row_dict.get("display_content")
-        if display_title is not None or display_content is not None:
-            translations[display_language] = {"title": display_title, "content": display_content}
 
     return translations
 
 
-def validate_rss_items_query_params(display_language, from_date, cursor_published_at):
-    supported_languages = ["ru", "en", "de", "fr"]
+def validate_rss_items_query_params(from_date, cursor_published_at):
     from fastapi import HTTPException, status
     from datetime import datetime
-
-    if display_language is not None and display_language not in supported_languages:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Unsupported display language. Valid values: {', '.join(supported_languages)}.",
-        )
 
     from_datetime = None
     if from_date is not None:

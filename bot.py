@@ -1086,7 +1086,7 @@ async def monitor_rss_items_task(context: ContextTypes.DEFAULT_TYPE):
     logger.info("Starting RSS items monitoring task")
     try:
         # Get unprocessed RSS items via API
-        rss_response = await get_rss_items_list(limit=20, telegram_published="false", include_all_translations="true")
+        rss_response = await get_rss_items_list(limit=20, telegram_published="false")
         if not isinstance(rss_response, dict):
             logger.error(f"Invalid API response format: {type(rss_response)}")
             return

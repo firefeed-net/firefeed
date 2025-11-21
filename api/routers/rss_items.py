@@ -18,20 +18,17 @@ router = APIRouter(
 )
 
 
-def process_rss_items_results(results, columns, display_language, include_all_translations):
+def process_rss_items_results(results, columns):
     rss_items_list = []
     for row in results:
         row_dict = dict(zip(columns, row))
-        translations = build_translations_dict(row_dict, display_language)
+        translations = build_translations_dict(row_dict)
         row_original_language = row_dict["original_language"]
-        if display_language is not None and row_original_language and display_language != row_original_language:
-            if not translations or display_language not in translations:
-                continue
-        if display_language is not None and row_original_language:
-            translations[row_original_language] = {
-                "title": row_dict["original_title"],
-                "content": row_dict["original_content"],
-            }
+        # Always include original language in translations
+        translations[row_original_language] = {
+            "title": row_dict["original_title"],
+            "content": row_dict["original_content"],
+        }
         item_data = {
             "news_id": row_dict["news_id"],
             "original_title": row_dict["original_title"],
@@ -61,7 +58,6 @@ def process_rss_items_results(results, columns, display_language, include_all_tr
     date range, and full-text search. Results can be paginated using offset-based or cursor-based pagination.
 
     **Filtering Options:**
-    - `display_language`: Language for displaying content (ru, en, de, fr)
     - `original_language`: Filter by original article language
     - `category_id`: Filter by news categories (comma-separated values or multiple params allowed, e.g., 3,5 or category_id=3&category_id=5)
     - `source_id`: Filter by news sources (comma-separated values or multiple params allowed, e.g., 1,2 or source_id=1&source_id=2)
@@ -111,23 +107,18 @@ def process_rss_items_results(results, columns, display_language, include_all_tr
 @limiter.limit("1000/minute")
 async def get_rss_items(
     request: Request,
-    display_language: Optional[str] = Query(None),
     original_language: Optional[str] = Query(None),
     category_id: Optional[List[str]] = Query(None),
     source_id: Optional[List[str]] = Query(None),
     telegram_published: Optional[bool] = Query(None),
     from_date: Optional[int] = Query(None),
     search_phrase: Optional[str] = Query(None, alias="searchPhrase"),
-    include_all_translations: Optional[bool] = Query(None),
     cursor_published_at: Optional[int] = Query(None),
     cursor_rss_item_id: Optional[str] = Query(None),
     limit: Optional[int] = Query(50, le=100, gt=0),
     offset: Optional[int] = Query(0, ge=0),
     current_user: dict = Depends(get_current_user_by_api_key),
 ):
-    if display_language is None:
-        include_all_translations = True
-
     # Parse category_id and source_id from lists of strings (supporting comma-separated or multiple params)
     category_ids = None
     if category_id:
@@ -165,10 +156,10 @@ async def get_rss_items(
         from_date = int(time.time()) - 86400  # 24 hours in seconds
         logger.info(f"[API] RSS items: using default from_date={from_date} (24h ago)")
 
-    logger.info(f"[API] RSS items request: display_language={display_language}, original_language={original_language}, "
+    logger.info(f"[API] RSS items request: original_language={original_language}, "
                 f"category_id={category_id}, source_id={source_id}, from_date={from_date}, limit={limit}, offset={offset}")
 
-    from_datetime, before_published_at = validate_rss_items_query_params(display_language, from_date, cursor_published_at)
+    from_datetime, before_published_at = validate_rss_items_query_params(from_date, cursor_published_at)
     page_offset = 0 if (cursor_published_at is not None or cursor_rss_item_id is not None) else offset
 
     pool = await database.get_db_pool()
@@ -180,14 +171,12 @@ async def get_rss_items(
     try:
         total_count, results, columns = await database.get_all_rss_items_list(
             pool,
-            display_language,
             original_language,
             category_ids,
             source_ids,
             telegram_published,
             from_datetime,
             search_phrase,
-            include_all_translations or False,
             before_published_at,
             cursor_rss_item_id,
             limit,
@@ -199,7 +188,7 @@ async def get_rss_items(
         logger.error(f"[API] Error executing query in get_rss_items: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
-    rss_items_list = process_rss_items_results(results, columns, display_language, include_all_translations)
+    rss_items_list = process_rss_items_results(results, columns)
     return {"count": len(rss_items_list), "results": rss_items_list}
 
 

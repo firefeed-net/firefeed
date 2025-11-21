@@ -22,7 +22,7 @@ async def get_db_pool():
 
 
 async def close_db_pool():
-    """Закрывает общий пул подключений к базе данных."""
+    """Closes the shared database connection pool."""
     try:
         await config.close_shared_db_pool()
         logger.info("[DB] Shared PostgreSQL connection pool closed.")
@@ -34,7 +34,7 @@ async def close_db_pool():
 
 
 async def create_user(pool, email: str, password_hash: str, language: str) -> Optional[Dict[str, Any]]:
-    """Создает нового пользователя"""
+    """Creates a new user"""
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
             try:
@@ -56,7 +56,7 @@ async def create_user(pool, email: str, password_hash: str, language: str) -> Op
 
 
 async def get_user_by_email(pool, email: str) -> Optional[Dict[str, Any]]:
-    """Получает пользователя по email"""
+    """Gets user by email"""
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
             try:
@@ -76,7 +76,7 @@ async def get_user_by_email(pool, email: str) -> Optional[Dict[str, Any]]:
 
 
 async def get_user_by_id(pool, user_id: int) -> Optional[Dict[str, Any]]:
-    """Получает пользователя по ID"""
+    """Gets user by ID"""
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
             try:
@@ -96,7 +96,7 @@ async def get_user_by_id(pool, user_id: int) -> Optional[Dict[str, Any]]:
 
 
 async def update_user(pool, user_id: int, update_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-    """Обновляет данные пользователя"""
+    """Updates user data"""
     if not update_data:
         return await get_user_by_id(pool, user_id)
 
@@ -129,7 +129,7 @@ async def update_user(pool, user_id: int, update_data: Dict[str, Any]) -> Option
 
 
 async def delete_user(pool, user_id: int) -> bool:
-    """Деактивирует (удаляет) пользователя"""
+    """Deactivates (deletes) user"""
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
             try:
@@ -146,7 +146,7 @@ async def delete_user(pool, user_id: int) -> bool:
 
 
 async def activate_user(pool, user_id: int) -> bool:
-    """Активирует пользователя"""
+    """Activates user"""
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
             try:
@@ -161,7 +161,7 @@ async def activate_user(pool, user_id: int) -> bool:
 
 
 async def update_user_password(pool, user_id: int, new_hashed_password: str) -> bool:
-    """Обновляет пароль пользователя"""
+    """Updates user password"""
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
             try:
@@ -177,8 +177,8 @@ async def update_user_password(pool, user_id: int, new_hashed_password: str) -> 
 
 
 async def save_verification_code(pool, user_id: int, verification_code: str, expires_at: datetime) -> bool:
-    """Сохраняет код верификации для пользователя согласно схеме user_verification_codes.
-    Поля: (user_id, verification_code, created_at DEFAULT now(), expires_at, used_at NULL)
+    """Saves verification code for user according to user_verification_codes schema.
+    Fields: (user_id, verification_code, created_at DEFAULT now(), expires_at, used_at NULL)
     """
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
@@ -198,7 +198,7 @@ async def save_verification_code(pool, user_id: int, verification_code: str, exp
 
 
 async def verify_user_email(pool, email: str, verification_code: str) -> Optional[int]:
-    """Проверяет код верификации и возвращает user_id, если код действителен."""
+    """Verifies verification code and returns user_id if code is valid."""
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
             try:
@@ -222,7 +222,7 @@ async def verify_user_email(pool, email: str, verification_code: str) -> Optiona
 
 
 async def get_active_verification_code(pool, user_id: int, verification_code: str) -> Optional[dict]:
-    """Возвращает активный (неиспользованный и неистекший) код верификации пользователя."""
+    """Returns active (unused and not expired) verification code for user."""
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
             try:
@@ -246,7 +246,7 @@ async def get_active_verification_code(pool, user_id: int, verification_code: st
 
 
 async def mark_verification_code_used(pool, code_id: int) -> bool:
-    """Отмечает код верификации как использованный (used_at = NOW())."""
+    """Marks verification code as used (used_at = NOW())."""
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
             try:
@@ -260,7 +260,7 @@ async def mark_verification_code_used(pool, code_id: int) -> bool:
 
 
 async def save_password_reset_token(pool, user_id: int, token: str, expires_at: datetime) -> bool:
-    """Сохраняет токен сброса пароля"""
+    """Saves password reset token"""
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
             try:
@@ -279,7 +279,7 @@ async def save_password_reset_token(pool, user_id: int, token: str, expires_at: 
 
 
 async def get_password_reset_token(pool, token: str) -> Optional[Dict[str, Any]]:
-    """Получает данные токена сброса пароля, если токен действителен"""
+    """Gets password reset token data if token is valid"""
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
             try:
@@ -298,7 +298,7 @@ async def get_password_reset_token(pool, token: str) -> Optional[Dict[str, Any]]
 
 
 async def delete_password_reset_token(pool, token: str) -> bool:
-    """Удаляет использованный токен сброса пароля"""
+    """Deletes used password reset token"""
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
             try:
@@ -313,7 +313,7 @@ async def delete_password_reset_token(pool, token: str) -> bool:
 
 
 async def update_user_categories(pool, user_id: int, category_ids: Set[int]) -> bool:
-    """Обновляет список категорий пользователя"""
+    """Updates user categories list"""
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
             try:
@@ -340,7 +340,7 @@ async def update_user_categories(pool, user_id: int, category_ids: Set[int]) -> 
 
 
 async def get_all_category_ids(pool) -> Set[int]:
-    """Возвращает множество всех id категорий."""
+    """Returns set of all category ids."""
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
             try:
@@ -353,7 +353,7 @@ async def get_all_category_ids(pool) -> Set[int]:
 
 
 async def get_category_id_by_name(pool, category_name: str) -> Optional[int]:
-    """Возвращает id категории по её имени."""
+    """Returns category id by its name."""
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
             try:
@@ -366,7 +366,7 @@ async def get_category_id_by_name(pool, category_name: str) -> Optional[int]:
 
 
 async def get_source_id_by_alias(pool, source_alias: str) -> Optional[int]:
-    """Возвращает id источника по его alias."""
+    """Returns source id by its alias."""
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
             try:
@@ -378,7 +378,7 @@ async def get_source_id_by_alias(pool, source_alias: str) -> Optional[int]:
                 return None
 
 async def get_user_categories(pool, user_id: int, source_ids: Optional[List[int]] = None) -> List[Dict[str, Any]]:
-    """Получает список категорий пользователя с фильтрацией по source_id"""
+    """Gets user categories list with filtering by source_id"""
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
             try:
@@ -411,7 +411,7 @@ async def get_user_categories(pool, user_id: int, source_ids: Optional[List[int]
 async def create_user_rss_feed(
     pool, user_id: int, url: str, name: str, category_id: int, language: str
 ) -> Optional[Dict[str, Any]]:
-    """Создает пользовательскую RSS-ленту"""
+    """Creates user RSS feed"""
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
             try:
@@ -438,7 +438,7 @@ async def create_user_rss_feed(
 
 
 async def get_user_rss_feeds(pool, user_id: int, limit: int, offset: int) -> List[Dict[str, Any]]:
-    """Получает список RSS-лент пользователя"""
+    """Gets user RSS feeds list"""
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
             try:
@@ -461,7 +461,7 @@ async def get_user_rss_feeds(pool, user_id: int, limit: int, offset: int) -> Lis
 
 
 async def get_user_rss_feed_by_id(pool, user_id: int, feed_id: str) -> Optional[Dict[str, Any]]:
-    """Получает конкретную RSS-ленту пользователя"""
+    """Gets specific user RSS feed"""
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
             try:
@@ -484,7 +484,7 @@ async def get_user_rss_feed_by_id(pool, user_id: int, feed_id: str) -> Optional[
 async def update_user_rss_feed(
     pool, user_id: int, feed_id: str, update_data: Dict[str, Any]
 ) -> Optional[Dict[str, Any]]:
-    """Обновляет пользовательскую RSS-ленту"""
+    """Updates user RSS feed"""
     if not update_data:
         return await get_user_rss_feed_by_id(pool, user_id, feed_id)
 
@@ -518,7 +518,7 @@ async def update_user_rss_feed(
 
 
 async def delete_user_rss_feed(pool, user_id: int, feed_id: str) -> bool:
-    """Удаляет пользовательскую RSS-ленту"""
+    """Deletes user RSS feed"""
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
             try:
@@ -539,8 +539,8 @@ async def get_user_rss_items_list(
     pool, user_id: int, display_language: str, original_language: Optional[str], limit: int, offset: int
 ) -> Tuple[int, List[Tuple], List[str]]:
     """
-    Получает список RSS-элементов для текущего пользователя на основе его подписок.
-    Возвращает кортеж (total_count, results_rows, column_names).
+    Gets RSS items list for current user based on their subscriptions.
+    Returns tuple (total_count, results_rows, column_names).
     """
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
@@ -613,7 +613,7 @@ async def get_user_rss_items_list(
                 LEFT JOIN news_translations nt_de ON nd.news_id = nt_de.news_id AND nt_de.language = %s
                 LEFT JOIN news_translations nt_fr ON nd.news_id = nt_fr.news_id AND nt_fr.language = %s
                 LEFT JOIN news_translations nt_display ON nd.news_id = nt_display.news_id AND nt_display.language = %s
-                WHERE nd.rss_feed_id = ANY(%s) -- Фильтр по пользовательским RSS-лентам
+                WHERE nd.rss_feed_id = ANY(%s) -- Filter by user RSS feeds
                 """
 
                 # Add parameters for language JOINs
@@ -649,8 +649,8 @@ async def get_user_rss_items_list_by_feed(
     pool, user_id: int, feed_id: str, display_language: str, original_language: Optional[str], limit: int, offset: int
 ) -> Tuple[int, List[Tuple], List[str]]:
     """
-    Получает список RSS-элементов из конкретной пользовательской RSS-ленты текущего пользователя.
-    Возвращает кортеж (total_count, results_rows, column_names).
+    Gets RSS items list from specific user RSS feed for current user.
+    Returns tuple (total_count, results_rows, column_names).
     """
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
@@ -694,8 +694,8 @@ async def get_user_rss_items_list_by_feed(
                 nd.*,
                 COALESCE(c.name, 'Unknown Category') AS category_name,
                 COALESCE(s.name, 'Unknown Source') AS source_name,
-                nd.source_url as source_url, -- Получаем URL оригинальной новости из published_news_data
-                nd.created_at as published_at, -- Используем created_at из published_news_data как published_at
+                nd.source_url as source_url, -- Get original news URL from published_news_data
+                nd.created_at as published_at, -- Use created_at from published_news_data as published_at
                 nt_ru.translated_title as title_ru,
                 nt_ru.translated_content as content_ru,
                 nt_en.translated_title as title_en,
@@ -715,7 +715,7 @@ async def get_user_rss_items_list_by_feed(
                 LEFT JOIN news_translations nt_de ON nd.news_id = nt_de.news_id AND nt_de.language = %s
                 LEFT JOIN news_translations nt_fr ON nd.news_id = nt_fr.news_id AND nt_fr.language = %s
                 LEFT JOIN news_translations nt_display ON nd.news_id = nt_display.news_id AND nt_display.language = %s
-                WHERE nd.rss_feed_id = %s -- Фильтр по конкретной пользовательской RSS-ленте
+                WHERE nd.rss_feed_id = %s -- Filter by specific user RSS feed
                 """
 
                 # Add parameters for language JOINs
@@ -744,12 +744,12 @@ async def get_user_rss_items_list_by_feed(
 
             except Exception as e:
                 logger.info(f"[DB] Error in get_user_rss_items_list_by_feed: {e}")
-                raise  # Перебрасываем исключение, чтобы обработать его в API
+                raise  # Re-raise exception to handle it in API
 
 
 # --- Moved: get_rss_item_by_id function ---
 async def get_rss_item_by_id(pool, news_id: str) -> Optional[Tuple]:
-    """Получает RSS-элемент по её ID."""
+    """Gets RSS item by its ID."""
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
             try:
@@ -792,7 +792,7 @@ async def get_rss_item_by_id(pool, news_id: str) -> Optional[Tuple]:
 
 # --- Added: wrapper for get_rss_item_by_id, returning row and columns ---
 async def get_rss_item_by_id_full(pool, news_id: str) -> Tuple[Optional[Tuple], List[str]]:
-    """Получает RSS-элемент по её ID, возвращая кортеж (row, columns)."""
+    """Gets RSS item by its ID, returning tuple (row, columns)."""
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
             try:
@@ -834,24 +834,21 @@ async def get_rss_item_by_id_full(pool, news_id: str) -> Tuple[Optional[Tuple], 
 
 async def get_all_rss_items_list(
     pool,
-    display_language: str,
     original_language: Optional[str],
     category_id: Optional[List[int]],
     source_id: Optional[List[int]],
     telegram_published: Optional[bool],
     from_date: Optional[datetime],
     search_phrase: Optional[str],
-    include_all_translations: bool,
     before_published_at: Optional[datetime],
     cursor_news_id: Optional[str],
     limit: int,
     offset: int,
 ) -> Tuple[int, List[Tuple], List[str]]:
     """
-    Получает список всех RSS-элементов с фильтрацией.
-    По умолчанию джоинит только переводы nt_display (display_language). При include_all_translations=True
-    добавляет JOIN для ru/en/de/fr.
-    Поддерживает keyset-пагинацию через before_published_at и cursor_news_id.
+    Gets list of all RSS items with filtering.
+    Always joins translations for all languages (ru/en/de/fr).
+    Supports keyset pagination via before_published_at and cursor_news_id.
     """
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
@@ -865,39 +862,24 @@ async def get_all_rss_items_list(
                     "COALESCE(s.alias, 'unknown') AS source_alias",
                     "nd.source_url as source_url",
                     "nd.created_at as published_at",
-                    "nt_display.translated_title as display_title",
-                    "nt_display.translated_content as display_content",
+                    "nt_ru.translated_title as title_ru",
+                    "nt_ru.translated_content as content_ru",
+                    "nt_en.translated_title as title_en",
+                    "nt_en.translated_content as content_en",
+                    "nt_de.translated_title as title_de",
+                    "nt_de.translated_content as content_de",
+                    "nt_fr.translated_title as title_fr",
+                    "nt_fr.translated_content as content_fr",
                 ]
                 join_parts = [
                     "LEFT JOIN rss_feeds rf ON nd.rss_feed_id = rf.id",
                     "LEFT JOIN categories c ON nd.category_id = c.id",
                     "LEFT JOIN sources s ON rf.source_id = s.id",
-                    "LEFT JOIN news_translations nt_display ON nd.news_id = nt_display.news_id AND nt_display.language = %s",
+                    "LEFT JOIN news_translations nt_ru ON nd.news_id = nt_ru.news_id AND nt_ru.language = 'ru'",
+                    "LEFT JOIN news_translations nt_en ON nd.news_id = nt_en.news_id AND nt_en.language = 'en'",
+                    "LEFT JOIN news_translations nt_de ON nd.news_id = nt_de.news_id AND nt_de.language = 'de'",
+                    "LEFT JOIN news_translations nt_fr ON nd.news_id = nt_fr.news_id AND nt_fr.language = 'fr'",
                 ]
-                params.append(display_language)
-
-                if include_all_translations:
-                    # Additional JOINs and columns only when necessary
-                    select_parts.extend(
-                        [
-                            "nt_ru.translated_title as title_ru",
-                            "nt_ru.translated_content as content_ru",
-                            "nt_en.translated_title as title_en",
-                            "nt_en.translated_content as content_en",
-                            "nt_de.translated_title as title_de",
-                            "nt_de.translated_content as content_de",
-                            "nt_fr.translated_title as title_fr",
-                            "nt_fr.translated_content as content_fr",
-                        ]
-                    )
-                    join_parts.extend(
-                        [
-                            "LEFT JOIN news_translations nt_ru ON nd.news_id = nt_ru.news_id AND nt_ru.language = 'ru'",
-                            "LEFT JOIN news_translations nt_en ON nd.news_id = nt_en.news_id AND nt_en.language = 'en'",
-                            "LEFT JOIN news_translations nt_de ON nd.news_id = nt_de.news_id AND nt_de.language = 'de'",
-                            "LEFT JOIN news_translations nt_fr ON nd.news_id = nt_fr.news_id AND nt_fr.language = 'fr'",
-                        ]
-                    )
 
                 # Add publication JOINs if telegram_published filter is used
                 telegram_published_value = None
@@ -907,16 +889,10 @@ async def get_all_rss_items_list(
                         if isinstance(telegram_published, str)
                         else bool(telegram_published)
                     )
-                    if display_language:
-                        join_parts.extend([
-                            "LEFT JOIN rss_items_telegram_published pub_lang ON pub_lang.translation_id = nt_display.id",
-                            "LEFT JOIN rss_items_telegram_published_originals rtpo ON rtpo.news_id = nd.news_id"
-                        ])
-                    else:
-                        join_parts.extend([
-                            "LEFT JOIN (SELECT DISTINCT news_id FROM rss_items_telegram_published rtp JOIN news_translations nt ON rtp.translation_id = nt.id) pub_trans ON nd.news_id = pub_trans.news_id",
-                            "LEFT JOIN (SELECT DISTINCT news_id FROM rss_items_telegram_published_originals) pub_orig ON nd.news_id = pub_orig.news_id"
-                        ])
+                    join_parts.extend([
+                        "LEFT JOIN (SELECT DISTINCT news_id FROM rss_items_telegram_published rtp JOIN news_translations nt ON rtp.translation_id = nt.id) pub_trans ON nd.news_id = pub_trans.news_id",
+                        "LEFT JOIN (SELECT DISTINCT news_id FROM rss_items_telegram_published_originals) pub_orig ON nd.news_id = pub_orig.news_id"
+                    ])
 
                 query = f"""
                 SELECT {', '.join(select_parts)}
@@ -949,16 +925,10 @@ async def get_all_rss_items_list(
                 if telegram_published is not None:
                     if telegram_published_value:
                         # For published: check either translations or originals
-                        if display_language:
-                            query += " AND (pub_lang.translation_id IS NOT NULL OR rtpo.news_id IS NOT NULL)"
-                        else:
-                            query += " AND (pub_trans.news_id IS NOT NULL OR pub_orig.news_id IS NOT NULL)"
+                        query += " AND (pub_trans.news_id IS NOT NULL OR pub_orig.news_id IS NOT NULL)"
                     else:
                         # For unpublished: check absence of both translations and originals
-                        if display_language:
-                            query += " AND pub_lang.translation_id IS NULL AND rtpo.news_id IS NULL"
-                        else:
-                            query += " AND pub_trans.news_id IS NULL AND pub_orig.news_id IS NULL"
+                        query += " AND pub_trans.news_id IS NULL AND pub_orig.news_id IS NULL"
 
                 if from_date is not None:
                     query += " AND nd.created_at > %s"
@@ -970,8 +940,8 @@ async def get_all_rss_items_list(
                     sp = search_phrase.strip()
                     if sp:
                         phrase = f"%{sp}%"
-                        query += " AND ((nt_display.translated_title ILIKE %s OR nt_display.translated_content ILIKE %s) OR (nd.original_title ILIKE %s OR nd.original_content ILIKE %s))"
-                        params.extend([phrase, phrase, phrase, phrase])
+                        query += " AND ((nd.original_title ILIKE %s OR nd.original_content ILIKE %s))"
+                        params.extend([phrase, phrase])
 
                 # Keyset pagination (by descending created_at, then news_id)
                 if before_published_at is not None:
@@ -990,22 +960,15 @@ async def get_all_rss_items_list(
                 SELECT COUNT(*)
                 FROM published_news_data nd
                 LEFT JOIN rss_feeds rf ON nd.rss_feed_id = rf.id
-                LEFT JOIN news_translations nt_display ON nd.news_id = nt_display.news_id AND nt_display.language = %s
                 """
-                count_params = [display_language]
+                count_params = []
 
                 # Add publication JOINs if telegram_published filter is used
                 if telegram_published is not None:
-                    if display_language:
-                        count_query += """
-                LEFT JOIN rss_items_telegram_published pub_lang ON pub_lang.translation_id = nt_display.id
-                LEFT JOIN rss_items_telegram_published_originals rtpo ON rtpo.news_id = nd.news_id
-                        """
-                    else:
-                        count_query += """
+                    count_query += """
                 LEFT JOIN (SELECT DISTINCT news_id FROM rss_items_telegram_published rtp JOIN news_translations nt ON rtp.translation_id = nt.id) pub_trans ON nd.news_id = pub_trans.news_id
                 LEFT JOIN (SELECT DISTINCT news_id FROM rss_items_telegram_published_originals) pub_orig ON nd.news_id = pub_orig.news_id
-                        """
+                    """
 
                 count_query += "WHERE 1=1"
 
@@ -1031,23 +994,17 @@ async def get_all_rss_items_list(
                 if telegram_published is not None:
                     if telegram_published_value:
                         # For published: check either translations or originals
-                        if display_language:
-                            count_query += " AND (pub_lang.translation_id IS NOT NULL OR rtpo.news_id IS NOT NULL)"
-                        else:
-                            count_query += " AND (pub_trans.news_id IS NOT NULL OR pub_orig.news_id IS NOT NULL)"
+                        count_query += " AND (pub_trans.news_id IS NOT NULL OR pub_orig.news_id IS NOT NULL)"
                     else:
                         # For unpublished: check absence of both translations and originals
-                        if display_language:
-                            count_query += " AND pub_lang.translation_id IS NULL AND rtpo.news_id IS NULL"
-                        else:
-                            count_query += " AND pub_trans.news_id IS NULL AND pub_orig.news_id IS NULL"
+                        count_query += " AND pub_trans.news_id IS NULL AND pub_orig.news_id IS NULL"
                 if from_date is not None:
                     count_query += " AND nd.created_at > %s"
                     count_params.append(from_date)
 
                 if phrase:
-                    count_query += " AND ((nt_display.translated_title ILIKE %s OR nt_display.translated_content ILIKE %s) OR (nd.original_title ILIKE %s OR nd.original_content ILIKE %s))"
-                    count_params.extend([phrase, phrase, phrase, phrase])
+                    count_query += " AND (nd.original_title ILIKE %s OR nd.original_content ILIKE %s)"
+                    count_params.extend([phrase, phrase])
 
                 await cur.execute(count_query, count_params)
                 total_count_row = await cur.fetchone()
@@ -1063,8 +1020,8 @@ async def get_all_categories_list(
     pool, limit: int, offset: int, source_ids: Optional[List[int]] = None
 ) -> Tuple[int, List[Dict[str, Any]]]:
     """
-    Получает список всех категорий с пагинацией и фильтрацией по source_id.
-    Возвращает кортеж (total_count, results).
+    Gets list of all categories with pagination and filtering by source_id.
+    Returns tuple (total_count, results).
     """
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
@@ -1112,8 +1069,8 @@ async def get_all_categories_list(
 
 
 async def activate_user_and_use_verification_code(pool, user_id: int, verification_code: str) -> bool:
-    """В одной транзакции активирует пользователя и помечает код верификации как использованный.
-    Возвращает True при успехе, False при ошибке или если код не найден/недействителен.
+    """In one transaction activates user and marks verification code as used.
+    Returns True on success, False on error or if code not found/invalid.
     """
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
@@ -1141,7 +1098,7 @@ async def activate_user_and_use_verification_code(pool, user_id: int, verificati
                 return False
 
 async def confirm_password_reset_transaction(pool, token: str, new_password_hash: str) -> bool:
-    """В одной транзакции проверяет валидность reset-токена, обновляет пароль и удаляет токен."""
+    """In one transaction validates reset token, updates password and deletes token."""
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
             try:
@@ -1182,8 +1139,8 @@ async def get_all_sources_list(
     pool, limit: int, offset: int, category_id: Optional[List[int]] = None
 ) -> Tuple[int, List[Dict[str, Any]]]:
     """
-    Получает список всех источников с пагинацией и опциональной фильтрацией по категориям.
-    Возвращает кортеж (total_count, results).
+    Gets list of all sources with pagination and optional filtering by categories.
+    Returns tuple (total_count, results).
     """
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
@@ -1240,7 +1197,7 @@ async def get_all_sources_list(
 
 async def get_recent_rss_items_for_broadcast(pool, last_check_time: datetime) -> List[Dict[str, Any]]:
     """
-    Получает список последних RSS-элементов для отправки по WebSocket.
+    Gets list of recent RSS items for WebSocket broadcast.
     """
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
@@ -1301,14 +1258,14 @@ async def get_recent_rss_items_for_broadcast(pool, last_check_time: datetime) ->
                 return rss_items_payload
             except Exception as e:
                 logger.info(f"[DB] Error in get_recent_news_for_broadcast: {e}")
-                return []  # Возвращаем пустой список в случае ошибки, чтобы не прерывать фоновую задачу
+                return []  # Return empty list on error to not interrupt background task
 
 
 # --- Functions for working with user API keys ---
 
 
 async def create_user_api_key(pool, user_id: int, plain_key: str, limits: Dict[str, int], expires_at: Optional[datetime] = None) -> Optional[Dict[str, Any]]:
-    """Создает новый API-ключ для пользователя"""
+    """Creates new API key for user"""
     import json
     from api.deps import hash_api_key
     key_hash = hash_api_key(plain_key)
@@ -1335,7 +1292,7 @@ async def create_user_api_key(pool, user_id: int, plain_key: str, limits: Dict[s
 
 
 async def get_user_api_keys(pool, user_id: int) -> List[Dict[str, Any]]:
-    """Получает список API-ключей пользователя"""
+    """Gets user API keys list"""
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
             try:
@@ -1357,7 +1314,7 @@ async def get_user_api_keys(pool, user_id: int) -> List[Dict[str, Any]]:
 
 
 async def get_user_api_key_by_key(pool, plain_key: str) -> Optional[Dict[str, Any]]:
-    """Получает API-ключ по значению ключа"""
+    """Gets API key by key value"""
     from api.deps import hash_api_key
     key_hash = hash_api_key(plain_key)
     async with pool.acquire() as conn:
@@ -1380,7 +1337,7 @@ async def get_user_api_key_by_key(pool, plain_key: str) -> Optional[Dict[str, An
 
 
 async def update_user_api_key(pool, user_id: int, key_id: int, update_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-    """Обновляет API-ключ пользователя"""
+    """Updates user API key"""
     if not update_data:
         return await get_user_api_key_by_id(pool, user_id, key_id)
 
@@ -1413,7 +1370,7 @@ async def update_user_api_key(pool, user_id: int, key_id: int, update_data: Dict
 
 
 async def get_user_api_key_by_id(pool, user_id: int, key_id: int) -> Optional[Dict[str, Any]]:
-    """Получает конкретный API-ключ пользователя по ID"""
+    """Gets specific user API key by ID"""
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
             try:
@@ -1434,7 +1391,7 @@ async def get_user_api_key_by_id(pool, user_id: int, key_id: int) -> Optional[Di
 
 
 async def delete_user_api_key(pool, user_id: int, key_id: int) -> bool:
-    """Удаляет API-ключ пользователя"""
+    """Deletes user API key"""
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
             try:
@@ -1450,7 +1407,7 @@ async def delete_user_api_key(pool, user_id: int, key_id: int) -> bool:
 
 
 async def get_telegram_link_status(pool, user_id: int) -> Optional[Dict[str, Any]]:
-    """Получает статус привязки Telegram для пользователя"""
+    """Gets Telegram link status for user"""
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
             try:

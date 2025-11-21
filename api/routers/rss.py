@@ -121,14 +121,12 @@ async def get_rss_feed_by_category(language: str, category_name: str):
         from_date = datetime.utcnow() - timedelta(hours=1)
         total_count, results, columns = await database.get_all_rss_items_list(
             pool,
-            display_language=language,
             original_language=None,
             category_id=[category_id],
             source_id=None,
             telegram_published=None,
             from_date=from_date,
             search_phrase=None,
-            include_all_translations=False,
             before_published_at=None,
             cursor_news_id=None,
             limit=10,  # Max 10 items per hour
@@ -198,14 +196,12 @@ async def get_rss_feed_by_source(language: str, source_alias: str):
         from_date = datetime.utcnow() - timedelta(hours=1)
         total_count, results, columns = await database.get_all_rss_items_list(
             pool,
-            display_language=language,
             original_language=None,
             category_id=None,
             source_id=[source_id],
             telegram_published=None,
             from_date=from_date,
             search_phrase=None,
-            include_all_translations=False,
             before_published_at=None,
             cursor_news_id=None,
             limit=10,  # Max 10 items per hour
