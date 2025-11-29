@@ -14,7 +14,7 @@ USER_LANGUAGES: Dict[int, str] = {}
 user_manager = None
 
 
-async def initialize_user_manager():
+async def initialize_user_manager(context=None):
     """Initialize user manager instance."""
     global user_manager
     if user_manager is None:

@@ -6,7 +6,7 @@ from collections import defaultdict
 
 from telegram_bot.models.rss_item import PreparedRSSItem
 from telegram_bot.services.api_service import get_rss_items_list
-from telegram_bot.services.user_state_service import user_manager
+import telegram_bot.services.user_state_service as user_state_service
 from telegram_bot.services.telegram_service import send_personal_rss_items, post_to_channel, SEND_SEMAPHORE
 from telegram_bot.config import CHANNEL_CATEGORIES
 
@@ -127,9 +127,9 @@ async def monitor_rss_items_task(context):
         # Cache for checking categories suitability for general channel
         channel_categories_cache = {}
 
-        if user_manager is not None:
+        if user_state_service.user_manager is not None:
             for category in unique_categories:
-                subscribers = await user_manager.get_subscribers_for_category(category)
+                subscribers = await user_state_service.user_manager.get_subscribers_for_category(category)
                 subscribers_cache[category] = subscribers
                 channel_categories_cache[category] = category in CHANNEL_CATEGORIES
                 if not subscribers:

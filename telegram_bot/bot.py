@@ -49,19 +49,6 @@ async def post_stop(application) -> None:
     logger.info("All resources freed")
 
 
-async def post_init(application) -> None:
-    """Called after application initialization."""
-    logger.info("Application initialized, initializing bot components...")
-
-    # Initialize user_manager
-    try:
-        await initialize_user_manager()
-        logger.info("UserManager initialized successfully")
-    except Exception as e:
-        logger.error(f"Failed to initialize UserManager: {e}")
-        logger.warning("Bot will work without user management features")
-
-
 def main():
     logger.info("=== BOT STARTUP BEGINNING ===")
     logger.info(f"Python version: {sys.version}")
@@ -80,7 +67,7 @@ def main():
         logger.error("This should be the public URL where your bot can receive updates.")
         sys.exit(1)
 
-    application = Application.builder().token(BOT_TOKEN).post_stop(post_stop).post_init(post_init).build()
+    application = Application.builder().token(BOT_TOKEN).post_stop(post_stop).build()
 
     application.add_handler(CommandHandler("start", start_command))
     application.add_handler(CommandHandler("settings", settings_command))
@@ -94,14 +81,16 @@ def main():
 
     job_queue = application.job_queue
     if job_queue:
+        job_queue.run_once(initialize_user_manager, when=0)  # Initialize user_manager immediately in the event loop
         job_queue.run_repeating(monitor_rss_items_task, interval=180, first=10, job_kwargs={"misfire_grace_time": 600})  # Delay first run by 10 seconds
         job_queue.run_repeating(cleanup_expired_data, interval=3600, first=60)
+        logger.info("Registered UserManager initialization task (immediate)")
         logger.info("Registered RSS items monitoring task (every 3 minutes, first run in 10 seconds)")
         logger.info("Registered task to clean expired user data (every 60 minutes)")
 
     logger.info("Bot started in Webhook mode")
     try:
-        application.run_webhook(**WEBHOOK_CONFIG, close_loop=False)
+        application.run_webhook(**WEBHOOK_CONFIG)
     except (KeyboardInterrupt, SystemExit):
         logger.info("Interrupted by user or system...")
     except Exception as e:
