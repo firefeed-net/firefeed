@@ -258,6 +258,40 @@ CACHE_DEFAULT_TTL=3600
 CACHE_MAX_SIZE=10000
 ```
 
+### User Services
+
+#### TelegramUserService (`services/user/telegram_user_service.py`)
+Service for managing Telegram bot users and their preferences.
+
+**Key Features:**
+- User settings management (subscriptions, language)
+- Category-based subscriber retrieval
+- User language preferences
+- Database operations for Telegram bot users
+
+**Interface:** `ITelegramUserService`
+
+#### WebUserService (`services/user/web_user_service.py`)
+Service for managing web users and Telegram account linking.
+
+**Key Features:**
+- Telegram link code generation and validation
+- Web user to Telegram user association
+- Secure linking process with expiration
+- Database operations for web user management
+
+**Interface:** `IWebUserService`
+
+#### UserManager (`services/user/user_manager.py`)
+Backward compatibility wrapper that delegates to specialized services.
+
+**Key Features:**
+- Unified interface for both Telegram and web users
+- Automatic delegation to appropriate service
+- Maintains existing API compatibility
+
+**Interface:** `IUserManager`
+
 ### Dependency Injection System
 
 #### DI Container (`di_container.py`)
@@ -661,14 +695,19 @@ firefeed/
 │   │   ├── __init__.py
 │   │   ├── duplicate_detector.py # ML-based duplicate detection
 │   │   └── embeddings_processor.py # Text embeddings and processing
-│   └── translation/            # Translation services
+│   ├── translation/            # Translation services
+│   │   ├── __init__.py
+│   │   ├── model_manager.py    # ML model management
+│   │   ├── task_queue.py       # Translation task queue
+│   │   ├── terminology_dict.py # Translation terminology
+│   │   ├── translation_cache.py # Translation caching
+│   │   ├── translation_service.py # Translation processing
+│   │   └── translations.py     # Translation messages
+│   └── user/                   # User management services
 │       ├── __init__.py
-│       ├── model_manager.py    # ML model management
-│       ├── task_queue.py       # Translation task queue
-│       ├── terminology_dict.py # Translation terminology
-│       ├── translation_cache.py # Translation caching
-│       ├── translation_service.py # Translation processing
-│       └── translations.py     # Translation messages
+│       ├── telegram_user_service.py # Telegram bot user management
+│       ├── web_user_service.py # Web user management and Telegram linking
+│       └── user_manager.py     # Backward compatibility wrapper
 ├── tests/                      # Unit and integration tests
 │   ├── __init__.py
 │   ├── test_api_keys.py        # API key tests

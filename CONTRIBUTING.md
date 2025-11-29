@@ -122,11 +122,16 @@ firefeed/
 │   │   ├── translation_cache.py # Translation result caching
 │   │   ├── translations.py     # Localized UI messages
 │   │   └── terminology_dict.py # Domain-specific translation terms
+│   ├── user/                   # User management services
+│   │   ├── telegram_user_service.py # Telegram bot user management
+│   │   ├── web_user_service.py # Web user management and Telegram linking
+│   │   └── user_manager.py     # Backward compatibility wrapper
 │   ├── database_pool_adapter.py # Database connection pooling
 │   └── maintenance_service.py  # System maintenance tasks
 ├── tests/                      # Comprehensive test suite
 │   ├── test_services.py        # Service layer testing
 │   ├── test_rss_manager.py     # RSS functionality testing
+│   ├── test_user_services.py   # User services testing (TelegramUserService, WebUserService, UserManager)
 │   ├── test_api_keys.py        # API authentication testing
 │   ├── test_bot.py             # Telegram bot testing
 │   ├── test_database.py        # Database operations testing
@@ -146,7 +151,7 @@ firefeed/
 ├── config_services.py          # Environment-based service configuration
 ├── di_container.py             # Dependency injection container
 ├── exceptions.py               # Custom exception hierarchy
-├── interfaces.py               # Abstract service interfaces
+├── interfaces.py               # Abstract service interfaces (ITelegramUserService, IWebUserService, IUserManager, etc.)
 ├── logging_config.py           # Centralized logging configuration
 ├── main.py                     # Application entry point
 ├── rss_parser.py               # Legacy RSS parser (being phased out)

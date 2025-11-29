@@ -115,6 +115,7 @@ def setup_di_container() -> DIContainer:
     from services.text_analysis.duplicate_detector import FireFeedDuplicateDetector
     from services.database_pool_adapter import DatabasePoolAdapter
     from services.maintenance_service import MaintenanceService
+    from services.user import TelegramUserService, WebUserService, UserManager
 
     # Register database pool adapter
     di_container.register(IDatabasePool, DatabasePoolAdapter)
@@ -171,6 +172,11 @@ def setup_di_container() -> DIContainer:
 
     # Register maintenance service
     di_container.register(IMaintenanceService, MaintenanceService)
+
+    # Register user services
+    di_container.register(ITelegramUserService, TelegramUserService)
+    di_container.register(IWebUserService, WebUserService)
+    di_container.register(IUserManager, UserManager)
 
     logger.info("DI container setup completed with configuration")
     return di_container

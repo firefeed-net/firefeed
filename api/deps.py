@@ -1,4 +1,5 @@
 import logging
+import os
 import re
 import hashlib
 from datetime import datetime, timedelta
@@ -247,7 +248,10 @@ async def get_current_user_by_api_key(request: Request):
 
         logger.info(f"[API_KEY_AUTH] Received API key: {api_key}")
         logger.info(f"[API_KEY_AUTH] SITE_API_KEY from config: {config.SITE_API_KEY}")
-        logger.info(f"[API_KEY_AUTH] BOT_API_KEY from config: {config.BOT_API_KEY}")
+
+        # Get BOT_API_KEY from environment (used by telegram_bot)
+        bot_api_key = os.getenv("BOT_API_KEY")
+        logger.info(f"[API_KEY_AUTH] BOT_API_KEY from env: {bot_api_key[:10] if bot_api_key else 'None'}...")
 
         # Check if it's the site or bot API key
         if config.SITE_API_KEY and api_key == config.SITE_API_KEY:
@@ -262,8 +266,8 @@ async def get_current_user_by_api_key(request: Request):
                 "updated_at": None,
                 "api_key_data": {"limits": {}}  # No limits
             }
-        if config.BOT_API_KEY and api_key == config.BOT_API_KEY:
-            logger.info("[API_KEY_AUTH] BOT_API_KEY matched - authenticating as bot user")
+        if bot_api_key and api_key == bot_api_key:
+            logger.info(f"[API_KEY_AUTH] BOT_API_KEY matched - received: {api_key[:10]}..., configured: {bot_api_key[:10]}...")
             # Bot key: unlimited access, return bot user
             return {
                 "id": -1,  # Bot user ID
@@ -274,6 +278,8 @@ async def get_current_user_by_api_key(request: Request):
                 "updated_at": None,
                 "api_key_data": {"limits": {}}  # No limits
             }
+        else:
+            logger.warning(f"[API_KEY_AUTH] BOT_API_KEY not matched - received: {api_key[:10]}..., configured: {bot_api_key[:10] if bot_api_key else 'None'}")
 
         logger.info("[API_KEY_AUTH] No special API key match, checking user API keys")
 

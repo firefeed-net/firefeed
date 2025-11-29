@@ -9,4 +9,4 @@ eval "$(pyenv init -)"
 pyenv shell 3.13.6
 
 # Start the bot
-python /var/www/firefeed/data/integrations/telegram/bot.py
+python -m telegram_bot.bot

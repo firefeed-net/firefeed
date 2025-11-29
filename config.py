@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Default logging level, overridable via env var
-LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
+LOG_LEVEL = os.getenv("LOG_LEVEL", "WARNING")
 
 # Database connection configuration
 DB_CONFIG = {
@@ -68,27 +68,12 @@ async def close_shared_db_pool():
         logger.info("[DB] Shared connection pool closed.")
 
 
-# Webhook connection configuration
-WEBHOOK_CONFIG = {
-    "listen": os.getenv("WEBHOOK_LISTEN", "127.0.0.1"),
-    "port": int(os.getenv("WEBHOOK_PORT", 5000)),
-    "url_path": os.getenv("WEBHOOK_URL_PATH", "webhook"),
-    "webhook_url": os.getenv("WEBHOOK_URL"),
-}
-
-# FireFeed Bot Token
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-
 # :-)
 FIRE_EMOJI = "🔥"
 
 # Default User-Agent for HTTP requests
-DEFAULT_USER_AGENT = "Mozilla/5.0 (compatible; FireFeed/1.0; +https://firefeed.net)"
-
-# Dictionary of channel IDs for different languages
-CHANNEL_IDS = {"ru": "-1002584789230", "de": "-1002959373215", "fr": "-1002910849909", "en": "-1003035894895"}
-
-CHANNEL_CATEGORIES = {"world", "technology", "lifestyle", "politics", "economy", "autos", "sports"}
+# Using Chrome-like User-Agent to avoid blocking while remaining minimally identifiable
+DEFAULT_USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 FireFeed/1.0"
 
 # Maximum number of news items from one feed in one news monitoring task
 MAX_ENTRIES_PER_FEED = 5
@@ -137,7 +122,6 @@ REDIS_CONFIG = {
 # API Key configuration
 API_KEY_SALT = os.getenv("API_KEY_SALT", "default_salt_change_in_production")
 SITE_API_KEY = os.getenv("SITE_API_KEY")  # Special key for website, unlimited access
-BOT_API_KEY = os.getenv("BOT_API_KEY")  # Special key for Telegram bot, unlimited access
 
 # JWT configuration
 JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY")
