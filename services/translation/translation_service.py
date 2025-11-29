@@ -5,7 +5,7 @@ import re
 import time
 from typing import List, Dict, Any, Optional
 from interfaces import ITranslationService, IModelManager, ITranslatorQueue
-from firefeed_translator_terminology_dict import TERMINOLOGY_DICT
+from services.translation.terminology_dict import TERMINOLOGY_DICT
 
 logger = logging.getLogger(__name__)
 
@@ -534,7 +534,7 @@ class TranslationService(ITranslationService):
 
         try:
             # Use embeddings processor for semantic check
-            from firefeed_embeddings_processor import FireFeedEmbeddingsProcessor
+            from services.text_analysis.embeddings_processor import FireFeedEmbeddingsProcessor
 
             processor = FireFeedEmbeddingsProcessor()
             original_embedding, translated_embedding = await asyncio.gather(

@@ -31,8 +31,8 @@ FireFeed is a high-performance system for automatic collection, processing, and 
 
 ### AI-powered Content Processing
 
-- **Automatic news translation** to 4 languages (Russian, German, French, English) using modern machine learning models (Helsinki-NLP OPUS-MT, M2M100)
-- **Duplicate detection** using semantic analysis and vector embeddings (Sentence Transformers)
+- **Automatic news translation** to 4 languages (Russian, German, French, English) using modern machine learning models (Helsinki-NLP OPUS-MT, M2M100) - **optional via TRANSLATION_ENABLED**
+- **Duplicate detection** using semantic analysis and vector embeddings (Sentence Transformers) - **optional via DUPLICATE_DETECTOR_ENABLED**
 - **Intelligent image processing** with automatic extraction and optimization
 
 ### Multilingual Support
@@ -393,8 +393,6 @@ WEBHOOK_URL=https://yourdomain.com/webhook
 
 # Telegram Bot Token (get from @BotFather)
 BOT_TOKEN=your_telegram_bot_token
-# Alternative name used in some places
-# TELEGRAM_BOT_TOKEN=your_telegram_bot_token
 
 # JWT configuration for API authentication
 JWT_SECRET_KEY=your_jwt_secret_key
@@ -411,7 +409,57 @@ REDIS_DB=0
 API_KEY_SALT=change_in_production
 SITE_API_KEY=your_site_api_key
 BOT_API_KEY=your_bot_api_key
+
+# Optional AI features (enabled by default)
+TRANSLATION_ENABLED=true          # Enable/disable automatic news translation
+DUPLICATE_DETECTOR_ENABLED=true   # Enable/disable ML-based duplicate detection
+
+# AI Model configuration
+TRANSLATION_MODEL=facebook/m2m100_418M                    # Translation model (M2M100, Helsinki-NLP, etc.)
+EMBEDDING_SENTENCE_TRANSFORMER_MODEL=paraphrase-multilingual-MiniLM-L12-v2  # Sentence transformer for embeddings
+SPACY_EN_MODEL=en_core_web_sm                              # English spaCy model
+SPACY_RU_MODEL=ru_core_news_sm                             # Russian spaCy model
+SPACY_DE_MODEL=de_core_news_sm                             # German spaCy model
+SPACY_FR_MODEL=fr_core_news_sm                             # French spaCy model
 ```
+
+### Optional AI Features Configuration
+
+FireFeed provides optional AI-powered features that can be enabled or disabled based on your needs:
+
+#### TRANSLATION_ENABLED
+- **Default**: `true`
+- **Description**: Controls automatic translation of news articles to multiple languages
+- **Impact**: When disabled, news items will only be available in their original language
+- **Use case**: Disable to reduce computational load or when translations are not needed
+
+#### DUPLICATE_DETECTOR_ENABLED
+- **Default**: `true`
+- **Description**: Controls ML-based duplicate detection using semantic analysis
+- **Impact**: When disabled, all news items will be processed without duplicate checking
+- **Use case**: Disable for faster processing or when duplicate detection is handled externally
+
+### AI Model Configuration
+
+FireFeed allows customization of the AI models used for translation, embeddings, and text processing:
+
+#### TRANSLATION_MODEL
+- **Default**: `facebook/m2m100_418M`
+- **Description**: Specifies the translation model from Hugging Face Transformers
+- **Supported models**: M2M100, Helsinki-NLP OPUS-MT, MarianMT, MBart, etc.
+- **Example**: `Helsinki-NLP/opus-mt-en-ru` for Helsinki-NLP models
+
+#### EMBEDDING_SENTENCE_TRANSFORMER_MODEL
+- **Default**: `paraphrase-multilingual-MiniLM-L12-v2`
+- **Description**: Sentence transformer model for generating text embeddings
+- **Supported models**: Any SentenceTransformer-compatible model from Hugging Face
+- **Example**: `all-MiniLM-L6-v2` for faster, smaller model
+
+#### SPACY_*_MODEL
+- **Default**: `en_core_web_sm`, `ru_core_news_sm`, `de_core_news_sm`, `fr_core_news_sm`
+- **Description**: spaCy language models for text processing and linguistic analysis
+- **Supported models**: Any spaCy model compatible with the language
+- **Example**: `en_core_web_trf` for transformer-based English model
 
 ### Systemd Services
 
@@ -567,25 +615,106 @@ pytest tests/ --tb=short
 
 ```
 firefeed/
-├── services/                    # Service-oriented architecture
-│   ├── rss/                    # RSS services
+├── api/                        # FastAPI REST API
+│   ├── __init__.py
+│   ├── app.py                  # FastAPI application
+│   ├── database.py             # Database connection
+│   ├── deps.py                 # Dependencies
+│   ├── main.py                 # API entry point
+│   ├── middleware.py           # Custom middleware
+│   ├── models.py               # Pydantic models
+│   ├── websocket.py            # WebSocket support
+│   ├── email_service/          # Email service
 │   │   ├── __init__.py
-│   │   ├── rss_fetcher.py     # RSS parser
-│   │   ├── rss_validator.py   # Validator
-│   │   ├── rss_storage.py     # Storage
-│   │   ├── media_extractor.py # Media extraction
-│   │   └── rss_manager.py     # Composite manager
-│   └── translation/           # Translation services
+│   │   ├── sender.py           # Email sending
+│   │   └── templates/          # Email templates
+│   │       ├── password_reset_email_de.html
+│   │       ├── password_reset_email_en.html
+│   │       ├── password_reset_email_ru.html
+│   │       ├── registration_success_email_de.html
+│   │       ├── registration_success_email_en.html
+│   │       ├── registration_success_email_ru.html
+│   │       ├── verification_email_de.html
+│   │       ├── verification_email_en.html
+│   │       └── verification_email_ru.html
+│   └── routers/                # API endpoints
 │       ├── __init__.py
-│       ├── model_manager.py   # ML model manager
-│       ├── translation_service.py # Translation service
-│       └── translation_cache.py   # Caching
-├── interfaces.py              # Abstract interfaces
-├── di_container.py            # Dependency injection
-├── config_services.py         # Environment-based configuration
-├── exceptions.py              # Custom exceptions
-├── rss_manager.py             # Compatibility adapter
-└── tests/test_services.py     # New service tests
+│       ├── api_keys.py         # API key management
+│       ├── auth.py             # Authentication
+│       ├── categories.py       # News categories
+│       ├── rss_feeds.py        # RSS feed management
+│       ├── rss_items.py        # RSS items
+│       ├── rss.py              # RSS operations
+│       ├── telegram.py         # Telegram integration
+│       └── users.py            # User management
+├── services/                   # Service-oriented architecture
+│   ├── database_pool_adapter.py # Database connection pool
+│   ├── maintenance_service.py  # System maintenance
+│   ├── rss/                    # RSS processing services
+│   │   ├── __init__.py
+│   │   ├── media_extractor.py  # Media content extraction
+│   │   ├── rss_fetcher.py      # RSS feed fetching
+│   │   ├── rss_manager.py      # RSS processing orchestration
+│   │   ├── rss_storage.py      # RSS data storage
+│   │   └── rss_validator.py    # RSS feed validation
+│   ├── text_analysis/          # Text analysis and ML services
+│   │   ├── __init__.py
+│   │   ├── duplicate_detector.py # ML-based duplicate detection
+│   │   └── embeddings_processor.py # Text embeddings and processing
+│   └── translation/            # Translation services
+│       ├── __init__.py
+│       ├── model_manager.py    # ML model management
+│       ├── task_queue.py       # Translation task queue
+│       ├── terminology_dict.py # Translation terminology
+│       ├── translation_cache.py # Translation caching
+│       ├── translation_service.py # Translation processing
+│       └── translations.py     # Translation messages
+├── tests/                      # Unit and integration tests
+│   ├── __init__.py
+│   ├── test_api_keys.py        # API key tests
+│   ├── test_bot.py             # Telegram bot tests
+│   ├── test_database.py        # Database tests
+│   ├── test_email.py           # Email service tests
+│   ├── test_models.py          # Model tests
+│   ├── test_registration_success_email.py # Email template tests
+│   ├── test_rss_manager.py     # RSS manager tests
+│   ├── test_services.py        # Service tests
+│   └── test_utils.py           # Utility tests
+├── utils/                      # Utility functions
+│   ├── __init__.py
+│   ├── api.py                  # API utilities
+│   ├── cache.py                # Caching utilities
+│   ├── cleanup.py              # Cleanup utilities
+│   ├── database.py             # Database utilities
+│   ├── image.py                # Image processing
+│   ├── media_extractors.py     # Media extraction
+│   ├── retry.py                # Retry mechanisms
+│   ├── text.py                 # Text processing
+│   └── video.py                # Video processing
+├── bot.py                      # Telegram bot main file
+├── config.py                   # Configuration constants
+├── config_services.py          # Service configuration
+├── di_container.py             # Dependency injection container
+├── exceptions.py               # Custom exceptions
+├── interfaces.py               # Service interfaces
+├── logging_config.py           # Logging configuration
+├── main.py                     # Main entry point
+├── requirements.txt            # Python dependencies
+├── rss_parser.py               # RSS parser (legacy)
+├── run_api.sh                  # API startup script
+├── run_bot.sh                  # Bot startup script
+├── run_parser.sh               # Parser startup script
+├── test_translation.py         # Translation testing
+├── user_manager.py             # User management
+├── .dockerignore               # Docker ignore file
+├── .env.example                # Environment variables example
+├── .gitignore                  # Git ignore file
+├── CODE_OF_CONDUCT.md          # Code of conduct
+├── CONTRIBUTING.md             # Contribution guidelines
+├── docker-compose.yml          # Docker compose configuration
+├── Dockerfile                  # Docker image definition
+├── LICENSE                     # License file
+└── README.md                   # This file
 ```
 
 ## License

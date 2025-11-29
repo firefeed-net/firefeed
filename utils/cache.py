@@ -1,6 +1,7 @@
 import logging
 import spacy
 from typing import Optional, Dict, Any
+from config_services import get_service_config
 
 logger = logging.getLogger(__name__)
 
@@ -31,11 +32,12 @@ class SpacyModelCache:
             return self.models[lang_code]
 
         # Mapping language code to spacy model
+        config = get_service_config()
         spacy_model_map = {
-            "en": "en_core_web_sm",
-            "ru": "ru_core_news_sm",
-            "de": "de_core_news_sm",
-            "fr": "fr_core_news_sm",
+            "en": config.deduplication.spacy_models.en_model,
+            "ru": config.deduplication.spacy_models.ru_model,
+            "de": config.deduplication.spacy_models.de_model,
+            "fr": config.deduplication.spacy_models.fr_model,
         }
 
         model_name = spacy_model_map.get(lang_code)

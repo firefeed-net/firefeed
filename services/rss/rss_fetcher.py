@@ -13,6 +13,7 @@ from utils.video import VideoProcessor
 from exceptions import RSSFetchError, RSSParseError, RSSValidationError
 from api.deps import validate_rss_url
 from config import RSS_PARSER_MEDIA_TYPE_PRIORITY, HTTP_IMAGES_ROOT_DIR, HTTP_VIDEOS_ROOT_DIR
+from config_services import get_service_config
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +37,11 @@ class RSSFetcher(IRSSFetcher):
 
     async def check_for_duplicates(self, title: str, content: str, link: str, lang: str) -> bool:
         """Check if content is duplicate"""
+        config = get_service_config()
+        if not config.deduplication.duplicate_detector_enabled:
+            logger.debug("[DUPLICATE] Duplicate detection is disabled")
+            return False
+
         try:
             is_duplicate, duplicate_info = await self.duplicate_detector.is_duplicate(title, content, link, lang)
             if is_duplicate:

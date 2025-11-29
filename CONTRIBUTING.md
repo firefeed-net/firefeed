@@ -95,15 +95,69 @@ mypy .
 
 ```
 firefeed/
-├── api/                 # FastAPI application
-├── tests/                 # Unit tests
-├── bot.py              # Telegram bot
-├── rss_parser.py       # RSS parser
-├── firefeed_translator.py    # Translator
-├── firefeed_dublicate_detector.py  # Duplicate detector
-├── user_manager.py     # User manager
-├── requirements.txt    # Dependencies
-└── config/            # Configurations
+├── api/                        # FastAPI REST API
+│   ├── routers/                # API endpoints organized by domain
+│   ├── email_service/          # Email notification service
+│   ├── app.py                  # FastAPI application setup
+│   ├── main.py                 # API server entry point
+│   ├── models.py               # Pydantic request/response models
+│   ├── deps.py                 # Dependency injection for API
+│   ├── database.py             # Database connection for API
+│   ├── middleware.py           # Custom middleware (CORS, logging)
+│   └── websocket.py            # WebSocket support for real-time features
+├── services/                   # Service-oriented architecture
+│   ├── rss/                    # RSS processing services
+│   │   ├── rss_manager.py      # Main RSS processing orchestrator
+│   │   ├── rss_fetcher.py      # RSS feed fetching and parsing
+│   │   ├── rss_storage.py      # RSS data persistence
+│   │   ├── rss_validator.py    # RSS feed validation
+│   │   └── media_extractor.py  # Image/video extraction from RSS
+│   ├── text_analysis/          # ML-powered text analysis
+│   │   ├── duplicate_detector.py # Semantic duplicate detection
+│   │   └── embeddings_processor.py # Text embeddings and preprocessing
+│   ├── translation/            # Multilingual translation services
+│   │   ├── translation_service.py # Core translation logic
+│   │   ├── model_manager.py    # ML model lifecycle management
+│   │   ├── task_queue.py       # Async translation task processing
+│   │   ├── translation_cache.py # Translation result caching
+│   │   ├── translations.py     # Localized UI messages
+│   │   └── terminology_dict.py # Domain-specific translation terms
+│   ├── database_pool_adapter.py # Database connection pooling
+│   └── maintenance_service.py  # System maintenance tasks
+├── tests/                      # Comprehensive test suite
+│   ├── test_services.py        # Service layer testing
+│   ├── test_rss_manager.py     # RSS functionality testing
+│   ├── test_api_keys.py        # API authentication testing
+│   ├── test_bot.py             # Telegram bot testing
+│   ├── test_database.py        # Database operations testing
+│   ├── test_email.py           # Email service testing
+│   └── test_utils.py           # Utility function testing
+├── utils/                      # Shared utility functions
+│   ├── text.py                 # Text processing utilities
+│   ├── image.py                # Image manipulation utilities
+│   ├── video.py                # Video processing utilities
+│   ├── api.py                  # API client utilities
+│   ├── cache.py                # Caching abstractions
+│   ├── database.py             # Database helper functions
+│   ├── retry.py                # Retry mechanisms
+│   └── cleanup.py              # Resource cleanup utilities
+├── bot.py                      # Telegram bot main application
+├── config.py                   # Application constants and settings
+├── config_services.py          # Environment-based service configuration
+├── di_container.py             # Dependency injection container
+├── exceptions.py               # Custom exception hierarchy
+├── interfaces.py               # Abstract service interfaces
+├── logging_config.py           # Centralized logging configuration
+├── main.py                     # Application entry point
+├── rss_parser.py               # Legacy RSS parser (being phased out)
+├── user_manager.py             # User account management
+├── requirements.txt            # Python dependencies
+├── .env.example                # Environment variables template
+├── docker-compose.yml          # Multi-container Docker setup
+├── Dockerfile                  # Container build instructions
+├── run_api.sh                  # API server startup script
+├── run_bot.sh                  # Bot startup script
+└── run_parser.sh               # RSS parser startup script
 ```
 
 ## Contacts

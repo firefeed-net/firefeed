@@ -5,7 +5,8 @@ from typing import List, Tuple, Optional, Dict, Any
 import logging
 from config import RSS_ITEM_SIMILARITY_THRESHOLD
 from utils.database import DatabaseMixin
-from firefeed_embeddings_processor import FireFeedEmbeddingsProcessor
+from services.text_analysis.embeddings_processor import FireFeedEmbeddingsProcessor
+from config_services import get_service_config
 
 logger = logging.getLogger(__name__)
 
@@ -13,7 +14,7 @@ logger = logging.getLogger(__name__)
 class FireFeedDuplicateDetector(DatabaseMixin):
     def __init__(
         self,
-        model_name: str = "paraphrase-multilingual-MiniLM-L12-v2",
+        model_name: Optional[str] = None,
         device: str = "cpu",
         similarity_threshold: float = RSS_ITEM_SIMILARITY_THRESHOLD,
     ):
@@ -25,6 +26,9 @@ class FireFeedDuplicateDetector(DatabaseMixin):
             device: Устройство для модели
             similarity_threshold: Базовый порог схожести
         """
+        if model_name is None:
+            config = get_service_config()
+            model_name = config.deduplication.embedding_models.sentence_transformer_model
         self.processor = FireFeedEmbeddingsProcessor(model_name, device)
         self.similarity_threshold = similarity_threshold
 
@@ -82,21 +86,21 @@ class FireFeedDuplicateDetector(DatabaseMixin):
                         else:
                             continue
                     except (json.JSONDecodeError, ValueError) as e:
-                        logger.error(f"[DUBLICATE_DETECTOR] Error converting embedding from DB: {e}")
+                        logger.error(f"[DUPLICATE_DETECTOR] Error converting embedding from DB: {e}")
                         continue
 
                     similarity = await self.processor.calculate_similarity(stored_embedding, embedding)
 
                     if similarity > threshold:
                         logger.info(
-                            f"[DUBLICATE_DETECTOR] Duplicate found with similarity {similarity:.4f} (threshold: {threshold:.4f})"
+                            f"[DUPLICATE_DETECTOR] Duplicate found with similarity {similarity:.4f} (threshold: {threshold:.4f})"
                         )
                         return True, rss_item
 
             return False, None
 
         except Exception as e:
-            logger.error(f"[DUBLICATE_DETECTOR] Error checking duplicate with embedding: {e}")
+            logger.error(f"[DUPLICATE_DETECTOR] Error checking duplicate with embedding: {e}")
             raise
 
     async def generate_embedding(self, title: str, content: str, lang_code: str = "en") -> List[float]:
@@ -187,7 +191,7 @@ class FireFeedDuplicateDetector(DatabaseMixin):
                     results = await cur.fetchall()
                     return [dict(zip([column[0] for column in cur.description], row)) for row in results]
         except Exception as e:
-            logger.error(f"[DUBLICATE_DETECTOR] Error searching for similar RSS items: {e}")
+            logger.error(f"[DUPLICATE_DETECTOR] Error searching for similar RSS items: {e}")
             raise
 
     async def is_duplicate(
@@ -254,25 +258,25 @@ class FireFeedDuplicateDetector(DatabaseMixin):
                             )
                         else:
                             logger.warning(
-                                f"[DUBLICATE_DETECTOR] Unknown data type for embedding: {type(rss_item['embedding'])}"
+                                f"[DUPLICATE_DETECTOR] Unknown data type for embedding: {type(rss_item['embedding'])}"
                             )
                             continue
                     except (json.JSONDecodeError, ValueError) as e:
-                        logger.error(f"[DUBLICATE_DETECTOR] Error converting embedding from DB: {e}")
+                        logger.error(f"[DUPLICATE_DETECTOR] Error converting embedding from DB: {e}")
                         continue
 
                     similarity = await self.processor.calculate_similarity(stored_embedding, embedding)
 
                     if similarity > threshold:
                         logger.info(
-                            f"[DUBLICATE_DETECTOR] Duplicate found with similarity {similarity:.4f} (threshold: {threshold:.4f})"
+                            f"[DUPLICATE_DETECTOR] Duplicate found with similarity {similarity:.4f} (threshold: {threshold:.4f})"
                         )
                         return True, rss_item
 
             return False, None
 
         except Exception as e:
-            logger.error(f"[DUBLICATE_DETECTOR] Error checking duplicate: {e}")
+            logger.error(f"[DUPLICATE_DETECTOR] Error checking duplicate: {e}")
             raise
 
 
@@ -297,14 +301,14 @@ class FireFeedDuplicateDetector(DatabaseMixin):
 
             # If embedding already exists, use it for duplicate checking
             if existing_embedding is not None:
-                logger.debug(f"[DUBLICATE_DETECTOR] Embedding for RSS item {rss_item_id} already exists")
+                logger.debug(f"[DUPLICATE_DETECTOR] Embedding for RSS item {rss_item_id} already exists")
                 # Check for duplicate using existing embedding
                 is_dup, duplicate_info = await self._is_duplicate_with_embedding(
                     rss_item_id, existing_embedding, text_length, "content"
                 )
             else:
                 # If no embedding, generate new one
-                logger.debug(f"[DUBLICATE_DETECTOR] Generating new embedding for RSS item {rss_item_id}")
+                logger.debug(f"[DUPLICATE_DETECTOR] Generating new embedding for RSS item {rss_item_id}")
                 embedding = await self.generate_embedding(title, content, lang_code)
 
                 # Check for duplicate with new embedding
@@ -318,15 +322,15 @@ class FireFeedDuplicateDetector(DatabaseMixin):
 
             if is_dup:
                 logger.info(
-                    f"[DUBLICATE_DETECTOR] RSS item {title[:50]} is a duplicate of RSS item {duplicate_info['news_id']}"
+                    f"[DUPLICATE_DETECTOR] RSS item {title[:50]} is a duplicate of RSS item {duplicate_info['news_id']}"
                 )
                 return False
 
-            # logger.info(f"[DUBLICATE_DETECTOR] RSS item {rss_item_id} is unique")
+            # logger.info(f"[DUPLICATE_DETECTOR] RSS item {rss_item_id} is unique")
             return True
 
         except Exception as e:
-            logger.error(f"[DUBLICATE_DETECTOR] Error processing RSS item {rss_item_id}: {e}")
+            logger.error(f"[DUPLICATE_DETECTOR] Error processing RSS item {rss_item_id}: {e}")
             raise
 
     # --- Methods for batch processing ---
@@ -478,7 +482,7 @@ class FireFeedDuplicateDetector(DatabaseMixin):
 
             except asyncio.CancelledError:
                 logger.info("[BATCH_EMBEDDING] Continuous batch processing cancelled.")
-                break  # Выходим из цикла при отмене задачи
+                break  # Выходим из цикла при отмене
             except Exception as e:
                 logger.error(f"[BATCH_EMBEDDING] Unexpected error in continuous processing: {e}", exc_info=True)
                 # Ждем перед повторной попыткой в случае ошибки

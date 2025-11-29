@@ -7,6 +7,7 @@ import numpy as np
 from typing import List, Optional, Dict, Any
 import logging
 from utils.text import TextProcessor
+from config_services import get_service_config
 
 logger = logging.getLogger(__name__)
 
@@ -18,8 +19,11 @@ class FireFeedEmbeddingsProcessor:
     _spacy_cache = {}
     _spacy_usage_order = []
 
-    def __new__(cls, model_name: str = "paraphrase-multilingual-MiniLM-L12-v2", device: str = "cpu", max_spacy_cache: int = 3):
+    def __new__(cls, model_name: Optional[str] = None, device: str = "cpu", max_spacy_cache: int = 3):
         """Синглтон паттерн для кэширования моделей"""
+        if model_name is None:
+            config = get_service_config()
+            model_name = config.deduplication.embedding_models.sentence_transformer_model
         cache_key = f"{model_name}_{device}_{max_spacy_cache}"
         if cls._instance is None:
             cls._instance = super().__new__(cls)
@@ -27,8 +31,11 @@ class FireFeedEmbeddingsProcessor:
         return cls._instance
 
     def __init__(
-        self, model_name: str = "paraphrase-multilingual-MiniLM-L12-v2", device: str = "cpu", max_spacy_cache: int = 3
+        self, model_name: Optional[str] = None, device: str = "cpu", max_spacy_cache: int = 3
     ):
+        if model_name is None:
+            config = get_service_config()
+            model_name = config.deduplication.embedding_models.sentence_transformer_model
         """
         Инициализация процессора эмбеддингов с кэшированием моделей
 
@@ -73,11 +80,12 @@ class FireFeedEmbeddingsProcessor:
             logger.info(f"[EMBEDDINGS] Using cached spacy model for language '{lang_code}'")
             return self._spacy_cache[lang_code]
 
+        config = get_service_config()
         spacy_model_map = {
-            "en": "en_core_web_sm",
-            "ru": "ru_core_news_sm",
-            "de": "de_core_news_sm",
-            "fr": "fr_core_news_sm",
+            "en": config.deduplication.spacy_models.en_model,
+            "ru": config.deduplication.spacy_models.ru_model,
+            "de": config.deduplication.spacy_models.de_model,
+            "fr": config.deduplication.spacy_models.fr_model,
         }
 
         model_name = spacy_model_map.get(lang_code)

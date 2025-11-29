@@ -18,7 +18,7 @@ from tenacity import retry, stop_after_attempt, wait_exponential
 from utils.text import TextProcessor
 
 from config import WEBHOOK_CONFIG, BOT_TOKEN, CHANNEL_IDS, CHANNEL_CATEGORIES, get_shared_db_pool, RSS_PARSER_MEDIA_TYPE_PRIORITY, HTTP_IMAGES_ROOT_DIR, HTTP_VIDEOS_ROOT_DIR
-from firefeed_translations import get_message, LANG_NAMES, TRANSLATED_FROM_LABELS, READ_MORE_LABELS, SOURCE_LABELS
+from services.translation.translations import get_message, LANG_NAMES, TRANSLATED_FROM_LABELS, READ_MORE_LABELS, SOURCE_LABELS
 from logging_config import setup_logging
 from user_manager import UserManager
 

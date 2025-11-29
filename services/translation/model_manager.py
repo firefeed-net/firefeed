@@ -4,6 +4,7 @@ import logging
 import time
 from typing import Dict, Any, Tuple, Optional
 from interfaces import IModelManager
+from config_services import get_service_config
 
 logger = logging.getLogger(__name__)
 
@@ -56,8 +57,9 @@ class ModelManager(IModelManager):
                 # Import here to avoid circular imports and conditional loading
                 from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
 
-                # Use the original m2m100 multilingual model
-                model_name = "facebook/m2m100_418M"
+                # Use the configured translation model
+                config = get_service_config()
+                model_name = config.translation.models.translation_model
 
                 tokenizer = AutoTokenizer.from_pretrained(model_name)
                 model = AutoModelForSeq2SeqLM.from_pretrained(model_name).to(self.device)

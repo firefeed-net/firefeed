@@ -25,22 +25,68 @@ class RSSConfig:
 
 
 @dataclass
+class TranslationModelsConfig:
+    """Configuration for translation models"""
+    translation_model: str = "facebook/m2m100_418M"
+
+    @classmethod
+    def from_env(cls) -> 'TranslationModelsConfig':
+        return cls(
+            translation_model=os.getenv('TRANSLATION_MODEL', 'facebook/m2m100_418M')
+        )
+
+
+@dataclass
+class EmbeddingModelsConfig:
+    """Configuration for embedding models"""
+    sentence_transformer_model: str = "paraphrase-multilingual-MiniLM-L12-v2"
+
+    @classmethod
+    def from_env(cls) -> 'EmbeddingModelsConfig':
+        return cls(
+            sentence_transformer_model=os.getenv('EMBEDDING_SENTENCE_TRANSFORMER_MODEL', 'paraphrase-multilingual-MiniLM-L12-v2')
+        )
+
+
+@dataclass
+class SpacyModelsConfig:
+    """Configuration for spaCy models"""
+    en_model: str = "en_core_web_sm"
+    ru_model: str = "ru_core_news_sm"
+    de_model: str = "de_core_news_sm"
+    fr_model: str = "fr_core_news_sm"
+
+    @classmethod
+    def from_env(cls) -> 'SpacyModelsConfig':
+        return cls(
+            en_model=os.getenv('SPACY_EN_MODEL', 'en_core_web_sm'),
+            ru_model=os.getenv('SPACY_RU_MODEL', 'ru_core_news_sm'),
+            de_model=os.getenv('SPACY_DE_MODEL', 'de_core_news_sm'),
+            fr_model=os.getenv('SPACY_FR_MODEL', 'fr_core_news_sm')
+        )
+
+
+@dataclass
 class TranslationConfig:
     """Configuration for translation services"""
+    models: TranslationModelsConfig
     max_concurrent_translations: int = 3
     max_cached_models: int = 15
     model_cleanup_interval: int = 1800  # 30 minutes
     default_device: str = "cpu"
     max_workers: int = 4
+    translation_enabled: bool = True
 
     @classmethod
     def from_env(cls) -> 'TranslationConfig':
         return cls(
+            models=TranslationModelsConfig.from_env(),
             max_concurrent_translations=int(os.getenv('TRANSLATION_MAX_CONCURRENT', '3')),
             max_cached_models=int(os.getenv('TRANSLATION_MAX_CACHED_MODELS', '15')),
             model_cleanup_interval=int(os.getenv('TRANSLATION_CLEANUP_INTERVAL', '1800')),
             default_device=os.getenv('TRANSLATION_DEVICE', 'cpu'),
-            max_workers=int(os.getenv('TRANSLATION_MAX_WORKERS', '4'))
+            max_workers=int(os.getenv('TRANSLATION_MAX_WORKERS', '4')),
+            translation_enabled=os.getenv('TRANSLATION_ENABLED', 'true').lower() == 'true'
         )
 
 
@@ -77,12 +123,29 @@ class QueueConfig:
 
 
 @dataclass
+class DeduplicationConfig:
+    """Configuration for deduplication services"""
+    embedding_models: EmbeddingModelsConfig
+    spacy_models: SpacyModelsConfig
+    duplicate_detector_enabled: bool = True
+
+    @classmethod
+    def from_env(cls) -> 'DeduplicationConfig':
+        return cls(
+            embedding_models=EmbeddingModelsConfig.from_env(),
+            spacy_models=SpacyModelsConfig.from_env(),
+            duplicate_detector_enabled=os.getenv('DUPLICATE_DETECTOR_ENABLED', 'true').lower() == 'true'
+        )
+
+
+@dataclass
 class ServiceConfig:
     """Main service configuration"""
     rss: RSSConfig
     translation: TranslationConfig
     cache: CacheConfig
     queue: QueueConfig
+    deduplication: DeduplicationConfig
 
     @classmethod
     def from_env(cls) -> 'ServiceConfig':
@@ -90,7 +153,8 @@ class ServiceConfig:
             rss=RSSConfig.from_env(),
             translation=TranslationConfig.from_env(),
             cache=CacheConfig.from_env(),
-            queue=QueueConfig.from_env()
+            queue=QueueConfig.from_env(),
+            deduplication=DeduplicationConfig.from_env()
         )
 
 

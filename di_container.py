@@ -111,10 +111,10 @@ def setup_di_container() -> DIContainer:
     # Import services
     from services.rss import MediaExtractor, RSSValidator, RSSStorage, RSSFetcher
     from services.translation import ModelManager, TranslationService, TranslationCache
+    from services.translation.task_queue import FireFeedTranslatorTaskQueue
+    from services.text_analysis.duplicate_detector import FireFeedDuplicateDetector
     from services.database_pool_adapter import DatabasePoolAdapter
     from services.maintenance_service import MaintenanceService
-    from firefeed_translator_task_queue import FireFeedTranslatorTaskQueue
-    from firefeed_dublicate_detector import FireFeedDuplicateDetector
 
     # Register database pool adapter
     di_container.register(IDatabasePool, DatabasePoolAdapter)

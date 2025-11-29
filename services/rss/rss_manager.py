@@ -5,6 +5,7 @@ from typing import List, Dict, Any, Optional
 from datetime import datetime, timezone, timedelta
 
 from config import DEFAULT_USER_AGENT
+from config_services import get_service_config
 from interfaces import (
     IRSSFetcher, IRSSValidator, IRSSStorage, IMediaExtractor,
     ITranslationService, IDuplicateDetector, ITranslatorQueue, IMaintenanceService
@@ -260,8 +261,9 @@ class RSSManager:
                         rss_item["id"] = news_id
                         processed_items.append(rss_item)
 
-                        # Queue for translation if needed
-                        if self.translator_task_queue:
+                        # Queue for translation if needed and enabled
+                        config = get_service_config()
+                        if self.translator_task_queue and config.translation.translation_enabled:
                             await self.translator_task_queue.add_task(
                                 title=rss_item["title"],
                                 content=rss_item["content"],
