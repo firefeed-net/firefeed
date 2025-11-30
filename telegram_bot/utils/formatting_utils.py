@@ -55,9 +55,16 @@ def truncate_caption(caption: str, max_length: int = 1024) -> str:
         elif 'Translated from' in line or 'Переведено с' in line or 'Übersetzt von' in line or 'Traduit de' in line:
             lang_note = '\n' + line
 
+    # Remove extracted lang_note and hashtags from caption to avoid duplication
+    cleaned_caption = caption
+    if lang_note:
+        cleaned_caption = cleaned_caption.replace(lang_note, '')
+    if hashtags:
+        cleaned_caption = cleaned_caption.replace(hashtags, '')
+
     max_content_length = max_length - len(base_text) - len(lang_note) - len(hashtags)
     if max_content_length > 0:
-        content_part = caption.split('\n\n')[1] if '\n\n' in caption else ""
+        content_part = cleaned_caption.split('\n\n')[1] if '\n\n' in cleaned_caption else ""
         truncated_content = content_part[: max_content_length - 3] + "..." if content_part else ""
         return f"{base_text}\n{truncated_content}{lang_note}{hashtags}"
     else:
