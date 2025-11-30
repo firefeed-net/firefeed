@@ -4,9 +4,10 @@ import logging
 from telegram import Update
 from telegram.ext import ContextTypes
 
+import telegram_bot.services.user_state_service as user_state_service
 from telegram_bot.services.user_state_service import (
     get_current_user_language, set_current_user_language, get_user_state,
-    update_user_state, clear_user_state, user_manager
+    update_user_state, clear_user_state
 )
 from telegram_bot.services.api_service import get_categories
 from telegram_bot.utils.keyboard_utils import get_main_menu_keyboard, get_settings_keyboard
@@ -22,9 +23,13 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = query.from_user.id
     try:
         if user_id not in [state_user_id for state_user_id in get_user_state(user_id) or {}]:
-            subs = await user_manager.get_user_subscriptions(user_id)
-            current_subs = subs if isinstance(subs, list) else []
-            update_user_state(user_id, {"current_subs": current_subs, "language": await get_current_user_language(user_id), "last_access": context.application._runtime})
+            if user_state_service.user_manager is not None:
+                subs = await user_state_service.user_manager.get_user_subscriptions(user_id)
+                current_subs = subs if isinstance(subs, list) else []
+            else:
+                current_subs = []
+                logger.error(f"user_manager not initialized for button handler for {user_id}")
+            update_user_state(user_id, {"current_subs": current_subs, "language": await get_current_user_language(user_id)})
         state = get_user_state(user_id)
         current_lang = state["language"] if state else await get_current_user_language(user_id)
         if query.data.startswith("toggle_"):
@@ -46,9 +51,13 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             logger.info(
                 f"Saving settings for user {user_id}: subscriptions={state['current_subs'] if state else []}, language={current_lang}"
             )
-            result = await user_manager.save_user_settings(user_id, state["current_subs"] if state else [], current_lang)
-            logger.info(f"Save result for user {user_id}: {result}")
-            clear_user_state(user_id)
+            if user_state_service.user_manager is not None:
+                result = await user_state_service.user_manager.save_user_settings(user_id, state["current_subs"] if state else [], current_lang)
+                logger.info(f"Save result for user {user_id}: {result}")
+                clear_user_state(user_id)
+            else:
+                logger.error(f"user_manager not initialized for save_settings for {user_id}")
+                # Do not clear state, keep it for retry
             try:
                 await query.message.delete()
             except Exception:
