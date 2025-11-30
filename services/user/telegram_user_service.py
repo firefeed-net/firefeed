@@ -154,7 +154,7 @@ class TelegramUserService(DatabaseMixin, ITelegramUserService):
                     logger.info(f"[DB] [TelegramUserService] Removed blocked user {user_id}")
                     return True
                 else:
-                    logger.warning(f"[DB] [TelegramUserService] User {user_id} not found for removal")
+                    logger.debug(f"[DB] [TelegramUserService] User {user_id} not found for removal")
                     return False
 
     # Public methods
