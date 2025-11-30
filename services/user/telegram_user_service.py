@@ -91,14 +91,25 @@ class TelegramUserService(DatabaseMixin, ITelegramUserService):
         """Set user language"""
         async with pool.acquire() as conn:
             async with conn.cursor() as cur:
+                # Check if record exists
                 await cur.execute(
-                    """
-                    INSERT INTO user_preferences (user_id, language)
-                    VALUES (%s, %s)
-                    ON CONFLICT (user_id) DO UPDATE SET language = EXCLUDED.language
-                    """,
-                    (user_id, lang_code),
+                    "SELECT id FROM user_preferences WHERE user_id = %s",
+                    (user_id,)
                 )
+                exists = await cur.fetchone()
+
+                if exists:
+                    # Update existing record
+                    await cur.execute(
+                        "UPDATE user_preferences SET language = %s WHERE user_id = %s",
+                        (lang_code, user_id)
+                    )
+                else:
+                    # Insert new record
+                    await cur.execute(
+                        "INSERT INTO user_preferences (user_id, language) VALUES (%s, %s)",
+                        (user_id, lang_code)
+                    )
                 return True
 
     @db_operation

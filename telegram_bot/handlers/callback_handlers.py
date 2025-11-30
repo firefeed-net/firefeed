@@ -22,6 +22,16 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     user_id = query.from_user.id
     try:
+        if user_state_service.user_manager is None:
+            logger.warning(f"user_manager not initialized for button handler for {user_id}")
+            await context.bot.send_message(
+                chat_id=user_id,
+                text=get_message("settings_error", await get_current_user_language(user_id)),
+                reply_markup=get_main_menu_keyboard(await get_current_user_language(user_id)),
+            )
+            from telegram_bot.services.user_state_service import set_user_menu
+            set_user_menu(user_id, "main")
+            return
         if user_id not in [state_user_id for state_user_id in get_user_state(user_id) or {}]:
             if user_state_service.user_manager is not None:
                 subs = await user_state_service.user_manager.get_user_subscriptions(user_id)
