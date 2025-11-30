@@ -124,15 +124,7 @@ async def send_personal_rss_items(bot, prepared_rss_item: PreparedRSSItem, subsc
                 logger.debug(f"Using video: {media_filename}")
 
             if media_filename:
-                caption = content_text
-                if len(caption) > 1024:
-                    base_text = f"🔥 <b>{title_to_send}</b>\nFROM: {prepared_rss_item.original_data.get('source', 'Unknown Source')}\nCATEGORY: {category}{lang_note}\n⚡ <a href='{source_url}'>{READ_MORE_LABELS.get(user_lang, 'Read more')}</a>"
-                    max_content_length = 1024 - len(base_text)
-                    if max_content_length > 0:
-                        truncated_content = content_to_send[: max_content_length - 3] + "..."
-                        caption = f"🔥 <b>{title_to_send}</b>\n{truncated_content}\n{base_text}"
-                    else:
-                        caption = caption[:1021] + "..."
+                caption = truncate_caption(content_text)
                 try:
                     if media_type == "image":
                         await bot.send_photo(chat_id=user_id, photo=media_filename, caption=caption, parse_mode="HTML")
