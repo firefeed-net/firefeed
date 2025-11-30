@@ -142,15 +142,20 @@ class TelegramUserService(DatabaseMixin, ITelegramUserService):
                 return subscribers
 
     @db_operation
-    async def _get_all_users(self, pool) -> List[int]:
-        """Get list of all users"""
+    async def _remove_blocked_user(self, pool, user_id: int) -> bool:
+        """Remove blocked user from database"""
         async with pool.acquire() as conn:
             async with conn.cursor() as cur:
-                await cur.execute("SELECT user_id FROM user_preferences")
-                user_ids = []
-                async for row in cur:
-                    user_ids.append(row[0])
-                return user_ids
+                await cur.execute(
+                    "DELETE FROM user_preferences WHERE user_id = %s",
+                    (user_id,)
+                )
+                if cur.rowcount > 0:
+                    logger.info(f"[DB] [TelegramUserService] Removed blocked user {user_id}")
+                    return True
+                else:
+                    logger.warning(f"[DB] [TelegramUserService] User {user_id} not found for removal")
+                    return False
 
     # Public methods
     async def get_user_settings(self, user_id: int) -> Dict[str, Any]:
@@ -182,3 +187,7 @@ class TelegramUserService(DatabaseMixin, ITelegramUserService):
     async def get_all_users(self) -> List[int]:
         """Get all users"""
         return await self._get_all_users()
+
+    async def remove_blocked_user(self, user_id: int) -> bool:
+        """Remove blocked user"""
+        return await self._remove_blocked_user(user_id)

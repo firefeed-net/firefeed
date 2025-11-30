@@ -3,10 +3,10 @@ import asyncio
 import logging
 from typing import Dict, Any, Optional
 from tenacity import retry, stop_after_attempt, wait_exponential
-from telegram.error import RetryAfter, BadRequest
+from telegram.error import RetryAfter, BadRequest, Forbidden
 
 from telegram_bot.models.rss_item import PreparedRSSItem
-from telegram_bot.services.user_state_service import user_manager
+import telegram_bot.services.user_state_service as user_state_service
 from telegram_bot.services.api_service import get_categories
 from telegram_bot.utils.validation_utils import validate_image_url
 from telegram_bot.utils.formatting_utils import (
@@ -28,6 +28,10 @@ RSS_ITEM_PROCESSING_SEMAPHORE = asyncio.Semaphore(10)
 @retry(stop=stop_after_attempt(5), wait=wait_exponential(multiplier=1, min=2, max=30))
 async def send_personal_rss_items(bot, prepared_rss_item: PreparedRSSItem, subscribers_cache=None):
     """Sends personal RSS items to subscribers."""
+    # Ensure user_manager is initialized
+    if user_state_service.user_manager is None:
+        await user_state_service.initialize_user_manager()
+
     news_id = prepared_rss_item.original_data.get("id")
     logger.info(f"Sending personal RSS item: {prepared_rss_item.original_data['title'][:50]}...")
     category = prepared_rss_item.original_data.get("category")
@@ -40,7 +44,7 @@ async def send_personal_rss_items(bot, prepared_rss_item: PreparedRSSItem, subsc
         subscribers = subscribers_cache.get(category, [])
     else:
         # Fallback to old method if cache not provided
-        subscribers = await user_manager.get_subscribers_for_category(category)
+        subscribers = await user_state_service.user_manager.get_subscribers_for_category(category)
 
     if not subscribers:
         logger.debug(f"No subscribers for category {category}")
@@ -137,6 +141,10 @@ async def send_personal_rss_items(bot, prepared_rss_item: PreparedRSSItem, subsc
                         await bot.send_photo(chat_id=user_id, photo=media_filename, caption=caption, parse_mode="HTML")
                     elif media_type == "video":
                         await bot.send_video(chat_id=user_id, video=media_filename, caption=caption, parse_mode="HTML")
+                except Forbidden as e:
+                    logger.warning(f"User {user_id} has blocked the bot, removing from subscribers: {e}")
+                    await user_state_service.user_manager.remove_blocked_user(user_id)
+                    continue  # Skip this user
                 except BadRequest as e:
                     if "Wrong type of the web page content" in str(e):
                         logger.warning(f"Incorrect content type for user {user_id}, sending without media: {media_filename}")
@@ -145,6 +153,10 @@ async def send_personal_rss_items(bot, prepared_rss_item: PreparedRSSItem, subsc
                             await bot.send_message(
                                 chat_id=user_id, text=caption, parse_mode="HTML", disable_web_page_preview=True
                             )
+                        except Forbidden as send_error:
+                            logger.warning(f"User {user_id} has blocked the bot during text send, removing from subscribers: {send_error}")
+                            await user_state_service.user_manager.remove_blocked_user(user_id)
+                            continue
                         except Exception as send_error:
                             logger.error(f"Error sending message to user {user_id}: {send_error}")
                     else:
@@ -162,6 +174,10 @@ async def send_personal_rss_items(bot, prepared_rss_item: PreparedRSSItem, subsc
                     await bot.send_message(
                         chat_id=user_id, text=content_text, parse_mode="HTML", disable_web_page_preview=True
                     )
+                except Forbidden as e:
+                    logger.warning(f"User {user_id} has blocked the bot, removing from subscribers: {e}")
+                    await user_state_service.user_manager.remove_blocked_user(user_id)
+                    continue  # Skip this user
                 except Exception as e:
                     logger.error(f"Error sending message to user {user_id}: {e}")
 

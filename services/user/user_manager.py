@@ -45,6 +45,10 @@ class UserManager(IUserManager):
         """Get all users (Telegram bot)"""
         return await self.telegram_service.get_all_users()
 
+    async def remove_blocked_user(self, user_id: int) -> bool:
+        """Remove blocked user (Telegram bot)"""
+        return await self.telegram_service.remove_blocked_user(user_id)
+
     # --- Web user methods (delegated to WebUserService) ---
 
     async def generate_telegram_link_code(self, user_id: int) -> str:
