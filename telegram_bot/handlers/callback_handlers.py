@@ -32,7 +32,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             from telegram_bot.services.user_state_service import set_user_menu
             set_user_menu(user_id, "main")
             return
-        if user_id not in [state_user_id for state_user_id in get_user_state(user_id) or {}]:
+        if not get_user_state(user_id):
             if user_state_service.user_manager is not None:
                 subs = await user_state_service.user_manager.get_user_subscriptions(user_id)
                 current_subs = subs if isinstance(subs, list) else []
