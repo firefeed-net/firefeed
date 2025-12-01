@@ -11,7 +11,7 @@ from telegram_bot.services.user_state_service import (
 )
 from telegram_bot.services.api_service import get_categories
 from telegram_bot.utils.keyboard_utils import get_main_menu_keyboard, get_settings_keyboard
-from services.translation.translations import get_message, LANG_NAMES
+from telegram_bot.translations import get_message, LANG_NAMES
 
 logger = logging.getLogger(__name__)
 

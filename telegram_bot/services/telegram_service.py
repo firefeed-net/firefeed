@@ -13,7 +13,7 @@ from telegram_bot.utils.formatting_utils import (
     format_personal_rss_message, format_channel_rss_message,
     create_lang_note, create_hashtags, truncate_caption
 )
-from services.translation.translations import TRANSLATED_FROM_LABELS, READ_MORE_LABELS
+from telegram_bot.translations import TRANSLATED_FROM_LABELS, READ_MORE_LABELS
 from telegram_bot.config import CHANNEL_IDS, CHANNEL_CATEGORIES
 from config import RSS_PARSER_MEDIA_TYPE_PRIORITY
 from utils.text import TextProcessor
@@ -250,7 +250,7 @@ async def post_to_channel(bot, prepared_rss_item: PreparedRSSItem):
                     title = TextProcessor.clean(translation_data.get("title", original_title))
                     content = TextProcessor.clean(translation_data.get("content", original_content))
                     lang_note = create_lang_note(target_lang, original_lang)
-                    # Получаем ID перевода для отслеживания публикации
+                    # Get translation ID for tracking publication
                     from telegram_bot.services.database_service import get_translation_id
                     translation_id = await get_translation_id(news_id, target_lang)
                     if not translation_id:

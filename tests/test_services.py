@@ -101,6 +101,64 @@ class TestTranslationServices:
         assert cache.cache_ttl == 3600  # default TTL
         assert cache.max_cache_size == 10000
 
+    async def test_short_text_translation(self):
+        """Test translation of short texts"""
+        from di_container import setup_di_container, get_service
+        from interfaces import ITranslationService
+
+        # Initialize DI container
+        setup_di_container()
+
+        # Get TranslationService via DI
+        translator = get_service(ITranslationService)
+
+        test_cases = [
+            ("OpenAI, AMD Announce Massive Computing Deal, Marking New Phase of AI Boom", "en", "ru"),
+            (
+                "The five-year agreement will challenge Nvidia's market dominance and gives OpenAI 10% of AMD if it hits milestones for chip deployment.",
+                "en",
+                "ru",
+            ),
+        ]
+
+        for text, src, tgt in test_cases:
+            result = await translator.translate_async([text], src, tgt)
+            assert isinstance(result, list)
+            assert len(result) == 1
+            assert isinstance(result[0], str)
+            assert len(result[0]) > 0
+
+    async def test_long_text_translation(self):
+        """Test translation of long texts"""
+        from di_container import setup_di_container, get_service
+        from interfaces import ITranslationService
+
+        # Initialize DI container
+        setup_di_container()
+
+        # Get TranslationService via DI
+        translator = get_service(ITranslationService)
+
+        long_test_cases = [
+            (
+                "OpenAI and AMD have announced a massive computing deal that marks a new phase in the AI boom. This partnership will bring significant changes to the industry and challenge existing market leaders like Nvidia. The agreement includes substantial investments in chip manufacturing and AI infrastructure development.",
+                "en",
+                "ru",
+            ),
+            (
+                "The five-year agreement between OpenAI and AMD represents a major shift in the AI hardware landscape. This deal will challenge Nvidia's market dominance and provide OpenAI with access to AMD's advanced chip technologies. The partnership includes equity stakes and milestone-based payments that could reach billions of dollars over the contract period.",
+                "en",
+                "ru",
+            ),
+        ]
+
+        for text, src, tgt in long_test_cases:
+            result = await translator.translate_async([text], src, tgt)
+            assert isinstance(result, list)
+            assert len(result) == 1
+            assert isinstance(result[0], str)
+            assert len(result[0]) > 0
+
 
 class TestMediaExtractor:
     """Test media extractor"""

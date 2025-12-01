@@ -93,7 +93,7 @@ The project consists of several key components:
 
 1. **Telegram Bot** (`bot.py`) - main user interaction interface
 2. **RSS Parser Service** (`rss_parser.py`) - background service for RSS feed parsing
-3. **REST API** (`api/main.py`) - web API for external integrations
+3. **REST API** (`api/app.py`) - web API for external integrations
 4. **Translation Engine** (`firefeed_translator.py`) - translation system with caching
 5. **Duplicate Detector** (`firefeed_dublicate_detector.py`) - ML-based duplicate detection
 6. **User Management** (`user_manager.py`) - user and subscription management
@@ -708,16 +708,52 @@ firefeed/
 │       ├── telegram_user_service.py # Telegram bot user management
 │       ├── web_user_service.py # Web user management and Telegram linking
 │       └── user_manager.py     # Backward compatibility wrapper
+├── telegram_bot/               # Telegram bot implementation
+│   ├── __init__.py
+│   ├── bot.py                  # Telegram bot main file
+│   ├── config.py               # Bot configuration
+│   ├── translations.py         # Bot translations
+│   ├── handlers/               # Telegram bot handlers
+│   │   ├── __init__.py
+│   │   ├── callback_handlers.py # Callback query handlers
+│   │   ├── command_handlers.py # Command handlers
+│   │   ├── error_handlers.py   # Error handlers
+│   │   └── message_handlers.py # Message handlers
+│   ├── models/                 # Telegram bot models
+│   │   ├── __init__.py
+│   │   ├── rss_item.py         # RSS item models
+│   │   ├── telegram_models.py  # Telegram models
+│   │   └── user_state.py       # User state models
+│   ├── services/               # Telegram bot services
+│   │   ├── __init__.py
+│   │   ├── api_service.py      # API communication service
+│   │   ├── database_service.py # Database service
+│   │   ├── rss_service.py      # RSS service
+│   │   ├── telegram_service.py # Telegram messaging service
+│   │   └── user_state_service.py # User state service
+│   └── utils/                  # Telegram bot utilities
+│       ├── __init__.py
+│       ├── cleanup_utils.py    # Cleanup utilities
+│       ├── formatting_utils.py # Message formatting
+│       ├── keyboard_utils.py   # Keyboard utilities
+│       └── validation_utils.py # Validation utilities
 ├── tests/                      # Unit and integration tests
 │   ├── __init__.py
 │   ├── test_api_keys.py        # API key tests
 │   ├── test_bot.py             # Telegram bot tests
 │   ├── test_database.py        # Database tests
+│   ├── test_duplicate_detector_config.py # Duplicate detector config tests
+│   ├── test_duplicate_detector_logic.py # Duplicate detector logic tests
 │   ├── test_email.py           # Email service tests
 │   ├── test_models.py          # Model tests
 │   ├── test_registration_success_email.py # Email template tests
 │   ├── test_rss_manager.py     # RSS manager tests
+│   ├── test_rss_manager_translation.py # RSS manager translation tests
 │   ├── test_services.py        # Service tests
+│   ├── test_translation_config.py # Translation config tests
+│   ├── test_translation_logic.py # Translation logic tests
+│   ├── test_user_services.py   # User services tests
+│   ├── test_user_state_service.py # User state service tests
 │   └── test_utils.py           # Utility tests
 ├── utils/                      # Utility functions
 │   ├── __init__.py
@@ -730,21 +766,17 @@ firefeed/
 │   ├── retry.py                # Retry mechanisms
 │   ├── text.py                 # Text processing
 │   └── video.py                # Video processing
-├── bot.py                      # Telegram bot main file
 ├── config.py                   # Configuration constants
 ├── config_services.py          # Service configuration
 ├── di_container.py             # Dependency injection container
 ├── exceptions.py               # Custom exceptions
 ├── interfaces.py               # Service interfaces
 ├── logging_config.py           # Logging configuration
-├── main.py                     # Main entry point
 ├── requirements.txt            # Python dependencies
 ├── rss_parser.py               # RSS parser (legacy)
 ├── run_api.sh                  # API startup script
 ├── run_bot.sh                  # Bot startup script
 ├── run_parser.sh               # Parser startup script
-├── test_translation.py         # Translation testing
-├── user_manager.py             # User management
 ├── .dockerignore               # Docker ignore file
 ├── .env.example                # Environment variables example
 ├── .gitignore                  # Git ignore file

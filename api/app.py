@@ -138,3 +138,8 @@ async def shutdown_event():
         logger.info("[Shutdown] Database pool closed")
     except Exception as e:
         logger.error(f"[Shutdown] Error closing DB pool: {e}")
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="127.0.0.1", port=8000)

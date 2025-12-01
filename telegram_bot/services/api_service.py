@@ -29,7 +29,7 @@ async def get_http_session() -> aiohttp.ClientSession:
 
 
 async def api_get(endpoint: str, params: dict = None) -> dict:
-    """Выполняет GET-запрос к API."""
+    """Performs a GET request to the API."""
     session = await get_http_session()
     url = f"{API_BASE_URL}{endpoint}"
     try:

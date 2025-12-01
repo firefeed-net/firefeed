@@ -8,5 +8,5 @@ eval "$(pyenv init -)"
 # Set Python version
 pyenv shell 3.13.6
 
-# Start FastAPI via uvicorn
-uvicorn api.main:app --host 127.0.0.1 --port 8000
+# Start FastAPI via python module
+python -m api.app

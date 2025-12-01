@@ -571,7 +571,7 @@ async def get_user_rss_items_list(
                 count_query = """
                 SELECT COUNT(*)
                 FROM published_news_data nd
-                WHERE nd.rss_feed_id = ANY(%s) -- Фильтр по пользовательским RSS-лентам
+                WHERE nd.rss_feed_id = ANY(%s) -- Filter by user RSS feeds
                 """
                 count_params = [user_rss_feed_ids]
 
@@ -592,8 +592,8 @@ async def get_user_rss_items_list(
                 nd.*,
                 COALESCE(c.name, 'Unknown Category') AS category_name,
                 COALESCE(s.name, 'Unknown Source') AS source_name,
-                nd.source_url as source_url, -- Получаем URL оригинальной новости из published_news_data
-                nd.created_at as published_at, -- Используем created_at из published_news_data как published_at
+                nd.source_url as source_url, -- Get original news URL from published_news_data
+                nd.created_at as published_at, -- Use created_at from published_news_data as published_at
                 nt_ru.translated_title as title_ru,
                 nt_ru.translated_content as content_ru,
                 nt_en.translated_title as title_en,
@@ -642,7 +642,7 @@ async def get_user_rss_items_list(
 
             except Exception as e:
                 logger.info(f"[DB] Error in get_user_rss_items_list: {e}")
-                raise  # Перебрасываем исключение, чтобы обработать его в API
+                raise  # Re-raise exception to handle it in API
 
 
 async def get_user_rss_items_list_by_feed(
@@ -673,7 +673,7 @@ async def get_user_rss_items_list_by_feed(
                 count_query = """
                 SELECT COUNT(*)
                 FROM published_news_data nd
-                WHERE nd.rss_feed_id = %s -- Фильтр по конкретной пользовательской RSS-ленте
+                WHERE nd.rss_feed_id = %s -- Filter by specific user RSS feed
                 """
                 count_params = [feed_id]
 
@@ -760,8 +760,8 @@ async def get_rss_item_by_id(pool, news_id: str) -> Optional[Tuple]:
                 nd.*,
                 COALESCE(c.name, 'Unknown Category') AS category_name,
                 COALESCE(s.name, 'Unknown Source') AS source_name,
-                nd.source_url as source_url, -- Получаем URL оригинальной новости из published_news_data
-                nd.created_at as published_at, -- Используем created_at из published_news_data как published_at
+                nd.source_url as source_url, -- Get original news URL from published_news_data
+                nd.created_at as published_at, -- Use created_at from published_news_data as published_at
                 nt_ru.translated_title as title_ru,
                 nt_ru.translated_content as content_ru,
                 nt_en.translated_title as title_en,

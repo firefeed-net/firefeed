@@ -161,7 +161,7 @@ def validate_rss_items_query_params(from_date, cursor_published_at):
             from_datetime = datetime.fromtimestamp(from_date / 1000.0)
         except (ValueError, OSError):
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST, detail="Некорректный формат timestamp в параметре from_date"
+                status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid timestamp format in from_date parameter"
             )
 
     before_published_at = None

@@ -49,7 +49,7 @@ class RSSParserService:
         self.cleanup_task = None
 
     async def parse_rss_task(self):
-        """Периодическая задача парсинга RSS"""
+        """Periodic RSS parsing task"""
         while self.running:
             try:
                 logger.info("[RSS_PARSER] Starting RSS feeds parsing...")
@@ -76,7 +76,7 @@ class RSSParserService:
 
                 traceback.print_exc()
                 # Reduce wait time before retry or checking stop flag
-                for _ in range(30):  # 30 секунд
+                for _ in range(30):  # 30 seconds
                     if not self.running:
                         logger.info(
                             "[RSS_PARSER] [PARSE_TASK] Stop signal received during wait, terminating parsing task."
@@ -85,7 +85,7 @@ class RSSParserService:
                     await asyncio.sleep(1)
 
     async def batch_processor_job(self):
-        """Задача регулярной пакетной обработки"""
+        """Regular batch processing task"""
         try:
             logger.info("[BATCH] Starting regular batch processing of news without embeddings...")
             # Use new duplicate detector interface
@@ -103,7 +103,7 @@ class RSSParserService:
             traceback.print_exc()
 
     async def cleanup_duplicates_task(self):
-        """Фоновая задача очистки дубликатов (запускается каждый час)"""
+        """Background duplicate cleanup task (runs every hour)"""
         while self.running:
             try:
                 logger.info("[CLEANUP] Starting periodic duplicate cleanup...")
@@ -137,7 +137,7 @@ class RSSParserService:
                     await asyncio.sleep(1)
 
     async def batch_processor_task_loop(self):
-        """Фоновая задача пакетной обработки"""
+        """Background batch processing task"""
         while self.running:
             try:
                 await self.batch_processor_job()
@@ -168,7 +168,7 @@ class RSSParserService:
                     await asyncio.sleep(1)
 
     async def start(self):
-        """Запуск сервиса парсинга"""
+        """Starting the parsing service"""
         logger.info("[RSS_PARSER] Starting RSS parsing service...")
 
         # Register asynchronous signal handlers
@@ -228,7 +228,7 @@ class RSSParserService:
             await self.cleanup()
 
     async def _signal_handler(self, signum):
-        """Асинхронный обработчик сигналов завершения"""
+        """Asynchronous signal handler for termination"""
         sig_name = signal.Signals(signum).name
         logger.info(f"[RSS_PARSER] Received signal {sig_name} ({signum})")
         self.running = False
@@ -243,12 +243,12 @@ class RSSParserService:
                 await asyncio.wait_for(asyncio.shield(self._wait_for_tasks_to_stop()), timeout=10.0)
             except asyncio.TimeoutError:
                 logger.info("[RSS_PARSER] Timeout waiting for tasks to complete. Continuing shutdown.")
-        # Для SIGINT продолжаем
+        # For SIGINT, continue
 
     async def _wait_for_tasks_to_stop(self):
-        """Вспомогательная функция для ожидания остановки задач"""
-        # Ждем, пока задачи не завершатся сами по self.running=False
-        # Это нужно для использования с wait_for
+        """Helper function to wait for tasks to stop"""
+        # Wait until tasks complete themselves via self.running=False
+        # This is needed for use with wait_for
         while (
             (self.parse_task and not self.parse_task.done())
             or (self.batch_processor_task and not self.batch_processor_task.done())
@@ -258,9 +258,9 @@ class RSSParserService:
         logger.info("[RSS_PARSER] All tasks stopped by running flag.")
 
     async def cleanup(self):
-        """Очистка ресурсов"""
+        """Resource cleanup"""
         logger.info("[RSS_PARSER] Starting resource cleanup...")
-        self.running = False  # Убедимся, что флаг остановки установлен
+        self.running = False  # Make sure the stop flag is set
 
         # --- Stopping tasks ---
         tasks_to_cancel = []
@@ -282,7 +282,7 @@ class RSSParserService:
         # Wait for cancelled tasks to complete
         if tasks_to_cancel:
             logger.info(f"[RSS_PARSER] Waiting for {len(tasks_to_cancel)} cancelled tasks to complete...")
-            done, pending = await asyncio.wait(tasks_to_cancel, timeout=5.0)  # Таймаут 5 секунд
+            done, pending = await asyncio.wait(tasks_to_cancel, timeout=5.0)  # Timeout 5 seconds
             if pending:
                 logger.warning(f"[RSS_PARSER] Warning: {len(pending)} tasks did not complete within timeout.")
             else:
@@ -335,7 +335,7 @@ class RSSParserService:
 
 
 async def main():
-    """Асинхронная точка входа"""
+    """Asynchronous entry point"""
     service = None
     try:
         service = RSSParserService()

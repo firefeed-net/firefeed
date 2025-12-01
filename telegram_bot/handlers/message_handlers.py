@@ -6,7 +6,7 @@ from telegram.ext import ContextTypes
 
 from telegram_bot.services.user_state_service import get_current_user_language, set_current_user_language, set_user_menu
 from telegram_bot.utils.keyboard_utils import get_main_menu_keyboard
-from services.translation.translations import get_message
+from telegram_bot.translations import get_message
 
 logger = logging.getLogger(__name__)
 
