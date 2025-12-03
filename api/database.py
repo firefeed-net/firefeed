@@ -890,8 +890,7 @@ async def get_all_rss_items_list(
                         else bool(telegram_published)
                     )
                     join_parts.extend([
-                        "LEFT JOIN (SELECT DISTINCT news_id FROM rss_items_telegram_published rtp JOIN news_translations nt ON rtp.translation_id = nt.id) pub_trans ON nd.news_id = pub_trans.news_id",
-                        "LEFT JOIN (SELECT DISTINCT news_id FROM rss_items_telegram_published_originals) pub_orig ON nd.news_id = pub_orig.news_id"
+                        "LEFT JOIN (SELECT DISTINCT news_id FROM rss_items_telegram_bot_published WHERE recipient_type = 'channel') pub_chan ON nd.news_id = pub_chan.news_id"
                     ])
 
                 query = f"""
@@ -924,11 +923,11 @@ async def get_all_rss_items_list(
 
                 if telegram_published is not None:
                     if telegram_published_value:
-                        # For published: check either translations or originals
-                        query += " AND (pub_trans.news_id IS NOT NULL OR pub_orig.news_id IS NOT NULL)"
+                        # For published: check if published to channels
+                        query += " AND pub_chan.news_id IS NOT NULL"
                     else:
-                        # For unpublished: check absence of both translations and originals
-                        query += " AND pub_trans.news_id IS NULL AND pub_orig.news_id IS NULL"
+                        # For unpublished: check absence of channel publications
+                        query += " AND pub_chan.news_id IS NULL"
 
                 if from_date is not None:
                     query += " AND nd.created_at > %s"
@@ -966,8 +965,7 @@ async def get_all_rss_items_list(
                 # Add publication JOINs if telegram_published filter is used
                 if telegram_published is not None:
                     count_query += """
-                LEFT JOIN (SELECT DISTINCT news_id FROM rss_items_telegram_published rtp JOIN news_translations nt ON rtp.translation_id = nt.id) pub_trans ON nd.news_id = pub_trans.news_id
-                LEFT JOIN (SELECT DISTINCT news_id FROM rss_items_telegram_published_originals) pub_orig ON nd.news_id = pub_orig.news_id
+                LEFT JOIN (SELECT DISTINCT news_id FROM rss_items_telegram_bot_published WHERE recipient_type = 'channel') pub_chan ON nd.news_id = pub_chan.news_id
                     """
 
                 count_query += "WHERE 1=1"
@@ -993,11 +991,11 @@ async def get_all_rss_items_list(
                         count_params.extend(source_id)
                 if telegram_published is not None:
                     if telegram_published_value:
-                        # For published: check either translations or originals
-                        count_query += " AND (pub_trans.news_id IS NOT NULL OR pub_orig.news_id IS NOT NULL)"
+                        # For published: check if published to channels
+                        count_query += " AND pub_chan.news_id IS NOT NULL"
                     else:
-                        # For unpublished: check absence of both translations and originals
-                        count_query += " AND pub_trans.news_id IS NULL AND pub_orig.news_id IS NULL"
+                        # For unpublished: check absence of channel publications
+                        count_query += " AND pub_chan.news_id IS NULL"
                 if from_date is not None:
                     count_query += " AND nd.created_at > %s"
                     count_params.append(from_date)

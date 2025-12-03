@@ -8,52 +8,77 @@ from config import get_shared_db_pool
 logger = logging.getLogger(__name__)
 
 
+async def mark_bot_published(news_id: str = None, translation_id: int = None, recipient_type: str = 'channel', recipient_id: int = None, message_id: int = None, language: str = None):
+    """Marks publication in unified Telegram bot table (channels and users)."""
+    try:
+        # Get shared connection pool
+        db_pool = await get_shared_db_pool()
+        async with db_pool.acquire() as connection:
+            async with connection.cursor() as cursor:
+                query = """
+                    INSERT INTO rss_items_telegram_bot_published
+                    (news_id, translation_id, recipient_type, recipient_id, message_id, language, sent_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, NOW())
+                    ON CONFLICT (news_id, translation_id, recipient_type, recipient_id)
+                    DO UPDATE SET
+                        message_id = EXCLUDED.message_id,
+                        language = EXCLUDED.language,
+                        sent_at = NOW(),
+                        updated_at = NOW()
+                """
+                await cursor.execute(query, (news_id, translation_id, recipient_type, recipient_id, message_id, language))
+                logger.info(f"Marked as published: news_id={news_id}, translation_id={translation_id}, type={recipient_type}, recipient={recipient_id}")
+                return True
+    except Exception as e:
+        logger.error(f"Error marking bot publication: {e}")
+        return False
+
+
+async def check_bot_published(news_id: str = None, translation_id: int = None, recipient_type: str = 'channel', recipient_id: int = None) -> bool:
+    """Checks if item was already published to recipient."""
+    try:
+        db_pool = await get_shared_db_pool()
+        async with db_pool.acquire() as connection:
+            async with connection.cursor() as cursor:
+                query = """
+                    SELECT 1 FROM rss_items_telegram_bot_published
+                    WHERE news_id = %s AND translation_id = %s AND recipient_type = %s AND recipient_id = %s
+                """
+                await cursor.execute(query, (news_id, translation_id, recipient_type, recipient_id))
+                result = await cursor.fetchone()
+                return result is not None
+    except Exception as e:
+        logger.error(f"Error checking bot publication: {e}")
+        return False
+
+
+# Legacy functions for backward compatibility (redirect to new unified functions)
 async def mark_translation_as_published(translation_id: int, channel_id: int, message_id: int = None):
-    """Marks translation as published in Telegram channel."""
+    """Legacy: Marks translation as published in Telegram channel."""
+    # Get news_id from translation
+    news_id = await get_news_id_from_translation(translation_id)
+    return await mark_bot_published(news_id=news_id, translation_id=translation_id, recipient_type='channel', recipient_id=channel_id, message_id=message_id)
+
+
+async def get_news_id_from_translation(translation_id: int) -> str:
+    """Helper to get news_id from translation_id."""
     try:
-        # Get shared connection pool
         db_pool = await get_shared_db_pool()
         async with db_pool.acquire() as connection:
             async with connection.cursor() as cursor:
-                query = """
-                    INSERT INTO rss_items_telegram_published
-                    (translation_id, channel_id, message_id, published_at)
-                    VALUES (%s, %s, %s, NOW())
-                    ON CONFLICT (translation_id, channel_id)
-                    DO UPDATE SET
-                        message_id = EXCLUDED.message_id,
-                        published_at = NOW()
-                """
-                await cursor.execute(query, (translation_id, channel_id, message_id))
-                logger.info(f"Translation {translation_id} marked as published in channel {channel_id}")
-                return True
+                query = "SELECT news_id FROM news_translations WHERE id = %s"
+                await cursor.execute(query, (translation_id,))
+                result = await cursor.fetchone()
+                return result[0] if result else None
     except Exception as e:
-        logger.error(f"Error marking translation {translation_id} as published: {e}")
-        return False
+        logger.error(f"Error getting news_id from translation {translation_id}: {e}")
+        return None
 
 
+# Legacy function for backward compatibility
 async def mark_original_as_published(news_id: str, channel_id: int, message_id: int = None):
-    """Marks original news as published in Telegram channel."""
-    try:
-        # Get shared connection pool
-        db_pool = await get_shared_db_pool()
-        async with db_pool.acquire() as connection:
-            async with connection.cursor() as cursor:
-                query = """
-                    INSERT INTO rss_items_telegram_published_originals
-                    (news_id, channel_id, message_id, created_at)
-                    VALUES (%s, %s, %s, NOW())
-                    ON CONFLICT (news_id, channel_id)
-                    DO UPDATE SET
-                        message_id = EXCLUDED.message_id,
-                        created_at = NOW()
-                """
-                await cursor.execute(query, (news_id, channel_id, message_id))
-                logger.info(f"Original news {news_id} marked as published in channel {channel_id}")
-                return True
-    except Exception as e:
-        logger.error(f"Error marking original news {news_id} as published: {e}")
-        return False
+    """Legacy: Marks original news as published in Telegram channel."""
+    return await mark_bot_published(news_id=news_id, translation_id=None, recipient_type='channel', recipient_id=channel_id, message_id=message_id)
 
 
 async def get_translation_id(news_id: str, language: str) -> int:
@@ -93,30 +118,22 @@ async def get_feed_cooldown_and_max_news(feed_id: int) -> tuple[int, int]:
 
 
 async def get_last_telegram_publication_time(feed_id: int) -> Optional[datetime]:
-    """Get last Telegram publication time for feed."""
+    """Get last Telegram publication time for feed from unified table."""
     try:
         db_pool = await get_shared_db_pool()
         async with db_pool.acquire() as connection:
             async with connection.cursor() as cursor:
-                # Get latest publication time from both tables
+                # Get latest publication time from unified table
                 query = """
-                SELECT GREATEST(
-                    COALESCE((
-                        SELECT MAX(rtp.published_at)
-                        FROM rss_items_telegram_published rtp
-                        JOIN news_translations nt ON rtp.translation_id = nt.id
-                        JOIN published_news_data pnd ON nt.news_id = pnd.news_id
-                        WHERE pnd.rss_feed_id = %s
-                    ), '1970-01-01'::timestamp),
-                    COALESCE((
-                        SELECT MAX(rtpo.created_at)
-                        FROM rss_items_telegram_published_originals rtpo
-                        JOIN published_news_data pnd ON rtpo.news_id = pnd.news_id
-                        WHERE pnd.rss_feed_id = %s
-                    ), '1970-01-01'::timestamp)
-                ) as last_time
+                SELECT MAX(sent_at)
+                FROM rss_items_telegram_bot_published rbp
+                JOIN published_news_data pnd ON (
+                    (rbp.translation_id IS NOT NULL AND rbp.news_id = pnd.news_id) OR
+                    (rbp.translation_id IS NULL AND rbp.news_id = pnd.news_id)
+                )
+                WHERE pnd.rss_feed_id = %s AND rbp.recipient_type = 'channel'
                 """
-                await cursor.execute(query, (feed_id, feed_id))
+                await cursor.execute(query, (feed_id,))
                 row = await cursor.fetchone()
                 if row and row[0] and row[0] > datetime(1970, 1, 1, tzinfo=timezone.utc):
                     return row[0]
@@ -127,28 +144,23 @@ async def get_last_telegram_publication_time(feed_id: int) -> Optional[datetime]
 
 
 async def get_recent_telegram_publications_count(feed_id: int, minutes: int) -> int:
-    """Get count of recent Telegram publications for feed."""
+    """Get count of recent Telegram publications for feed from unified table."""
     try:
         db_pool = await get_shared_db_pool()
         async with db_pool.acquire() as connection:
             async with connection.cursor() as cursor:
                 time_threshold = datetime.now(timezone.utc) - timedelta(minutes=minutes)
-                # Count publications from both tables
+                # Count publications from unified table (only channels)
                 query = """
-                SELECT COUNT(*) FROM (
-                    SELECT rtp.published_at
-                    FROM rss_items_telegram_published rtp
-                    JOIN news_translations nt ON rtp.translation_id = nt.id
-                    JOIN published_news_data pnd ON nt.news_id = pnd.news_id
-                    WHERE pnd.rss_feed_id = %s AND rtp.published_at >= %s
-                    UNION ALL
-                    SELECT rtpo.created_at as published_at
-                    FROM rss_items_telegram_published_originals rtpo
-                    JOIN published_news_data pnd ON rtpo.news_id = pnd.news_id
-                    WHERE pnd.rss_feed_id = %s AND rtpo.created_at >= %s
-                ) as combined_publications
+                SELECT COUNT(*)
+                FROM rss_items_telegram_bot_published rbp
+                JOIN published_news_data pnd ON (
+                    (rbp.translation_id IS NOT NULL AND rbp.news_id = pnd.news_id) OR
+                    (rbp.translation_id IS NULL AND rbp.news_id = pnd.news_id)
+                )
+                WHERE pnd.rss_feed_id = %s AND rbp.sent_at >= %s AND rbp.recipient_type = 'channel'
                 """
-                await cursor.execute(query, (feed_id, time_threshold, feed_id, time_threshold))
+                await cursor.execute(query, (feed_id, time_threshold))
                 row = await cursor.fetchone()
                 return row[0] if row else 0
     except Exception as e:

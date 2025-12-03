@@ -409,7 +409,7 @@ class RSSStorage(IRSSStorage):
             return False
 
     async def fetch_unprocessed_rss_items(self) -> List[Dict[str, Any]]:
-        """Fetch unprocessed RSS items (not published to Telegram)"""
+        """Fetch unprocessed RSS items (not published to Telegram channels)"""
         try:
             async with self.db_pool.acquire() as conn:
                 async with conn.cursor() as cur:
@@ -429,7 +429,12 @@ class RSSStorage(IRSSStorage):
                     FROM published_news_data p
                     LEFT JOIN rss_feeds rf ON p.rss_feed_id = rf.id
                     LEFT JOIN categories c ON p.category_id = c.id
-                    WHERE p.telegram_published = FALSE
+                    LEFT JOIN (
+                        SELECT DISTINCT news_id
+                        FROM rss_items_telegram_bot_published
+                        WHERE recipient_type = 'channel'
+                    ) pub_chan ON p.news_id = pub_chan.news_id
+                    WHERE pub_chan.news_id IS NULL
                     ORDER BY p.created_at DESC
                     LIMIT 100
                     """
@@ -456,29 +461,21 @@ class RSSStorage(IRSSStorage):
             return []
 
     async def get_last_telegram_publication_time(self, feed_id: int) -> Optional[datetime]:
-        """Get last Telegram publication time for feed"""
+        """Get last Telegram publication time for feed from unified table"""
         try:
             async with self.db_pool.acquire() as conn:
                 async with conn.cursor() as cur:
-                    # Get latest publication time from both tables
+                    # Get latest publication time from unified table
                     query = """
-                    SELECT GREATEST(
-                        COALESCE((
-                            SELECT MAX(rtp.published_at)
-                            FROM rss_items_telegram_published rtp
-                            JOIN news_translations nt ON rtp.translation_id = nt.id
-                            JOIN published_news_data pnd ON nt.news_id = pnd.news_id
-                            WHERE pnd.rss_feed_id = %s
-                        ), '1970-01-01'::timestamp),
-                        COALESCE((
-                            SELECT MAX(rtpo.created_at)
-                            FROM rss_items_telegram_published_originals rtpo
-                            JOIN published_news_data pnd ON rtpo.news_id = pnd.news_id
-                            WHERE pnd.rss_feed_id = %s
-                        ), '1970-01-01'::timestamp)
-                    ) as last_time
+                    SELECT MAX(sent_at)
+                    FROM rss_items_telegram_bot_published rbp
+                    JOIN published_news_data pnd ON (
+                        (rbp.translation_id IS NOT NULL AND rbp.news_id = pnd.news_id) OR
+                        (rbp.translation_id IS NULL AND rbp.news_id = pnd.news_id)
+                    )
+                    WHERE pnd.rss_feed_id = %s AND rbp.recipient_type = 'channel'
                     """
-                    await cur.execute(query, (feed_id, feed_id))
+                    await cur.execute(query, (feed_id,))
                     row = await cur.fetchone()
                     if row and row[0] and row[0] > datetime(1970, 1, 1, tzinfo=timezone.utc):
                         return row[0]
@@ -488,27 +485,22 @@ class RSSStorage(IRSSStorage):
             return None
 
     async def get_recent_telegram_publications_count(self, feed_id: int, minutes: int) -> int:
-        """Get count of recent Telegram publications for feed"""
+        """Get count of recent Telegram publications for feed from unified table"""
         try:
             async with self.db_pool.acquire() as conn:
                 async with conn.cursor() as cur:
                     time_threshold = datetime.now(timezone.utc) - timedelta(minutes=minutes)
-                    # Count publications from both tables
+                    # Count publications from unified table (only channels)
                     query = """
-                    SELECT COUNT(*) FROM (
-                        SELECT rtp.published_at
-                        FROM rss_items_telegram_published rtp
-                        JOIN news_translations nt ON rtp.translation_id = nt.id
-                        JOIN published_news_data pnd ON nt.news_id = pnd.news_id
-                        WHERE pnd.rss_feed_id = %s AND rtp.published_at >= %s
-                        UNION ALL
-                        SELECT rtpo.created_at as published_at
-                        FROM rss_items_telegram_published_originals rtpo
-                        JOIN published_news_data pnd ON rtpo.news_id = pnd.news_id
-                        WHERE pnd.rss_feed_id = %s AND rtpo.created_at >= %s
-                    ) as combined_publications
+                    SELECT COUNT(*)
+                    FROM rss_items_telegram_bot_published rbp
+                    JOIN published_news_data pnd ON (
+                        (rbp.translation_id IS NOT NULL AND rbp.news_id = pnd.news_id) OR
+                        (rbp.translation_id IS NULL AND rbp.news_id = pnd.news_id)
+                    )
+                    WHERE pnd.rss_feed_id = %s AND rbp.sent_at >= %s AND rbp.recipient_type = 'channel'
                     """
-                    await cur.execute(query, (feed_id, time_threshold, feed_id, time_threshold))
+                    await cur.execute(query, (feed_id, time_threshold))
                     row = await cur.fetchone()
                     return row[0] if row else 0
         except Exception as e:
