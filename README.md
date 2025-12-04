@@ -94,9 +94,9 @@ The project consists of several key components:
 1. **Telegram Bot** (`bot.py`) - main user interaction interface
 2. **RSS Parser Service** (`rss_parser.py`) - background service for RSS feed parsing
 3. **REST API** (`api/app.py`) - web API for external integrations
-4. **Translation Engine** (`firefeed_translator.py`) - translation system with caching
-5. **Duplicate Detector** (`firefeed_dublicate_detector.py`) - ML-based duplicate detection
-6. **User Management** (`user_manager.py`) - user and subscription management
+4. **Translation Services** (`services/translation/`) - translation system with caching
+5. **Duplicate Detector** (`services/text_analysis/duplicate_detector.py`) - ML-based duplicate detection
+6. **User Management** (`services/user/user_manager.py`) - user and subscription management
 
 ### Telegram Bot
 
@@ -124,7 +124,7 @@ Before publishing any news item to Telegram channels, the system performs two ty
 1. **Count-based Limiting**:
    - Counts recent publications from the same feed within the `cooldown_minutes` period
    - If count >= `max_news_per_hour`, skips publication
-   - Uses data from `rss_items_telegram_published` and `rss_items_telegram_published_originals` tables
+   - Uses data from `rss_items_telegram_bot_published` table
 
 2. **Time-based Limiting**:
    - Checks time since last publication from the same feed
