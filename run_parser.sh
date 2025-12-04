@@ -9,4 +9,4 @@ eval "$(pyenv init -)"
 pyenv shell 3.13.6
 
 # Start RSS parser
-python /var/www/firefeed/data/integrations/telegram/rss_parser.py
+python -m rss_parser.main
