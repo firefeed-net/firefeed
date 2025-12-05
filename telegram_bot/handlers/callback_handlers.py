@@ -72,14 +72,18 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await query.message.delete()
             except Exception:
                 pass
-            user = await context.bot.get_chat(user_id)
-            welcome_text = (
-                get_message("settings_saved", current_lang)
-                + "\n"
-                + get_message("welcome", current_lang, user_name=user.first_name)
-            )
+            # Show current subscriptions after saving settings
+            if user_state_service.user_manager is not None:
+                settings = await user_state_service.user_manager.get_user_settings(user_id)
+                categories = settings["subscriptions"]
+                categories_text = ", ".join(categories) if categories else get_message("no_subscriptions", current_lang)
+                status_text = get_message(
+                    "settings_saved_with_subs", current_lang, categories=categories_text
+                )
+            else:
+                status_text = get_message("settings_saved", current_lang)
             await context.bot.send_message(
-                chat_id=user_id, text=welcome_text, reply_markup=get_main_menu_keyboard(current_lang)
+                chat_id=user_id, text=status_text, reply_markup=get_main_menu_keyboard(current_lang)
             )
             from telegram_bot.services.user_state_service import set_user_menu
             set_user_menu(user_id, "main")

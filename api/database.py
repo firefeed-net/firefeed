@@ -838,6 +838,8 @@ async def get_all_rss_items_list(
     category_id: Optional[List[int]],
     source_id: Optional[List[int]],
     telegram_published: Optional[bool],
+    telegram_channels_published: Optional[bool],
+    telegram_users_published: Optional[bool],
     from_date: Optional[datetime],
     search_phrase: Optional[str],
     before_published_at: Optional[datetime],
@@ -881,16 +883,34 @@ async def get_all_rss_items_list(
                     "LEFT JOIN news_translations nt_fr ON nd.news_id = nt_fr.news_id AND nt_fr.language = 'fr'",
                 ]
 
-                # Add publication JOINs if telegram_published filter is used
+                # Add publication JOINs if any telegram publication filter is used
                 telegram_published_value = None
-                if telegram_published is not None:
-                    telegram_published_value = (
-                        bool(str(telegram_published).lower() == "true")
-                        if isinstance(telegram_published, str)
-                        else bool(telegram_published)
-                    )
+                telegram_channels_published_value = None
+                telegram_users_published_value = None
+
+                if telegram_published is not None or telegram_channels_published is not None or telegram_users_published is not None:
+                    if telegram_published is not None:
+                        telegram_published_value = (
+                            bool(str(telegram_published).lower() == "true")
+                            if isinstance(telegram_published, str)
+                            else bool(telegram_published)
+                        )
+                    if telegram_channels_published is not None:
+                        telegram_channels_published_value = (
+                            bool(str(telegram_channels_published).lower() == "true")
+                            if isinstance(telegram_channels_published, str)
+                            else bool(telegram_channels_published)
+                        )
+                    if telegram_users_published is not None:
+                        telegram_users_published_value = (
+                            bool(str(telegram_users_published).lower() == "true")
+                            if isinstance(telegram_users_published, str)
+                            else bool(telegram_users_published)
+                        )
+
                     join_parts.extend([
-                        "LEFT JOIN (SELECT DISTINCT news_id FROM rss_items_telegram_bot_published WHERE recipient_type = 'channel') pub_chan ON nd.news_id = pub_chan.news_id"
+                        "LEFT JOIN (SELECT DISTINCT news_id FROM rss_items_telegram_bot_published WHERE recipient_type = 'channel') pub_chan ON nd.news_id = pub_chan.news_id",
+                        "LEFT JOIN (SELECT DISTINCT news_id FROM rss_items_telegram_bot_published WHERE recipient_type = 'user') pub_user ON nd.news_id = pub_user.news_id"
                     ])
 
                 query = f"""
@@ -921,13 +941,28 @@ async def get_all_rss_items_list(
                         query += f" AND rf.source_id IN ({placeholders})"
                         params.extend(source_id)
 
+                # Apply telegram publication filters
                 if telegram_published is not None:
                     if telegram_published_value:
-                        # For published: check if published to channels
+                        # For published: check if published to channels OR users
+                        query += " AND (pub_chan.news_id IS NOT NULL OR pub_user.news_id IS NOT NULL)"
+                    else:
+                        # For unpublished: check absence of both channel and user publications
+                        query += " AND (pub_chan.news_id IS NULL AND pub_user.news_id IS NULL)"
+                elif telegram_channels_published is not None:
+                    if telegram_channels_published_value:
+                        # For channels published: check if published to channels
                         query += " AND pub_chan.news_id IS NOT NULL"
                     else:
-                        # For unpublished: check absence of channel publications
+                        # For channels unpublished: check absence of channel publications
                         query += " AND pub_chan.news_id IS NULL"
+                elif telegram_users_published is not None:
+                    if telegram_users_published_value:
+                        # For users published: check if published to users
+                        query += " AND pub_user.news_id IS NOT NULL"
+                    else:
+                        # For users unpublished: check absence of user publications
+                        query += " AND pub_user.news_id IS NULL"
 
                 if from_date is not None:
                     query += " AND nd.created_at > %s"
@@ -962,10 +997,11 @@ async def get_all_rss_items_list(
                 """
                 count_params = []
 
-                # Add publication JOINs if telegram_published filter is used
-                if telegram_published is not None:
+                # Add publication JOINs if any telegram publication filter is used
+                if telegram_published is not None or telegram_channels_published is not None or telegram_users_published is not None:
                     count_query += """
                 LEFT JOIN (SELECT DISTINCT news_id FROM rss_items_telegram_bot_published WHERE recipient_type = 'channel') pub_chan ON nd.news_id = pub_chan.news_id
+                LEFT JOIN (SELECT DISTINCT news_id FROM rss_items_telegram_bot_published WHERE recipient_type = 'user') pub_user ON nd.news_id = pub_user.news_id
                     """
 
                 count_query += "WHERE 1=1"
@@ -989,13 +1025,28 @@ async def get_all_rss_items_list(
                         placeholders = ",".join(["%s"] * len(source_id))
                         count_query += f" AND rf.source_id IN ({placeholders})"
                         count_params.extend(source_id)
+                # Apply telegram publication filters to count query
                 if telegram_published is not None:
                     if telegram_published_value:
-                        # For published: check if published to channels
+                        # For published: check if published to channels OR users
+                        count_query += " AND (pub_chan.news_id IS NOT NULL OR pub_user.news_id IS NOT NULL)"
+                    else:
+                        # For unpublished: check absence of both channel and user publications
+                        count_query += " AND (pub_chan.news_id IS NULL AND pub_user.news_id IS NULL)"
+                elif telegram_channels_published is not None:
+                    if telegram_channels_published_value:
+                        # For channels published: check if published to channels
                         count_query += " AND pub_chan.news_id IS NOT NULL"
                     else:
-                        # For unpublished: check absence of channel publications
+                        # For channels unpublished: check absence of channel publications
                         count_query += " AND pub_chan.news_id IS NULL"
+                elif telegram_users_published is not None:
+                    if telegram_users_published_value:
+                        # For users published: check if published to users
+                        count_query += " AND pub_user.news_id IS NOT NULL"
+                    else:
+                        # For users unpublished: check absence of user publications
+                        count_query += " AND pub_user.news_id IS NULL"
                 if from_date is not None:
                     count_query += " AND nd.created_at > %s"
                     count_params.append(from_date)

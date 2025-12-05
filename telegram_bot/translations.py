@@ -35,6 +35,12 @@ MESSAGES = {
         "de": "✅ Einstellungen gespeichert!",
         "fr": "✅ Paramètres enregistrés !",
     },
+    "settings_saved_with_subs": {
+        "en": "✅ Settings saved!\n📋 Your current subscriptions: {categories}",
+        "ru": "✅ Настройки сохранены!\n📋 Ваши текущие подписки: {categories}",
+        "de": "✅ Einstellungen gespeichert!\n📋 Ihre aktuellen Abonnements: {categories}",
+        "fr": "✅ Paramètres enregistrés !\n📋 Vos abonnements actuels : {categories}",
+    },
     "save_button": {"en": "💾 Save", "ru": "💾 Сохранить", "de": "💾 Speichern", "fr": "💾 Enregistrer"},
     "settings_title": {
         "en": "⚙️ Choose the categories you are interested in:",

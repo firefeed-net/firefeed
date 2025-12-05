@@ -61,7 +61,9 @@ def process_rss_items_results(results, columns):
     - `original_language`: Filter by original article language
     - `category_id`: Filter by news categories (comma-separated values or multiple params allowed, e.g., 3,5 or category_id=3&category_id=5)
     - `source_id`: Filter by news sources (comma-separated values or multiple params allowed, e.g., 1,2 or source_id=1&source_id=2)
-    - `telegram_published`: Filter by Telegram publication status (true/false)
+    - `telegram_published`: Filter by Telegram publication status (true/false) - published to channels OR users
+    - `telegram_channels_published`: Filter by Telegram channels publication status (true/false)
+    - `telegram_users_published`: Filter by Telegram users publication status (true/false)
     - `from_date`: Filter articles published after this timestamp (Unix timestamp)
     - `search_phrase`: Full-text search in titles and content
 
@@ -111,6 +113,8 @@ async def get_rss_items(
     category_id: Optional[List[str]] = Query(None),
     source_id: Optional[List[str]] = Query(None),
     telegram_published: Optional[bool] = Query(None),
+    telegram_channels_published: Optional[bool] = Query(None),
+    telegram_users_published: Optional[bool] = Query(None),
     from_date: Optional[int] = Query(None),
     search_phrase: Optional[str] = Query(None, alias="searchPhrase"),
     cursor_published_at: Optional[int] = Query(None),
@@ -175,6 +179,8 @@ async def get_rss_items(
             category_ids,
             source_ids,
             telegram_published,
+            telegram_channels_published,
+            telegram_users_published,
             from_datetime,
             search_phrase,
             before_published_at,
