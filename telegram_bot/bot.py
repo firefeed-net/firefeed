@@ -27,6 +27,7 @@ from telegram_bot.handlers.callback_handlers import button_handler
 from telegram_bot.handlers.message_handlers import handle_menu_selection, debug
 from telegram_bot.handlers.error_handlers import error_handler
 from telegram_bot.services.rss_service import monitor_rss_items_task
+from telegram_bot.services.telegram_service import cleanup_old_user_send_locks
 
 # Logging setup
 setup_logging()
@@ -84,9 +85,11 @@ def main():
         job_queue.run_once(initialize_user_manager, when=0)  # Initialize user_manager immediately in the event loop
         job_queue.run_repeating(monitor_rss_items_task, interval=180, first=10, job_kwargs={"misfire_grace_time": 600})  # Delay first run by 10 seconds
         job_queue.run_repeating(cleanup_expired_data, interval=3600, first=60)
+        job_queue.run_repeating(cleanup_old_user_send_locks, interval=3600, first=120)  # Start after 2 minutes, run every hour
         logger.info("Registered UserManager initialization task (immediate)")
         logger.info("Registered RSS items monitoring task (every 3 minutes, first run in 10 seconds)")
         logger.info("Registered task to clean expired user data (every 60 minutes)")
+        logger.info("Registered task to clean old user send locks (every 60 minutes, first run in 2 minutes)")
 
     logger.info("Bot started in Webhook mode")
     try:

@@ -24,6 +24,26 @@ logger = logging.getLogger(__name__)
 SEND_SEMAPHORE = asyncio.Semaphore(5)
 RSS_ITEM_PROCESSING_SEMAPHORE = asyncio.Semaphore(10)
 
+# Global locks for preventing duplicate sends to users
+USER_SEND_LOCKS: Dict[str, asyncio.Lock] = {}
+
+# Cleanup old locks periodically to prevent memory leaks
+async def cleanup_old_user_send_locks():
+    """Cleanup old user send locks to prevent memory leaks"""
+    while True:
+        try:
+            # Keep only locks that are currently in use (locked)
+            active_locks = {}
+            for key, lock in USER_SEND_LOCKS.items():
+                if lock.locked():
+                    active_locks[key] = lock
+            USER_SEND_LOCKS.clear()
+            USER_SEND_LOCKS.update(active_locks)
+            logger.debug(f"Cleaned up user send locks, kept {len(active_locks)} active locks")
+        except Exception as e:
+            logger.error(f"Error cleaning up user send locks: {e}")
+        await asyncio.sleep(3600)  # Cleanup every hour
+
 
 @retry(stop=stop_after_attempt(5), wait=wait_exponential(multiplier=1, min=2, max=30))
 async def send_personal_rss_items(bot, prepared_rss_item: PreparedRSSItem, subscribers_cache=None):
@@ -82,155 +102,164 @@ async def send_personal_rss_items(bot, prepared_rss_item: PreparedRSSItem, subsc
                 logger.debug(f"Skipping user {user_id} - no content in language {user_lang}")
                 continue
 
-            # Check if already sent to this user
-            from telegram_bot.services.database_service import check_bot_published
-            already_sent = await check_bot_published(
-                news_id=news_id,
-                translation_id=translation_id,
-                recipient_type='user',
-                recipient_id=user_id
-            )
-            if already_sent:
-                logger.debug(f"Skipping user {user_id} - already sent this item")
-                continue
+            # Create lock key for this specific news + translation + user combination
+            lock_key = f"{news_id}_{translation_id or 'original'}_{user_id}"
 
-            title_to_send = TextProcessor.clean(title_to_send)
-            content_to_send = TextProcessor.clean(content_to_send)
+            # Get or create lock for this combination
+            if lock_key not in USER_SEND_LOCKS:
+                USER_SEND_LOCKS[lock_key] = asyncio.Lock()
 
-            lang_note = ""
-            if user_lang != original_rss_item_lang:
-                lang_note = (
-                    f"\n🌐 {TRANSLATED_FROM_LABELS.get(user_lang, 'Translated from')} {original_rss_item_lang.upper()}\n"
-                )
-
-            source_url = prepared_rss_item.original_data.get("link", "")
-            content_text = format_personal_rss_message(
-                title_to_send, content_to_send,
-                prepared_rss_item.original_data.get("source", "Unknown Source"),
-                category, lang_note, user_lang, source_url
-            )
-
-            # Determine media based on priority
-            priority = RSS_PARSER_MEDIA_TYPE_PRIORITY.lower()
-            media_filename = None
-            media_type = None
-
-            if priority == "image":
-                if prepared_rss_item.image_filename:
-                    media_filename = prepared_rss_item.image_filename
-                    media_type = "image"
-                elif prepared_rss_item.video_filename:
-                    media_filename = prepared_rss_item.video_filename
-                    media_type = "video"
-            elif priority == "video":
-                if prepared_rss_item.video_filename:
-                    media_filename = prepared_rss_item.video_filename
-                    media_type = "video"
-                elif prepared_rss_item.image_filename:
-                    media_filename = prepared_rss_item.image_filename
-                    media_type = "image"
-
-            logger.debug(f"send_personal_rss_items media_filename = {media_filename}, media_type = {media_type}")
-
-            if media_filename and media_type == "image":
-                # Check image availability and correctness
-                if await validate_image_url(media_filename):
-                    logger.debug(f"Image passed validation: {media_filename}")
-                else:
-                    logger.warning(f"Image failed validation, sending without it: {media_filename}")
-                    media_filename = None  # Reset media
-                    continue  # Continue without media
-            elif media_filename and media_type == "video":
-                # For video, we assume it's already validated during processing
-                logger.debug(f"Using video: {media_filename}")
-
-            message_id = None
-            try:
-                if media_filename:
-                    caption = truncate_caption(content_text)
-                    if media_type == "image":
-                        message = await bot.send_photo(chat_id=user_id, photo=media_filename, caption=caption, parse_mode="HTML")
-                        message_id = message.message_id
-                    elif media_type == "video":
-                        message = await bot.send_video(chat_id=user_id, video=media_filename, caption=caption, parse_mode="HTML")
-                        message_id = message.message_id
-                else:
-                    message = await bot.send_message(
-                        chat_id=user_id, text=content_text, parse_mode="HTML", disable_web_page_preview=True
-                    )
-                    message_id = message.message_id
-
-                # Mark as sent in DB
-                from telegram_bot.services.database_service import mark_bot_published
-                await mark_bot_published(
+            # Acquire lock to prevent concurrent sends
+            async with USER_SEND_LOCKS[lock_key]:
+                # Check if already sent to this user (double-check after acquiring lock)
+                from telegram_bot.services.database_service import check_bot_published
+                already_sent = await check_bot_published(
                     news_id=news_id,
                     translation_id=translation_id,
                     recipient_type='user',
-                    recipient_id=user_id,
-                    message_id=message_id,
-                    language=user_lang
+                    recipient_id=user_id
                 )
+                if already_sent:
+                    logger.debug(f"Skipping user {user_id} - already sent this item")
+                    continue
 
-            except RetryAfter as e:
-                logger.warning(f"Flood control for user {user_id}, waiting {e.retry_after} seconds")
-                await asyncio.sleep(e.retry_after + 1)
-                if media_filename:
-                    if media_type == "image":
-                        message = await bot.send_photo(chat_id=user_id, photo=media_filename, caption=caption, parse_mode="HTML")
-                        message_id = message.message_id
-                    elif media_type == "video":
-                        message = await bot.send_video(chat_id=user_id, video=media_filename, caption=caption, parse_mode="HTML")
-                        message_id = message.message_id
-                else:
-                    message = await bot.send_message(
-                        chat_id=user_id, text=content_text, parse_mode="HTML", disable_web_page_preview=True
+                title_to_send = TextProcessor.clean(title_to_send)
+                content_to_send = TextProcessor.clean(content_to_send)
+
+                lang_note = ""
+                if user_lang != original_rss_item_lang:
+                    lang_note = (
+                        f"\n🌐 {TRANSLATED_FROM_LABELS.get(user_lang, 'Translated from')} {original_rss_item_lang.upper()}\n"
                     )
-                    message_id = message.message_id
 
-                # Mark as sent in DB after retry
-                from telegram_bot.services.database_service import mark_bot_published
-                await mark_bot_published(
-                    news_id=news_id,
-                    translation_id=translation_id,
-                    recipient_type='user',
-                    recipient_id=user_id,
-                    message_id=message_id,
-                    language=user_lang
+                source_url = prepared_rss_item.original_data.get("link", "")
+                content_text = format_personal_rss_message(
+                    title_to_send, content_to_send,
+                    prepared_rss_item.original_data.get("source", "Unknown Source"),
+                    category, lang_note, user_lang, source_url
                 )
 
-            except Forbidden as e:
-                logger.warning(f"User {user_id} has blocked the bot, removing from subscribers: {e}")
-                await user_state_service.user_manager.remove_blocked_user(user_id)
-                continue  # Skip this user
-            except BadRequest as e:
-                if "Wrong type of the web page content" in str(e):
-                    logger.warning(f"Incorrect content type for user {user_id}, sending without media: {media_filename}")
-                    # Send without media
-                    try:
+                # Determine media based on priority
+                priority = RSS_PARSER_MEDIA_TYPE_PRIORITY.lower()
+                media_filename = None
+                media_type = None
+
+                if priority == "image":
+                    if prepared_rss_item.image_filename:
+                        media_filename = prepared_rss_item.image_filename
+                        media_type = "image"
+                    elif prepared_rss_item.video_filename:
+                        media_filename = prepared_rss_item.video_filename
+                        media_type = "video"
+                elif priority == "video":
+                    if prepared_rss_item.video_filename:
+                        media_filename = prepared_rss_item.video_filename
+                        media_type = "video"
+                    elif prepared_rss_item.image_filename:
+                        media_filename = prepared_rss_item.image_filename
+                        media_type = "image"
+
+                logger.debug(f"send_personal_rss_items media_filename = {media_filename}, media_type = {media_type}")
+
+                if media_filename and media_type == "image":
+                    # Check image availability and correctness
+                    if await validate_image_url(media_filename):
+                        logger.debug(f"Image passed validation: {media_filename}")
+                    else:
+                        logger.warning(f"Image failed validation, sending without it: {media_filename}")
+                        media_filename = None  # Reset media
+                        continue  # Continue without media
+                elif media_filename and media_type == "video":
+                    # For video, we assume it's already validated during processing
+                    logger.debug(f"Using video: {media_filename}")
+
+                message_id = None
+                try:
+                    if media_filename:
+                        caption = truncate_caption(content_text)
+                        if media_type == "image":
+                            message = await bot.send_photo(chat_id=user_id, photo=media_filename, caption=caption, parse_mode="HTML")
+                            message_id = message.message_id
+                        elif media_type == "video":
+                            message = await bot.send_video(chat_id=user_id, video=media_filename, caption=caption, parse_mode="HTML")
+                            message_id = message.message_id
+                    else:
                         message = await bot.send_message(
-                            chat_id=user_id, text=caption, parse_mode="HTML", disable_web_page_preview=True
+                            chat_id=user_id, text=content_text, parse_mode="HTML", disable_web_page_preview=True
                         )
                         message_id = message.message_id
-                        # Mark as sent in DB
-                        from telegram_bot.services.database_service import mark_bot_published
-                        await mark_bot_published(
-                            news_id=news_id,
-                            translation_id=translation_id,
-                            recipient_type='user',
-                            recipient_id=user_id,
-                            message_id=message_id,
-                            language=user_lang
+
+                    # Mark as sent in DB
+                    from telegram_bot.services.database_service import mark_bot_published
+                    await mark_bot_published(
+                        news_id=news_id,
+                        translation_id=translation_id,
+                        recipient_type='user',
+                        recipient_id=user_id,
+                        message_id=message_id,
+                        language=user_lang
+                    )
+
+                except RetryAfter as e:
+                    logger.warning(f"Flood control for user {user_id}, waiting {e.retry_after} seconds")
+                    await asyncio.sleep(e.retry_after + 1)
+                    if media_filename:
+                        if media_type == "image":
+                            message = await bot.send_photo(chat_id=user_id, photo=media_filename, caption=caption, parse_mode="HTML")
+                            message_id = message.message_id
+                        elif media_type == "video":
+                            message = await bot.send_video(chat_id=user_id, video=media_filename, caption=caption, parse_mode="HTML")
+                            message_id = message.message_id
+                    else:
+                        message = await bot.send_message(
+                            chat_id=user_id, text=content_text, parse_mode="HTML", disable_web_page_preview=True
                         )
-                    except Forbidden as send_error:
-                        logger.warning(f"User {user_id} has blocked the bot during text send, removing from subscribers: {send_error}")
-                        await user_state_service.user_manager.remove_blocked_user(user_id)
-                        continue
-                    except Exception as send_error:
-                        logger.error(f"Error sending message to user {user_id}: {send_error}")
-                else:
-                    logger.error(f"BadRequest when sending media to user {user_id}: {e}")
-            except Exception as e:
-                logger.error(f"Error sending media to user {user_id}: {e}")
+                        message_id = message.message_id
+
+                    # Mark as sent in DB after retry
+                    from telegram_bot.services.database_service import mark_bot_published
+                    await mark_bot_published(
+                        news_id=news_id,
+                        translation_id=translation_id,
+                        recipient_type='user',
+                        recipient_id=user_id,
+                        message_id=message_id,
+                        language=user_lang
+                    )
+
+                except Forbidden as e:
+                    logger.warning(f"User {user_id} has blocked the bot, removing from subscribers: {e}")
+                    await user_state_service.user_manager.remove_blocked_user(user_id)
+                    continue  # Skip this user
+                except BadRequest as e:
+                    if "Wrong type of the web page content" in str(e):
+                        logger.warning(f"Incorrect content type for user {user_id}, sending without media: {media_filename}")
+                        # Send without media
+                        try:
+                            message = await bot.send_message(
+                                chat_id=user_id, text=caption, parse_mode="HTML", disable_web_page_preview=True
+                            )
+                            message_id = message.message_id
+                            # Mark as sent in DB
+                            from telegram_bot.services.database_service import mark_bot_published
+                            await mark_bot_published(
+                                news_id=news_id,
+                                translation_id=translation_id,
+                                recipient_type='user',
+                                recipient_id=user_id,
+                                message_id=message_id,
+                                language=user_lang
+                            )
+                        except Forbidden as send_error:
+                            logger.warning(f"User {user_id} has blocked the bot during text send, removing from subscribers: {send_error}")
+                            await user_state_service.user_manager.remove_blocked_user(user_id)
+                            continue
+                        except Exception as send_error:
+                            logger.error(f"Error sending message to user {user_id}: {send_error}")
+                    else:
+                        logger.error(f"BadRequest when sending media to user {user_id}: {e}")
+                except Exception as e:
+                    logger.error(f"Error sending media to user {user_id}: {e}")
 
             if i < len(subscribers) - 1:
                 await asyncio.sleep(0.5)
