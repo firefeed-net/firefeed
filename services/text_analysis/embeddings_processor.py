@@ -7,7 +7,7 @@ import numpy as np
 from typing import List, Optional, Dict, Any
 import logging
 from utils.text import TextProcessor
-from config_services import get_service_config
+from config.services_config import get_service_config
 
 logger = logging.getLogger(__name__)
 

@@ -1,7 +1,7 @@
 import asyncio
 import sys
 import logging
-from logging_config import setup_logging
+from config.logging_config import setup_logging
 from services.rss.rss_parser import RSSParserService
 
 setup_logging()

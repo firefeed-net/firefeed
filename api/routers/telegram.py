@@ -2,7 +2,9 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, Request
 
 from api.middleware import limiter
-from api import database, models
+from api import models
+from di_container import get_service
+from interfaces import ITelegramRepository
 from api.deps import get_current_user
 
 logger = logging.getLogger(__name__)
@@ -51,10 +53,11 @@ router = APIRouter(
 )
 @limiter.limit("300/minute")
 async def generate_telegram_link_code(request: Request, current_user: dict = Depends(get_current_user)):
-    from services.user.user_manager import UserManager
+    from di_container import get_service
+    from interfaces import IWebUserService
 
-    user_manager = UserManager()
-    link_code = await user_manager.generate_telegram_link_code(current_user["id"])
+    web_user_service = get_service(IWebUserService)
+    link_code = await web_user_service.generate_telegram_link_code(current_user["id"])
     if not link_code:
         raise HTTPException(status_code=500, detail="Failed to generate link code")
 
@@ -89,10 +92,11 @@ async def generate_telegram_link_code(request: Request, current_user: dict = Dep
 )
 @limiter.limit("300/minute")
 async def unlink_telegram_account(request: Request, current_user: dict = Depends(get_current_user)):
-    from services.user.user_manager import UserManager
+    from di_container import get_service
+    from interfaces import IWebUserService
 
-    user_manager = UserManager()
-    success = await user_manager.unlink_telegram(current_user["id"])
+    web_user_service = get_service(IWebUserService)
+    success = await web_user_service.unlink_telegram(current_user["id"])
     if not success:
         raise HTTPException(status_code=500, detail="Failed to unlink Telegram account")
 
@@ -128,11 +132,8 @@ async def unlink_telegram_account(request: Request, current_user: dict = Depends
 )
 @limiter.limit("300/minute")
 async def get_telegram_link_status(request: Request, current_user: dict = Depends(get_current_user)):
-    pool = await database.get_db_pool()
-    if pool is None:
-        raise HTTPException(status_code=500, detail="Database error")
-
-    link = await database.get_telegram_link_status(pool, current_user["id"])
+    telegram_repo = get_service(ITelegramRepository)
+    link = await telegram_repo.get_telegram_link_status(current_user["id"])
     if link:
         return models.TelegramLinkStatusResponse(
             is_linked=True, telegram_id=link.get("telegram_id"), linked_at=link.get("linked_at")

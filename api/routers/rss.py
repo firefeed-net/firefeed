@@ -4,23 +4,17 @@ from fastapi import APIRouter, HTTPException, Response
 from feedgen.feed import FeedGenerator
 from email.utils import formatdate
 
-from api import database
-import config
-import redis
+from di_container import get_service
+from interfaces import ICategoryRepository, ISourceRepository, IRSSItemRepository
+# Config will be accessed via DI
 import json
 from datetime import datetime, timedelta
 
 logger = logging.getLogger(__name__)
 
-# Redis client for caching
-redis_client = redis.Redis(
-    host=config.REDIS_CONFIG["host"],
-    port=config.REDIS_CONFIG["port"],
-    username=config.REDIS_CONFIG["username"],
-    password=config.REDIS_CONFIG["password"],
-    db=config.REDIS_CONFIG["db"],
-    decode_responses=True
-)
+# Redis client for caching - now from DI
+import redis
+redis_client = get_service(redis.Redis)
 
 CACHE_TTL_SECONDS = 3600  # 1 hour
 
@@ -97,7 +91,9 @@ def generate_rss_feed(results, columns, language, feed_title, feed_description):
     }
 )
 async def get_rss_feed_by_category(language: str, category_name: str):
-    if language not in config.SUPPORTED_LANGUAGES:
+    config_obj = get_service(dict)
+    supported_languages = config_obj.get('SUPPORTED_LANGUAGES', ['en', 'ru', 'de', 'fr'])
+    if language not in supported_languages:
         raise HTTPException(status_code=400, detail=f"Unsupported language: {language}")
 
     cache_key = f"rss:category:{category_name}:{language}"
@@ -107,30 +103,22 @@ async def get_rss_feed_by_category(language: str, category_name: str):
     if cached_rss:
         return Response(content=cached_rss, media_type="application/rss+xml")
 
-    pool = await database.get_db_pool()
-    if pool is None:
-        raise HTTPException(status_code=500, detail="Database connection error")
+    category_repo = get_service(ICategoryRepository)
+    rss_item_repo = get_service(IRSSItemRepository)
 
     try:
         # Get category ID by name
-        category_id = await database.get_category_id_by_name(pool, category_name)
+        category_id = await category_repo.get_category_id_by_name(category_name)
         if category_id is None:
             raise HTTPException(status_code=404, detail=f"Category '{category_name}' not found")
 
         # Get RSS items for the category (last hour, max 10 items)
         from_date = datetime.utcnow() - timedelta(hours=1)
-        total_count, results, columns = await database.get_all_rss_items_list(
-            pool,
-            original_language=None,
-            category_id=[category_id],
-            source_id=None,
-            telegram_published=None,
-            from_date=from_date,
-            search_phrase=None,
-            before_published_at=None,
-            cursor_news_id=None,
+        total_count, results, columns = await rss_item_repo.get_all_rss_items_list(
             limit=10,  # Max 10 items per hour
             offset=0,
+            category_name=category_name,
+            from_date=from_date
         )
 
         feed_title = f"FireFeed - {category_name} ({language.upper()})"
@@ -172,7 +160,9 @@ async def get_rss_feed_by_category(language: str, category_name: str):
     }
 )
 async def get_rss_feed_by_source(language: str, source_alias: str):
-    if language not in config.SUPPORTED_LANGUAGES:
+    config_obj = get_service(dict)
+    supported_languages = config_obj.get('SUPPORTED_LANGUAGES', ['en', 'ru', 'de', 'fr'])
+    if language not in supported_languages:
         raise HTTPException(status_code=400, detail=f"Unsupported language: {language}")
 
     cache_key = f"rss:source:{source_alias}:{language}"
@@ -182,30 +172,22 @@ async def get_rss_feed_by_source(language: str, source_alias: str):
     if cached_rss:
         return Response(content=cached_rss, media_type="application/rss+xml")
 
-    pool = await database.get_db_pool()
-    if pool is None:
-        raise HTTPException(status_code=500, detail="Database connection error")
+    source_repo = get_service(ISourceRepository)
+    rss_item_repo = get_service(IRSSItemRepository)
 
     try:
         # Get source ID by alias
-        source_id = await database.get_source_id_by_alias(pool, source_alias)
+        source_id = await source_repo.get_source_id_by_alias(source_alias)
         if source_id is None:
             raise HTTPException(status_code=404, detail=f"Source '{source_alias}' not found")
 
         # Get RSS items for the source (last hour, max 10 items)
         from_date = datetime.utcnow() - timedelta(hours=1)
-        total_count, results, columns = await database.get_all_rss_items_list(
-            pool,
-            original_language=None,
-            category_id=None,
-            source_id=[source_id],
-            telegram_published=None,
-            from_date=from_date,
-            search_phrase=None,
-            before_published_at=None,
-            cursor_news_id=None,
+        total_count, results, columns = await rss_item_repo.get_all_rss_items_list(
             limit=10,  # Max 10 items per hour
             offset=0,
+            source_alias=source_alias,
+            from_date=from_date
         )
 
         feed_title = f"FireFeed - {source_alias} ({language.upper()})"

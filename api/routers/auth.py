@@ -6,7 +6,9 @@ from fastapi import APIRouter, Depends, HTTPException, status, Request, Backgrou
 from fastapi.security import OAuth2PasswordRequestForm
 
 from api.middleware import limiter
-from api import database, models
+from api import models
+from di_container import get_service
+from interfaces import IUserRepository
 from api.deps import create_access_token, verify_password, get_password_hash, ACCESS_TOKEN_EXPIRE_MINUTES
 from api.email_service.sender import send_verification_email, send_registration_success_email, send_password_reset_email
 
@@ -58,24 +60,22 @@ router = APIRouter(
 )
 @limiter.limit("5/minute")
 async def register_user(request: Request, user: models.UserCreate, background_tasks: BackgroundTasks):
-    pool = await database.get_db_pool()
-    if pool is None:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Database error")
+    user_repo = get_service(IUserRepository)
 
-    existing_user = await database.get_user_by_email(pool, user.email)
+    existing_user = await user_repo.get_user_by_email(user.email)
     if existing_user:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered")
 
     password_hash = get_password_hash(user.password)
-    new_user = await database.create_user(pool, user.email, password_hash, user.language)
+    new_user = await user_repo.create_user(user.email, password_hash, user.language)
     if not new_user:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to create user")
 
     verification_code = "".join(random.choices("0123456789", k=6))
     expires_at = datetime.now(timezone.utc) + timedelta(hours=24)
-    ok = await database.save_verification_code(pool, new_user["id"], verification_code, expires_at)
+    ok = await user_repo.save_verification_code(new_user["id"], verification_code, expires_at)
     if not ok:
-        await database.delete_user(pool, new_user["id"])
+        await user_repo.delete_user(new_user["id"])
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to create verification code")
 
     async def _send_verification(email: str, code: str, lang: str):
@@ -130,17 +130,15 @@ async def register_user(request: Request, user: models.UserCreate, background_ta
 )
 @limiter.limit("300/minute")
 async def verify_user(request: Request, verification_request: models.EmailVerificationRequest, background_tasks: BackgroundTasks):
-    pool = await database.get_db_pool()
-    if pool is None:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Database error")
+    user_repo = get_service(IUserRepository)
 
-    user = await database.get_user_by_email(pool, verification_request.email)
+    user = await user_repo.get_user_by_email(verification_request.email)
     if not user:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid verification code or email")
     if user.get("is_verified"):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User already verified")
 
-    ok = await database.activate_user_and_use_verification_code(pool, user["id"], verification_request.code)
+    ok = await user_repo.activate_user_and_use_verification_code(user["id"], verification_request.code)
     if not ok:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid verification code or email")
 
@@ -193,11 +191,9 @@ async def verify_user(request: Request, verification_request: models.EmailVerifi
 )
 @limiter.limit("5/minute")
 async def resend_verification(request: Request, resend_request: models.ResendVerificationRequest, background_tasks: BackgroundTasks):
-    pool = await database.get_db_pool()
-    if pool is None:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Database error")
+    user_repo = get_service(IUserRepository)
 
-    user = await database.get_user_by_email(pool, resend_request.email)
+    user = await user_repo.get_user_by_email(resend_request.email)
     if not user:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email not found")
     if user.get("is_verified"):
@@ -205,7 +201,7 @@ async def resend_verification(request: Request, resend_request: models.ResendVer
 
     verification_code = "".join(random.choices("0123456789", k=6))
     expires_at = datetime.now(timezone.utc) + timedelta(hours=24)
-    ok = await database.save_verification_code(pool, user["id"], verification_code, expires_at)
+    ok = await user_repo.save_verification_code( user["id"], verification_code, expires_at)
     if not ok:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to create verification code")
 
@@ -264,11 +260,9 @@ async def resend_verification(request: Request, resend_request: models.ResendVer
 )
 @limiter.limit("10/minute")
 async def login_user(request: Request, form_data: OAuth2PasswordRequestForm = Depends()):
-    pool = await database.get_db_pool()
-    if pool is None:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Database error")
+    user_repo = get_service(IUserRepository)
 
-    user = await database.get_user_by_email(pool, form_data.username)
+    user = await user_repo.get_user_by_email(form_data.username)
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect email or password")
 
@@ -327,17 +321,15 @@ async def login_user(request: Request, form_data: OAuth2PasswordRequestForm = De
 )
 @limiter.limit("300/minute")
 async def request_password_reset(request: Request, password_reset_request: models.PasswordResetRequest, background_tasks: BackgroundTasks):
-    pool = await database.get_db_pool()
-    if pool is None:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Database error")
+    user_repo = get_service(IUserRepository)
 
-    user = await database.get_user_by_email(pool, password_reset_request.email)
+    user = await user_repo.get_user_by_email(password_reset_request.email)
     if not user:
         return {"message": "If email exists, reset instructions have been sent"}
 
     token = secrets.token_urlsafe(32)
     expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
-    success = await database.save_password_reset_token(pool, user["id"], token, expires_at)
+    success = await user_repo.save_password_reset_token(user["id"], token, expires_at)
     if not success:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to create reset token")
 
@@ -352,12 +344,12 @@ async def request_password_reset(request: Request, password_reset_request: model
                 logger.info(f"[PasswordResetEmail] Sent in {duration:.3f}s for {email}")
             if not ok:
                 logger.error(f"[PasswordResetEmail] Failed to send to {email}, deleting token")
-                await database.delete_password_reset_token(pool, token)
+                await user_repo.delete_password_reset_token(token)
         except Exception as e:
             duration = (datetime.utcnow() - start_ts).total_seconds()
             logger.error(f"[PasswordResetEmail] Exception after {duration:.3f}s for {email}: {e}")
             try:
-                await database.delete_password_reset_token(pool, token)
+                await user_repo.delete_password_reset_token(token)
             except Exception as del_e:
                 logger.error(f"[PasswordResetEmail] Failed to delete token on error: {del_e}")
 
@@ -404,12 +396,10 @@ async def request_password_reset(request: Request, password_reset_request: model
 )
 @limiter.limit("300/minute")
 async def confirm_password_reset(request: Request, password_reset_confirm: models.PasswordResetConfirm):
-    pool = await database.get_db_pool()
-    if pool is None:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Database error")
+    user_repo = get_service(IUserRepository)
 
     new_password_hash = get_password_hash(password_reset_confirm.new_password)
-    ok = await database.confirm_password_reset_transaction(pool, password_reset_confirm.token, new_password_hash)
+    ok = await user_repo.confirm_password_reset_transaction(password_reset_confirm.token, new_password_hash)
     if not ok:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired token")
     return {"message": "Password successfully reset"}

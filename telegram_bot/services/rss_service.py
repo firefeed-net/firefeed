@@ -8,7 +8,7 @@ from telegram_bot.models.rss_item import PreparedRSSItem
 from telegram_bot.services.api_service import get_rss_items_list
 import telegram_bot.services.user_state_service as user_state_service
 from telegram_bot.services.telegram_service import send_personal_rss_items, post_to_channel, SEND_SEMAPHORE
-from telegram_bot.config import CHANNEL_CATEGORIES
+from di_container import get_service
 
 logger = logging.getLogger(__name__)
 
@@ -127,11 +127,14 @@ async def monitor_rss_items_task(context):
         # Cache for checking categories suitability for general channel
         channel_categories_cache = {}
 
-        if user_state_service.user_manager is not None:
+        config_obj = get_service(dict)
+        channel_categories = config_obj.get('CHANNEL_CATEGORIES', [])
+
+        if user_state_service.telegram_user_service is not None:
             for category in unique_categories:
-                subscribers = await user_state_service.user_manager.get_subscribers_for_category(category)
+                subscribers = await user_state_service.telegram_user_service.get_subscribers_for_category(category)
                 subscribers_cache[category] = subscribers
-                channel_categories_cache[category] = category in CHANNEL_CATEGORIES
+                channel_categories_cache[category] = category in channel_categories
                 if not subscribers:
                     logger.info(f"No subscribers for category {category}")
                 if channel_categories_cache[category]:
@@ -139,11 +142,11 @@ async def monitor_rss_items_task(context):
                 else:
                     logger.info(f"Category '{category}' is NOT suitable for general channel")
         else:
-            # No user_manager - disable personal sending
-            logger.warning("user_manager not available - personal RSS sending disabled")
+            # No telegram_user_service - disable personal sending
+            logger.warning("telegram_user_service not available - personal RSS sending disabled")
             for category in unique_categories:
                 subscribers_cache[category] = []
-                channel_categories_cache[category] = category in CHANNEL_CATEGORIES
+                channel_categories_cache[category] = category in channel_categories
 
         # Process feeds sequentially
         for feed_id, feed_items in items_by_feed.items():

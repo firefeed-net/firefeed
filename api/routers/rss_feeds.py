@@ -3,7 +3,9 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from api.middleware import limiter
-from api import database, models
+from api import models
+from di_container import get_service
+from interfaces import IRSSFeedRepository
 from api.deps import get_current_user, validate_rss_url
 
 logger = logging.getLogger(__name__)
@@ -62,12 +64,9 @@ async def create_user_rss_feed(request: Request, feed: models.UserRSSFeedCreate,
     if feed.name and len(feed.name) > 255:
         raise HTTPException(status_code=400, detail="Feed name too long (max 255 characters)")
 
-    pool = await database.get_db_pool()
-    if pool is None:
-        raise HTTPException(status_code=500, detail="Database error")
-
-    new_feed = await database.create_user_rss_feed(
-        pool, current_user["id"], feed.url, feed.name, feed.category_id, feed.language
+    rss_feed_repo = get_service(IRSSFeedRepository)
+    new_feed = await rss_feed_repo.create_user_rss_feed(
+        current_user["id"], feed.url, feed.name, feed.category_id, feed.language
     )
     if isinstance(new_feed, dict) and new_feed.get("error") == "duplicate":
         raise HTTPException(status_code=400, detail="RSS feed with this URL already exists for this user")
@@ -108,10 +107,8 @@ async def get_user_rss_feeds(
     offset: int = Query(0, ge=0, description="Number of feeds to skip"),
     current_user: dict = Depends(get_current_user),
 ):
-    pool = await database.get_db_pool()
-    if pool is None:
-        raise HTTPException(status_code=500, detail="Database error")
-    feeds = await database.get_user_rss_feeds(pool, current_user["id"], limit, offset)
+    rss_feed_repo = get_service(IRSSFeedRepository)
+    feeds = await rss_feed_repo.get_user_rss_feeds(current_user["id"], limit, offset)
     feed_models = [models.UserRSSFeedResponse(**feed) for feed in feeds]
     return models.PaginatedResponse[models.UserRSSFeedResponse](count=len(feed_models), results=feed_models)
 
@@ -146,10 +143,8 @@ async def get_user_rss_feeds(
 )
 @limiter.limit("300/minute")
 async def get_user_rss_feed(request: Request, feed_id: str, current_user: dict = Depends(get_current_user)):
-    pool = await database.get_db_pool()
-    if pool is None:
-        raise HTTPException(status_code=500, detail="Database error")
-    feed = await database.get_user_rss_feed_by_id(pool, current_user["id"], feed_id)
+    rss_feed_repo = get_service(IRSSFeedRepository)
+    feed = await rss_feed_repo.get_user_rss_feed_by_id(current_user["id"], feed_id)
     if not feed:
         raise HTTPException(status_code=404, detail="RSS feed not found")
     return models.UserRSSFeedResponse(**feed)
@@ -198,9 +193,7 @@ async def update_user_rss_feed(request: Request, feed_id: str, feed_update: mode
     if feed_update.name is not None and len(feed_update.name) > 255:
         raise HTTPException(status_code=400, detail="Feed name too long (max 255 characters)")
 
-    pool = await database.get_db_pool()
-    if pool is None:
-        raise HTTPException(status_code=500, detail="Database error")
+    rss_feed_repo = get_service(IRSSFeedRepository)
     update_data = {}
     if feed_update.name is not None:
         update_data["name"] = feed_update.name
@@ -208,7 +201,7 @@ async def update_user_rss_feed(request: Request, feed_id: str, feed_update: mode
         update_data["category_id"] = feed_update.category_id
     if feed_update.is_active is not None:
         update_data["is_active"] = feed_update.is_active
-    updated_feed = await database.update_user_rss_feed(pool, current_user["id"], feed_id, update_data)
+    updated_feed = await rss_feed_repo.update_user_rss_feed(current_user["id"], feed_id, update_data)
     if not updated_feed:
         raise HTTPException(status_code=404, detail="RSS feed not found or failed to update")
     return models.UserRSSFeedResponse(**updated_feed)
@@ -242,10 +235,8 @@ async def update_user_rss_feed(request: Request, feed_id: str, feed_update: mode
 )
 @limiter.limit("300/minute")
 async def delete_user_rss_feed(request: Request, feed_id: str, current_user: dict = Depends(get_current_user)):
-    pool = await database.get_db_pool()
-    if pool is None:
-        raise HTTPException(status_code=500, detail="Database error")
-    success = await database.delete_user_rss_feed(pool, current_user["id"], feed_id)
+    rss_feed_repo = get_service(IRSSFeedRepository)
+    success = await rss_feed_repo.delete_user_rss_feed(current_user["id"], feed_id)
     if not success:
         raise HTTPException(status_code=404, detail="RSS feed not found")
     return

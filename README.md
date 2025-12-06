@@ -91,8 +91,8 @@ FireFeed is a high-performance system for automatic collection, processing, and 
 
 The project consists of several key components:
 
-1. **Telegram Bot** (`bot.py`) - main user interaction interface
-2. **RSS Parser Service** (`rss_parser.py`) - background service for RSS feed parsing
+1. **Telegram Bot** (`telegram_bot/bot.py`) - main user interaction interface
+2. **RSS Parser Service** (`services/rss/`) - background service for RSS feed parsing
 3. **REST API** (`api/app.py`) - web API for external integrations
 4. **Translation Services** (`services/translation/`) - translation system with caching
 5. **Duplicate Detector** (`services/text_analysis/duplicate_detector.py`) - ML-based duplicate detection
@@ -773,7 +773,6 @@ firefeed/
 ├── interfaces.py               # Service interfaces
 ├── logging_config.py           # Logging configuration
 ├── requirements.txt            # Python dependencies
-├── rss_parser.py               # RSS parser (legacy)
 ├── run_api.sh                  # API startup script
 ├── run_bot.sh                  # Bot startup script
 ├── run_parser.sh               # Parser startup script

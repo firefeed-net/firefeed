@@ -2,7 +2,11 @@
 import time
 from typing import Dict, Any
 
-from telegram_bot.config import USER_DATA_TTL_SECONDS
+# Configuration moved to DI
+from di_container import get_service
+
+config_obj = get_service(dict)
+USER_DATA_TTL_SECONDS = config_obj.get('USER_DATA_TTL_SECONDS', 86400)
 
 
 def cleanup_expired_user_data(user_states: Dict[int, Any], user_current_menus: Dict[int, Any], user_languages: Dict[int, Any]):

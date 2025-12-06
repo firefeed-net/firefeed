@@ -139,6 +139,30 @@ class DeduplicationConfig:
 
 
 @dataclass
+class TelegramBotConfig:
+    """Configuration for Telegram bot job queue"""
+    rss_monitor_interval: int = 180  # 3 minutes
+    rss_monitor_first_delay: int = 10  # 10 seconds
+    rss_monitor_misfire_grace_time: int = 600  # 10 minutes
+    user_cleanup_interval: int = 3600  # 1 hour
+    user_cleanup_first_delay: int = 60  # 1 minute
+    send_locks_cleanup_interval: int = 3600  # 1 hour
+    send_locks_cleanup_first_delay: int = 120  # 2 minutes
+
+    @classmethod
+    def from_env(cls) -> 'TelegramBotConfig':
+        return cls(
+            rss_monitor_interval=int(os.getenv('BOT_RSS_MONITOR_INTERVAL', '180')),
+            rss_monitor_first_delay=int(os.getenv('BOT_RSS_MONITOR_FIRST_DELAY', '10')),
+            rss_monitor_misfire_grace_time=int(os.getenv('BOT_RSS_MONITOR_MISFIRE_GRACE_TIME', '600')),
+            user_cleanup_interval=int(os.getenv('BOT_USER_CLEANUP_INTERVAL', '3600')),
+            user_cleanup_first_delay=int(os.getenv('BOT_USER_CLEANUP_FIRST_DELAY', '60')),
+            send_locks_cleanup_interval=int(os.getenv('BOT_SEND_LOCKS_CLEANUP_INTERVAL', '3600')),
+            send_locks_cleanup_first_delay=int(os.getenv('BOT_SEND_LOCKS_CLEANUP_FIRST_DELAY', '120'))
+        )
+
+
+@dataclass
 class ServiceConfig:
     """Main service configuration"""
     rss: RSSConfig
@@ -146,6 +170,7 @@ class ServiceConfig:
     cache: CacheConfig
     queue: QueueConfig
     deduplication: DeduplicationConfig
+    telegram_bot: TelegramBotConfig
 
     @classmethod
     def from_env(cls) -> 'ServiceConfig':
@@ -154,7 +179,8 @@ class ServiceConfig:
             translation=TranslationConfig.from_env(),
             cache=CacheConfig.from_env(),
             queue=QueueConfig.from_env(),
-            deduplication=DeduplicationConfig.from_env()
+            deduplication=DeduplicationConfig.from_env(),
+            telegram_bot=TelegramBotConfig.from_env()
         )
 
 

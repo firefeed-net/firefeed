@@ -12,13 +12,23 @@ import redis
 from fastapi import Depends, HTTPException, status, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
-import config
+from di_container import get_service
 
 logger = logging.getLogger(__name__)
 
-SECRET_KEY = config.JWT_SECRET_KEY
-ALGORITHM = config.JWT_ALGORITHM
-ACCESS_TOKEN_EXPIRE_MINUTES = config.JWT_ACCESS_TOKEN_EXPIRE_MINUTES
+# Config will be loaded lazily when needed
+_config = None
+
+def get_config():
+    """Get config from DI container lazily"""
+    global _config
+    if _config is None:
+        _config = get_service(dict)
+    return _config
+
+SECRET_KEY = os.getenv('JWT_SECRET_KEY', 'your-secret-key')  # Fallback for initial load
+ALGORITHM = os.getenv('JWT_ALGORITHM', 'HS256')
+ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv('JWT_ACCESS_TOKEN_EXPIRE_MINUTES', '30'))
 
 security = HTTPBearer()
 
@@ -30,20 +40,28 @@ def hash_api_key(api_key: str) -> str:
 
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
+    config = get_config()
+    secret_key = config.get('JWT_SECRET_KEY', SECRET_KEY)
+    algorithm = config.get('JWT_ALGORITHM', ALGORITHM)
+
     to_encode = data.copy()
     if expires_delta:
         expire = datetime.utcnow() + expires_delta
     else:
         expire = datetime.utcnow() + timedelta(minutes=15)
     to_encode.update({"exp": expire})
-    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    encoded_jwt = jwt.encode(to_encode, secret_key, algorithm=algorithm)
     return encoded_jwt
 
 
 async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
     """Dependency to get current authenticated user"""
     try:
-        payload = jwt.decode(credentials.credentials, SECRET_KEY, algorithms=[ALGORITHM])
+        config = get_config()
+        secret_key = config.get('JWT_SECRET_KEY', SECRET_KEY)
+        algorithm = config.get('JWT_ALGORITHM', ALGORITHM)
+
+        payload = jwt.decode(credentials.credentials, secret_key, algorithms=[algorithm])
         user_id: int = payload.get("sub")
         if user_id is None:
             raise HTTPException(
@@ -52,11 +70,10 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
                 headers={"WWW-Authenticate": "Bearer"},
             )
         # Get full user data from database
-        from api import database
-        pool = await database.get_db_pool()
-        if pool is None:
-            raise HTTPException(status_code=500, detail="Database error")
-        user_data = await database.get_user_by_id(pool, int(user_id))
+        from di_container import get_service
+        from interfaces import IUserRepository
+        user_repo = get_service(IUserRepository)
+        user_data = await user_repo.get_user_by_id(int(user_id))
         if not user_data:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
@@ -130,7 +147,8 @@ def get_full_image_url(image_filename: str) -> str:
         return None
     if image_filename.startswith(("http://", "https://")):
         return image_filename
-    base_url = config.HTTP_IMAGES_ROOT_DIR.rstrip("/")
+    config = get_config()
+    base_url = config.get('HTTP_IMAGES_ROOT_DIR', '').rstrip("/")
     filename = image_filename.lstrip("/")
     return f"{base_url}/{filename}"
 
@@ -185,12 +203,14 @@ def get_redis_client():
     """Get Redis client for rate limiting"""
     global _redis_client
     if _redis_client is None:
+        config = get_config()
+        redis_config = config.get('REDIS_CONFIG', {})
         _redis_client = redis.Redis(
-            host=config.REDIS_CONFIG["host"],
-            port=config.REDIS_CONFIG["port"],
-            username=config.REDIS_CONFIG["username"],
-            password=config.REDIS_CONFIG["password"],
-            db=config.REDIS_CONFIG["db"],
+            host=redis_config.get("host", "localhost"),
+            port=redis_config.get("port", 6379),
+            username=redis_config.get("username"),
+            password=redis_config.get("password"),
+            db=redis_config.get("db", 0),
             decode_responses=True
         )
     return _redis_client
@@ -246,15 +266,17 @@ async def get_current_user_by_api_key(request: Request):
                 detail="X-API-Key header required",
             )
 
+        config = get_config()
         logger.info(f"[API_KEY_AUTH] Received API key: {api_key}")
-        logger.info(f"[API_KEY_AUTH] SITE_API_KEY from config: {config.SITE_API_KEY}")
+        site_api_key = config.get('SITE_API_KEY')
+        logger.info(f"[API_KEY_AUTH] SITE_API_KEY from config: {site_api_key}")
 
         # Get BOT_API_KEY from environment (used by telegram_bot)
         bot_api_key = os.getenv("BOT_API_KEY")
         logger.info(f"[API_KEY_AUTH] BOT_API_KEY from env: {bot_api_key[:10] if bot_api_key else 'None'}...")
 
         # Check if it's the site or bot API key
-        if config.SITE_API_KEY and api_key == config.SITE_API_KEY:
+        if site_api_key and api_key == site_api_key:
             logger.info("[API_KEY_AUTH] SITE_API_KEY matched - authenticating as system user")
             # Site key: unlimited access, return system user
             return {
@@ -284,12 +306,12 @@ async def get_current_user_by_api_key(request: Request):
         logger.info("[API_KEY_AUTH] No special API key match, checking user API keys")
 
         # Get API key data from database
-        from api import database
-        pool = await database.get_db_pool()
-        if pool is None:
-            raise HTTPException(status_code=500, detail="Database error")
+        from di_container import get_service
+        from interfaces import IApiKeyRepository, IUserRepository
+        api_key_repo = get_service(IApiKeyRepository)
+        user_repo = get_service(IUserRepository)
 
-        api_key_data = await database.get_user_api_key_by_key(pool, api_key)
+        api_key_data = await api_key_repo.get_user_api_key_by_key(api_key)
         if not api_key_data:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
@@ -301,7 +323,7 @@ async def get_current_user_by_api_key(request: Request):
         await check_rate_limit(api_key_data)
 
         # Get user data
-        user_data = await database.get_user_by_id(pool, api_key_data["user_id"])
+        user_data = await user_repo.get_user_by_id(api_key_data["user_id"])
         if not user_data:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,

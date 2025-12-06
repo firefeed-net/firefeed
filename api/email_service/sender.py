@@ -5,7 +5,7 @@ import logging
 import os
 from jinja2 import Environment, FileSystemLoader
 from datetime import datetime
-from config import SMTP_CONFIG
+from di_container import get_service
 
 # Logging setup
 logger = logging.getLogger("email_service.sender")
@@ -14,7 +14,8 @@ logger.setLevel(logging.INFO)
 
 class EmailSender:
     def __init__(self):
-        self.smtp_config = SMTP_CONFIG
+        config_obj = get_service(dict)
+        self.smtp_config = config_obj.get('SMTP_CONFIG')
         self.sender_email = self.smtp_config["email"]
 
         # Setting up Jinja2 for template loading

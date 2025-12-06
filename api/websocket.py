@@ -5,8 +5,9 @@ from datetime import datetime
 from typing import Dict, List
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
-from api import database
-import config
+from di_container import get_service
+from interfaces import IRSSItemRepository
+# Config will be accessed via DI
 
 logger = logging.getLogger(__name__)
 
@@ -19,9 +20,11 @@ active_connections_lock = asyncio.Lock()
 @router.websocket("/api/v1/ws/rss-items")
 async def websocket_endpoint(websocket: WebSocket):
     # Check connection limit
+    config_obj = get_service(dict)
+    max_connections = config_obj.get('MAX_WEBSOCKET_CONNECTIONS', 100)
     async with active_connections_lock:
-        if len(active_connections) >= config.MAX_WEBSOCKET_CONNECTIONS:
-            logger.warning(f"[WebSocket] Connection limit reached ({config.MAX_WEBSOCKET_CONNECTIONS}). Rejecting new connection.")
+        if len(active_connections) >= max_connections:
+            logger.warning(f"[WebSocket] Connection limit reached ({max_connections}). Rejecting new connection.")
             await websocket.close(code=1013)  # Try again later
             return
 
@@ -139,14 +142,13 @@ last_rss_items_check_time = datetime.now()
 
 async def check_for_new_rss_items():
     global last_rss_items_check_time
-    pool = await database.get_db_pool()
-    if pool is None:
-        logger.error("[RSS Items Check] Database pool is not available.")
-        return
+    config_obj = get_service(dict)
+    check_interval = config_obj.get('RSS_ITEM_CHECK_INTERVAL_SECONDS', 30)
+    rss_item_repo = get_service(IRSSItemRepository)
     while True:
-        await asyncio.sleep(config.RSS_ITEM_CHECK_INTERVAL_SECONDS)
+        await asyncio.sleep(check_interval)
         try:
-            rss_items_payload = await database.get_recent_rss_items_for_broadcast(pool, last_rss_items_check_time)
+            rss_items_payload = await rss_item_repo.get_recent_rss_items_for_broadcast(last_rss_items_check_time)
             if rss_items_payload:
                 await broadcast_new_rss_items(rss_items_payload)
             last_rss_items_check_time = datetime.now()

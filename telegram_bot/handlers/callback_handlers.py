@@ -22,8 +22,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     user_id = query.from_user.id
     try:
-        if user_state_service.user_manager is None:
-            logger.warning(f"user_manager not initialized for button handler for {user_id}")
+        if user_state_service.telegram_user_service is None:
+            logger.warning(f"telegram_user_service not initialized for button handler for {user_id}")
             await context.bot.send_message(
                 chat_id=user_id,
                 text=get_message("settings_error", await get_current_user_language(user_id)),
@@ -33,12 +33,12 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             set_user_menu(user_id, "main")
             return
         if not get_user_state(user_id):
-            if user_state_service.user_manager is not None:
-                subs = await user_state_service.user_manager.get_user_subscriptions(user_id)
+            if user_state_service.telegram_user_service is not None:
+                subs = await user_state_service.telegram_user_service.get_user_subscriptions(user_id)
                 current_subs = subs if isinstance(subs, list) else []
             else:
                 current_subs = []
-                logger.error(f"user_manager not initialized for button handler for {user_id}")
+                logger.error(f"telegram_user_service not initialized for button handler for {user_id}")
             update_user_state(user_id, {"current_subs": current_subs, "language": await get_current_user_language(user_id)})
         state = get_user_state(user_id)
         current_lang = state["language"] if state else await get_current_user_language(user_id)
@@ -61,20 +61,20 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             logger.info(
                 f"Saving settings for user {user_id}: subscriptions={state['current_subs'] if state else []}, language={current_lang}"
             )
-            if user_state_service.user_manager is not None:
-                result = await user_state_service.user_manager.save_user_settings(user_id, state["current_subs"] if state else [], current_lang)
+            if user_state_service.telegram_user_service is not None:
+                result = await user_state_service.telegram_user_service.save_user_settings(user_id, state["current_subs"] if state else [], current_lang)
                 logger.info(f"Save result for user {user_id}: {result}")
                 clear_user_state(user_id)
             else:
-                logger.error(f"user_manager not initialized for save_settings for {user_id}")
+                logger.error(f"telegram_user_service not initialized for save_settings for {user_id}")
                 # Do not clear state, keep it for retry
             try:
                 await query.message.delete()
             except Exception:
                 pass
             # Show current subscriptions after saving settings
-            if user_state_service.user_manager is not None:
-                settings = await user_state_service.user_manager.get_user_settings(user_id)
+            if user_state_service.telegram_user_service is not None:
+                settings = await user_state_service.telegram_user_service.get_user_settings(user_id)
                 categories = settings["subscriptions"]
                 categories_text = ", ".join(categories) if categories else get_message("no_subscriptions", current_lang)
                 status_text = get_message(

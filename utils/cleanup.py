@@ -9,20 +9,21 @@ import asyncio
 import logging
 from datetime import datetime, timedelta
 
-import config
-from api import database
+from di_container import get_service
+from interfaces import IUserRepository
 
 logger = logging.getLogger(__name__)
 
 
 async def cleanup_users():
     """Deletes unverified and deleted users."""
-    pool = await database.get_db_pool()
-    if pool is None:
-        logger.error("Failed to get DB connection pool")
-        return
+    user_repo = get_service(IUserRepository)
 
     try:
+        # Since Repository doesn't have direct SQL access, we'll need to add cleanup methods
+        # For now, we'll implement cleanup logic directly using the repository's db_pool
+        pool = user_repo.db_pool
+
         async with pool.acquire() as conn:
             async with conn.cursor() as cur:
                 # Delete users with is_deleted = TRUE
@@ -44,8 +45,6 @@ async def cleanup_users():
 
     except Exception as e:
         logger.error(f"Error cleaning users: {e}")
-    finally:
-        await database.close_db_pool()
 
 
 async def periodic_cleanup_users():

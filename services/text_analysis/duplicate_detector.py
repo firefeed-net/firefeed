@@ -3,32 +3,35 @@ import json
 import numpy as np
 from typing import List, Tuple, Optional, Dict, Any
 import logging
-from config import RSS_ITEM_SIMILARITY_THRESHOLD
-from utils.database import DatabaseMixin
+from interfaces import IDuplicateDetector, IRSSItemRepository
 from services.text_analysis.embeddings_processor import FireFeedEmbeddingsProcessor
-from config_services import get_service_config
+from di_container import get_service
 
 logger = logging.getLogger(__name__)
 
 
-class FireFeedDuplicateDetector(DatabaseMixin):
+class FireFeedDuplicateDetector(IDuplicateDetector):
     def __init__(
         self,
+        rss_item_repository: IRSSItemRepository,
         model_name: Optional[str] = None,
         device: str = "cpu",
-        similarity_threshold: float = RSS_ITEM_SIMILARITY_THRESHOLD,
+        similarity_threshold: float = 0.7,
     ):
         """
         Initialization of asynchronous news duplicate detector
 
         Args:
+            rss_item_repository: Repository for RSS item operations
             model_name: Name of the sentence-transformers model
             device: Device for the model
             similarity_threshold: Base similarity threshold
         """
+        self.rss_item_repository = rss_item_repository
         if model_name is None:
-            config = get_service_config()
-            model_name = config.deduplication.embedding_models.sentence_transformer_model
+            # Get config through DI
+            config = get_service(dict)
+            model_name = config.get('deduplication', {}).get('embedding_models', {}).get('sentence_transformer_model', 'paraphrase-multilingual-MiniLM-L12-v2')
         self.processor = FireFeedEmbeddingsProcessor(model_name, device)
         self.similarity_threshold = similarity_threshold
 
@@ -38,34 +41,15 @@ class FireFeedDuplicateDetector(DatabaseMixin):
 
     async def _get_embedding_by_id(self, rss_item_id: str) -> Optional[List[float]]:
         """Getting existing embedding by RSS item ID"""
-        pool = await self.get_pool()
-        async with pool.acquire() as conn:
-            async with conn.cursor() as cur:
-                await cur.execute(
-                    """
-                    SELECT embedding
-                    FROM published_news_data
-                    WHERE news_id = %s AND embedding IS NOT NULL
-                """,
-                    (rss_item_id,),
-                )
-
-                result = await cur.fetchone()
-                if result and result[0] is not None:
-                    # Convert from string to list if needed
-                    if isinstance(result[0], str):
-                        return json.loads(result[0])
-                    return result[0]
-                return None
+        return await self.rss_item_repository.get_embedding_by_news_id(rss_item_id)
 
     async def _is_duplicate_with_embedding(
         self, rss_item_id: str, embedding: List[float], text_length: int = 0, text_type: str = "content"
     ) -> Tuple[bool, Optional[Dict[str, Any]]]:
         """Checking duplicate with existing embedding"""
         try:
-            pool = await self.get_pool()
             # Search for similar RSS items, excluding current
-            similar_rss_items = await self.get_similar_rss_items(embedding, current_rss_item_id=rss_item_id, limit=5, pool=pool)
+            similar_rss_items = await self.rss_item_repository.get_similar_rss_items_by_embedding(embedding, exclude_news_id=rss_item_id, limit=5)
 
             # Dynamic threshold
             threshold = self.processor.get_dynamic_threshold(text_length, text_type)
@@ -126,19 +110,8 @@ class FireFeedDuplicateDetector(DatabaseMixin):
             rss_item_id: RSS item ID
             embedding: RSS item embedding
         """
-        pool = await self.get_pool()
-        async with pool.acquire() as conn:
-            async with conn.cursor() as cur:
-                await cur.execute(
-                    """
-                    UPDATE published_news_data
-                    SET embedding = %s
-                    WHERE news_id = %s
-                """,
-                    (embedding, rss_item_id),
-                )
-                # Remove await conn.commit() - transactions are managed automatically in aiopg
-                logger.debug(f"Embedding for RSS item {rss_item_id} successfully saved")
+        await self.rss_item_repository.save_embedding(rss_item_id, embedding)
+        logger.debug(f"Embedding for RSS item {rss_item_id} successfully saved")
 
     async def get_similar_rss_items(
         self, embedding: List[float], current_rss_item_id: str = None, limit: int = 10, pool=None
@@ -156,40 +129,7 @@ class FireFeedDuplicateDetector(DatabaseMixin):
             List of similar RSS items
         """
         try:
-            # Use provided pool or get new one
-            if pool is None:
-                pool = await self.get_pool()
-
-            async with pool.acquire() as conn:
-                async with conn.cursor() as cur:
-                    if current_rss_item_id:
-                        # Exclude current RSS item from search
-                        await cur.execute(
-                            """
-                            SELECT news_id, original_title, original_content, embedding
-                            FROM published_news_data
-                            WHERE embedding IS NOT NULL
-                            AND news_id != %s
-                            ORDER BY embedding <-> %s::vector
-                            LIMIT %s
-                        """,
-                            (current_rss_item_id, embedding, limit),
-                        )
-                    else:
-                        # If ID not provided, search among all RSS items
-                        await cur.execute(
-                            """
-                            SELECT news_id, original_title, original_content, embedding
-                            FROM published_news_data
-                            WHERE embedding IS NOT NULL
-                            ORDER BY embedding <-> %s::vector
-                            LIMIT %s
-                        """,
-                            (embedding, limit),
-                        )
-
-                    results = await cur.fetchall()
-                    return [dict(zip([column[0] for column in cur.description], row)) for row in results]
+            return await self.rss_item_repository.get_similar_rss_items_by_embedding(embedding, exclude_news_id=current_rss_item_id, limit=limit)
         except Exception as e:
             logger.error(f"[DUPLICATE_DETECTOR] Error searching for similar RSS items: {e}")
             raise
@@ -213,22 +153,9 @@ class FireFeedDuplicateDetector(DatabaseMixin):
             # First check by URL (if link matches - definitely duplicate)
             if link:
                 try:
-                    pool = await self.get_pool()
-                    async with pool.acquire() as conn:
-                        async with conn.cursor() as cur:
-                            await cur.execute(
-                                """
-                                SELECT news_id, original_title
-                                FROM published_news_data
-                                WHERE source_url = %s AND source_url IS NOT NULL
-                                LIMIT 1
-                                """,
-                                (link,),
-                            )
-
-                            result = await cur.fetchone()
-                            if result:
-                                return True, {"news_id": result[0], "title": result[1], "reason": "same_url"}
+                    duplicate_info = await self.rss_item_repository.check_duplicate_by_url(link)
+                    if duplicate_info:
+                        return True, duplicate_info
 
                 except Exception as e:
                     logger.error(f"Error checking by URL: {e}")
@@ -345,29 +272,9 @@ class FireFeedDuplicateDetector(DatabaseMixin):
         Returns:
             List of dictionaries with RSS item data (news_id, original_title, original_content).
         """
-        pool = await self.get_pool()
-        async with pool.acquire() as conn:
-            async with conn.cursor() as cur:
-
-                query = """
-                    SELECT news_id, original_title, original_content
-                    FROM published_news_data
-                    WHERE embedding IS NULL
-                    ORDER BY created_at ASC -- Process oldest records first
-                    LIMIT %s
-                """
-                await cur.execute(query, (limit,))
-                results = await cur.fetchall()
-
-                # Get column names
-                # cur.description available after execute
-                column_names = [desc[0] for desc in cur.description]
-
-                # Convert results to list of dictionaries
-                rss_items_list = [dict(zip(column_names, row)) for row in results]
-
-                logger.info(f"[BATCH_EMBEDDING] Retrieved {len(rss_items_list)} RSS items without embeddings.")
-                return rss_items_list
+        rss_items_list = await self.rss_item_repository.get_rss_items_without_embeddings(limit)
+        logger.info(f"[BATCH_EMBEDDING] Retrieved {len(rss_items_list)} RSS items without embeddings.")
+        return rss_items_list
 
     async def process_single_rss_item_batch(self, rss_item: Dict[str, Any], lang_code: str = "en") -> bool:
         """
@@ -512,12 +419,3 @@ class FireFeedDuplicateDetector(DatabaseMixin):
         except Exception as e:
             logger.error(f"[BATCH_EMBEDDING] Error in one-time processing: {e}", exc_info=True)
             raise  # Re-raise exception so caller can handle it
-
-    @classmethod
-    async def close_pool(cls):
-        """Stub - pool is closed globally"""
-        pass
-
-    async def close(self):
-        """Stub - pool is closed globally"""
-        pass

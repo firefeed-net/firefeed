@@ -32,15 +32,15 @@ async def settings_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         lang = await get_current_user_language(user_id)
         logger.info(f"Loading settings for user {user_id}")
-        if user_state_service.user_manager is not None:
-            settings = await user_state_service.user_manager.get_user_settings(user_id)
+        if user_state_service.telegram_user_service is not None:
+            settings = await user_state_service.telegram_user_service.get_user_settings(user_id)
             logger.info(f"Loaded settings for user {user_id}: {settings}")
             current_subs = settings["subscriptions"] if isinstance(settings["subscriptions"], list) else []
             update_user_state(user_id, {"current_subs": current_subs, "language": settings["language"]})
             await _show_settings_menu(context.bot, update.effective_chat.id, user_id)
             set_user_menu(user_id, "settings")
         else:
-            logger.error(f"user_manager not initialized for /settings command for {user_id}")
+            logger.error(f"telegram_user_service not initialized for /settings command for {user_id}")
             await update.message.reply_text(get_message("settings_error", lang))
     except Exception as e:
         logger.error(f"Error in /settings command for {user_id}: {e}")
@@ -61,8 +61,8 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handler for /status command."""
     user_id = update.effective_user.id
     lang = await get_current_user_language(user_id)
-    if user_state_service.user_manager is not None:
-        settings = await user_state_service.user_manager.get_user_settings(user_id)
+    if user_state_service.telegram_user_service is not None:
+        settings = await user_state_service.telegram_user_service.get_user_settings(user_id)
         categories = settings["subscriptions"]
         categories_text = ", ".join(categories) if categories else get_message("no_subscriptions", lang)
         status_text = get_message(
@@ -71,7 +71,7 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(status_text, parse_mode="HTML", reply_markup=get_main_menu_keyboard(lang))
         set_user_menu(user_id, "main")
     else:
-        logger.error(f"user_manager not initialized for /status command for {user_id}")
+        logger.error(f"telegram_user_service not initialized for /status command for {user_id}")
         await update.message.reply_text(get_message("settings_error", lang), reply_markup=get_main_menu_keyboard(lang))
         set_user_menu(user_id, "main")
 
@@ -100,12 +100,12 @@ async def link_telegram_command(update: Update, context: ContextTypes.DEFAULT_TY
 
     link_code = context.args[0].strip()
 
-    # Check code via UserManager
-    if user_state_service.user_manager is not None:
-        success = await user_state_service.user_manager.confirm_telegram_link(user_id, link_code)
+    # Check code via TelegramUserService
+    if user_state_service.telegram_user_service is not None:
+        success = await user_state_service.telegram_user_service.confirm_telegram_link(user_id, link_code)
     else:
         success = False
-        logger.error(f"user_manager not initialized for /link command for {user_id}")
+        logger.error(f"telegram_user_service not initialized for /link command for {user_id}")
 
     if success:
         await update.message.reply_text(

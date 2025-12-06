@@ -3,9 +3,11 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from api.middleware import limiter
-from api import database, models
+from api import models
+from di_container import get_service
+from interfaces import IRSSItemRepository, ICategoryRepository, ISourceRepository
 from api.deps import format_datetime, get_full_image_url, build_translations_dict, validate_rss_items_query_params, sanitize_search_phrase, get_current_user_by_api_key
-import config
+# Config will be accessed via DI
 
 logger = logging.getLogger(__name__)
 
@@ -166,27 +168,21 @@ async def get_rss_items(
     from_datetime, before_published_at = validate_rss_items_query_params(from_date, cursor_published_at)
     page_offset = 0 if (cursor_published_at is not None or cursor_rss_item_id is not None) else offset
 
-    pool = await database.get_db_pool()
-    if pool is None:
-        raise HTTPException(status_code=500, detail="Database connection error")
+    rss_item_repo = get_service(IRSSItemRepository)
 
     import time
     start_time = time.time()
     try:
-        total_count, results, columns = await database.get_all_rss_items_list(
-            pool,
-            original_language,
-            category_ids,
-            source_ids,
-            telegram_published,
-            telegram_channels_published,
-            telegram_users_published,
-            from_datetime,
-            search_phrase,
-            before_published_at,
-            cursor_rss_item_id,
-            limit,
-            page_offset,
+        total_count, results, columns = await rss_item_repo.get_all_rss_items_list(
+            limit=limit,
+            offset=page_offset,
+            original_language=original_language,
+            category_id=category_ids,
+            source_id=source_ids,
+            from_date=from_datetime,
+            search_phrase=search_phrase,
+            before_published_at=before_published_at,
+            cursor_news_id=cursor_rss_item_id
         )
         query_time = time.time() - start_time
         logger.info(f"[API] RSS items query completed in {query_time:.2f} seconds, returned {len(results)} items")
@@ -227,12 +223,10 @@ async def get_rss_items(
 )
 @limiter.limit("300/minute")
 async def get_rss_item_by_id(request: Request, rss_item_id: str, current_user: dict = Depends(get_current_user_by_api_key)):
-    pool = await database.get_db_pool()
-    if pool is None:
-        raise HTTPException(status_code=500, detail="Database connection error")
+    rss_item_repo = get_service(IRSSItemRepository)
 
     try:
-        full_result = await database.get_rss_item_by_id_full(pool, rss_item_id)
+        full_result = await rss_item_repo.get_rss_item_by_id_full(rss_item_id)
         if not full_result or not full_result[0]:
             raise HTTPException(status_code=404, detail="News item not found")
         row, columns = full_result
@@ -313,12 +307,10 @@ async def get_categories(
         except ValueError:
             raise HTTPException(status_code=400, detail="Invalid source_ids format")
 
-    pool = await database.get_db_pool()
-    if pool is None:
-        raise HTTPException(status_code=500, detail="Database connection error")
+    category_repo = get_service(ICategoryRepository)
 
     try:
-        total_count, results = await database.get_all_categories_list(pool, limit, offset, source_ids_list)
+        total_count, results = await category_repo.get_all_categories_list(limit, offset, source_ids_list)
     except Exception as e:
         logger.error(f"[API] Error executing query in get_categories: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
@@ -388,12 +380,10 @@ async def get_sources(
         except ValueError:
             raise HTTPException(status_code=400, detail="Invalid category_id format")
 
-    pool = await database.get_db_pool()
-    if pool is None:
-        raise HTTPException(status_code=500, detail="Database connection error")
+    source_repo = get_service(ISourceRepository)
 
     try:
-        total_count, results = await database.get_all_sources_list(pool, limit, offset, category_ids)
+        total_count, results = await source_repo.get_all_sources_list(limit, offset, category_ids)
     except Exception as e:
         logger.error(f"[API] Error executing query in get_sources: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
@@ -435,7 +425,8 @@ async def get_sources(
 )
 @limiter.limit("300/minute")
 async def get_languages(request: Request, current_user: dict = Depends(get_current_user_by_api_key)):
-    return {"results": config.SUPPORTED_LANGUAGES}
+    config_obj = get_service(dict)
+    return {"results": config_obj.get('SUPPORTED_LANGUAGES', ['en', 'ru', 'de', 'fr'])}
 
 
 @router.get(
@@ -493,7 +484,8 @@ async def get_languages(request: Request, current_user: dict = Depends(get_curre
 @limiter.limit("300/minute")
 async def health_check(request: Request):
     try:
-        pool = await database.get_db_pool()
+        user_repo = get_service(IUserRepository)
+        pool = user_repo.db_pool
         if pool:
             db_status = "ok"
             pool_total = pool.size

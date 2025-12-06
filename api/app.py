@@ -13,9 +13,8 @@ from api.routers import rss_items as rss_items_router
 from api.routers import rss as rss_router
 from api.routers import api_keys as api_keys_router
 from api.websocket import router as ws_router, check_for_new_rss_items
-from api import database
 from utils.cleanup import periodic_cleanup_users
-from logging_config import setup_logging
+from config.logging_config import setup_logging
 
 setup_logging()
 logger = logging.getLogger(__name__)
@@ -134,7 +133,10 @@ async def startup_event():
 @app.on_event("shutdown")
 async def shutdown_event():
     try:
-        await database.close_db_pool()
+        from di_container import get_service
+        from interfaces import IUserRepository
+        user_repo = get_service(IUserRepository)
+        await user_repo.db_pool.close()
         logger.info("[Shutdown] Database pool closed")
     except Exception as e:
         logger.error(f"[Shutdown] Error closing DB pool: {e}")

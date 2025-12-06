@@ -14,8 +14,8 @@ from telegram_bot.utils.formatting_utils import (
     create_lang_note, create_hashtags, truncate_caption
 )
 from telegram_bot.translations import TRANSLATED_FROM_LABELS, READ_MORE_LABELS
-from telegram_bot.config import CHANNEL_IDS, CHANNEL_CATEGORIES
-from config import RSS_PARSER_MEDIA_TYPE_PRIORITY
+# Channel configuration moved to DI
+from di_container import get_service
 from utils.text import TextProcessor
 
 logger = logging.getLogger(__name__)
@@ -48,8 +48,8 @@ async def cleanup_old_user_send_locks():
 @retry(stop=stop_after_attempt(5), wait=wait_exponential(multiplier=1, min=2, max=30))
 async def send_personal_rss_items(bot, prepared_rss_item: PreparedRSSItem, subscribers_cache=None):
     """Sends personal RSS items to subscribers."""
-    # Ensure user_manager is initialized
-    if user_state_service.user_manager is None:
+    # Ensure telegram_user_service is initialized
+    if user_state_service.telegram_user_service is None:
         await user_state_service.initialize_user_manager()
 
     news_id = prepared_rss_item.original_data.get("id")
@@ -64,7 +64,7 @@ async def send_personal_rss_items(bot, prepared_rss_item: PreparedRSSItem, subsc
         subscribers = subscribers_cache.get(category, [])
     else:
         # Fallback to old method if cache not provided
-        subscribers = await user_state_service.user_manager.get_subscribers_for_category(category)
+        subscribers = await user_state_service.telegram_user_service.get_subscribers_for_category(category)
 
     if not subscribers:
         logger.debug(f"No subscribers for category {category}")
@@ -140,7 +140,8 @@ async def send_personal_rss_items(bot, prepared_rss_item: PreparedRSSItem, subsc
                 )
 
                 # Determine media based on priority
-                priority = RSS_PARSER_MEDIA_TYPE_PRIORITY.lower()
+                config_obj = get_service(dict)
+                priority = config_obj.get('RSS_PARSER_MEDIA_TYPE_PRIORITY', 'image').lower()
                 media_filename = None
                 media_type = None
 
@@ -229,7 +230,7 @@ async def send_personal_rss_items(bot, prepared_rss_item: PreparedRSSItem, subsc
 
                 except Forbidden as e:
                     logger.warning(f"User {user_id} has blocked the bot, removing from subscribers: {e}")
-                    await user_state_service.user_manager.remove_blocked_user(user_id)
+                    await user_state_service.telegram_user_service.remove_blocked_user(user_id)
                     continue  # Skip this user
                 except BadRequest as e:
                     if "Wrong type of the web page content" in str(e):
@@ -252,7 +253,7 @@ async def send_personal_rss_items(bot, prepared_rss_item: PreparedRSSItem, subsc
                             )
                         except Forbidden as send_error:
                             logger.warning(f"User {user_id} has blocked the bot during text send, removing from subscribers: {send_error}")
-                            await user_state_service.user_manager.remove_blocked_user(user_id)
+                            await user_state_service.telegram_user_service.remove_blocked_user(user_id)
                             continue
                         except Exception as send_error:
                             logger.error(f"Error sending message to user {user_id}: {send_error}")
@@ -312,7 +313,9 @@ async def post_to_channel(bot, prepared_rss_item: PreparedRSSItem):
         original_source = prepared_rss_item.original_data.get("source", "UnknownSource")
         original_lang = prepared_rss_item.original_data["lang"]
         translations_cache = prepared_rss_item.translations
-        channels_list = list(CHANNEL_IDS.items())
+        config_obj = get_service(dict)
+        channel_ids = config_obj.get('CHANNEL_IDS', {})
+        channels_list = list(channel_ids.items())
 
         # Send to channels where translation or original exists
         for target_lang, channel_id in channels_list:
@@ -346,7 +349,8 @@ async def post_to_channel(bot, prepared_rss_item: PreparedRSSItem):
                 content_text = format_channel_rss_message(title, content, lang_note, hashtags, source_url)
 
                 # Determine media based on priority
-                priority = RSS_PARSER_MEDIA_TYPE_PRIORITY.lower()
+                config_obj = get_service(dict)
+                priority = config_obj.get('RSS_PARSER_MEDIA_TYPE_PRIORITY', 'image').lower()
                 media_filename = None
                 media_type = None
 

@@ -3,7 +3,9 @@ from typing import Optional, List, Set
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from api.middleware import limiter
-from api import database, models
+from api import models
+from di_container import get_service
+from interfaces import ICategoryRepository
 from api.deps import get_current_user
 
 logger = logging.getLogger(__name__)
@@ -52,11 +54,8 @@ async def get_user_categories(
     current_user: dict = Depends(get_current_user),
     source_ids: Optional[List[int]] = Query(None, description="Filter by associated source IDs"),
 ):
-    pool = await database.get_db_pool()
-    if pool is None:
-        raise HTTPException(status_code=500, detail="Database error")
-
-    categories = await database.get_user_categories(pool, current_user["id"], source_ids)
+    category_repo = get_service(ICategoryRepository)
+    categories = await category_repo.get_user_categories(current_user["id"], source_ids)
     return models.UserCategoriesResponse(category_ids=[cat["id"] for cat in categories])
 
 
@@ -96,16 +95,14 @@ async def update_user_categories(
     category_update: models.UserCategoriesUpdate, current_user: dict = Depends(get_current_user)
 ):
     category_ids: Set[int] = category_update.category_ids
-    pool = await database.get_db_pool()
-    if pool is None:
-        raise HTTPException(status_code=500, detail="Database error")
+    category_repo = get_service(ICategoryRepository)
 
-    existing_categories = await database.get_all_category_ids(pool)
-    invalid_ids = category_ids - existing_categories
+    existing_categories = await category_repo.get_all_category_ids()
+    invalid_ids = category_ids - set(existing_categories)
     if invalid_ids:
         raise HTTPException(status_code=400, detail=f"Invalid category IDs: {list(invalid_ids)}")
 
-    success = await database.update_user_categories(pool, current_user["id"], category_ids)
+    success = await category_repo.update_user_categories(current_user["id"], list(category_ids))
     if not success:
         raise HTTPException(status_code=500, detail="Failed to update user categories")
 

@@ -1,6 +1,13 @@
 import logging
 import sys
-from config import LOG_LEVEL
+import os
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
+
+# Default logging level, overridable via env var
+LOG_LEVEL = os.getenv("LOG_LEVEL", "WARNING")
 
 
 def setup_logging():

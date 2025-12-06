@@ -4,7 +4,7 @@ import logging
 import time
 from typing import Dict, Any, Tuple, Optional
 from interfaces import IModelManager
-from config_services import get_service_config
+from config.services_config import get_service_config
 
 logger = logging.getLogger(__name__)
 

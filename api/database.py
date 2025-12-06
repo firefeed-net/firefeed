@@ -4,9 +4,9 @@ import sys
 import logging
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-import config
 from datetime import datetime, timezone
 from typing import Optional, Dict, Any, List, Set, Tuple
+from di_container import get_service
 
 logger = logging.getLogger(__name__)
 
@@ -14,7 +14,8 @@ logger = logging.getLogger(__name__)
 async def get_db_pool():
     """Getting shared DB pool"""
     try:
-        pool = await config.get_shared_db_pool()
+        config_obj = get_service(dict)
+        pool = await config_obj.get('get_shared_db_pool')()
         return pool
     except Exception as e:
         logger.info(f"[DB] Error getting PostgreSQL connection pool: {e}")
@@ -24,7 +25,8 @@ async def get_db_pool():
 async def close_db_pool():
     """Closes the shared database connection pool."""
     try:
-        await config.close_shared_db_pool()
+        config_obj = get_service(dict)
+        await config_obj.get('close_shared_db_pool')()
         logger.info("[DB] Shared PostgreSQL connection pool closed.")
     except Exception as e:
         logger.info(f"[DB] Error closing PostgreSQL connection pool: {e}")
@@ -379,6 +381,7 @@ async def get_source_id_by_alias(pool, source_alias: str) -> Optional[int]:
 
 async def get_user_categories(pool, user_id: int, source_ids: Optional[List[int]] = None) -> List[Dict[str, Any]]:
     """Gets user categories list with filtering by source_id"""
+    config_obj = get_service(dict)
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
             try:
@@ -388,7 +391,7 @@ async def get_user_categories(pool, user_id: int, source_ids: Optional[List[int]
                 JOIN categories c ON uc.category_id = c.id
                 WHERE uc.user_id = %s AND c.id != %s
                 """
-                params = [user_id, config.USER_DEFINED_RSS_CATEGORY_ID]
+                params = [user_id, config_obj.get('USER_DEFINED_RSS_CATEGORY_ID')]
 
                 if source_ids:
                     placeholders = ",".join(["%s"] * len(source_ids))
@@ -1072,6 +1075,7 @@ async def get_all_categories_list(
     Gets list of all categories with pagination and filtering by source_id.
     Returns tuple (total_count, results).
     """
+    config_obj = get_service(dict)
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
             try:
@@ -1079,8 +1083,8 @@ async def get_all_categories_list(
                 count_query = "SELECT COUNT(*) FROM categories WHERE id != %s"
                 data_query = "SELECT id, name FROM categories WHERE id != %s"
                 conditions = []
-                params = [config.USER_DEFINED_RSS_CATEGORY_ID]
-                count_params = [config.USER_DEFINED_RSS_CATEGORY_ID]
+                params = [config_obj.get('USER_DEFINED_RSS_CATEGORY_ID')]
+                count_params = [config_obj.get('USER_DEFINED_RSS_CATEGORY_ID')]
 
                 # Add filter by source_id if provided
                 if source_ids:
@@ -1089,9 +1093,9 @@ async def get_all_categories_list(
                         f"id IN (SELECT category_id FROM source_categories WHERE source_id IN ({placeholders}) AND category_id != %s)"
                     )
                     params.extend(source_ids)
-                    params.append(config.USER_DEFINED_RSS_CATEGORY_ID)
+                    params.append(config_obj.get('USER_DEFINED_RSS_CATEGORY_ID'))
                     count_params.extend(source_ids)
-                    count_params.append(config.USER_DEFINED_RSS_CATEGORY_ID)
+                    count_params.append(config_obj.get('USER_DEFINED_RSS_CATEGORY_ID'))
 
                 where_clause = ""
                 if conditions:

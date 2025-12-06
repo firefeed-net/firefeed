@@ -2,41 +2,42 @@
 import time
 from typing import Dict, Any, Optional
 
-from services.user.user_manager import UserManager
 from telegram_bot.utils.cleanup_utils import cleanup_expired_user_data
+from di_container import get_service
+from interfaces import ITelegramUserService
 
 # Global user state storage
 USER_STATES: Dict[int, Dict[str, Any]] = {}
 USER_CURRENT_MENUS: Dict[int, Dict[str, Any]] = {}
 USER_LANGUAGES: Dict[int, str] = {}
 
-# Global user manager instance
-user_manager = None
+# Global telegram user service instance
+telegram_user_service = None
 
 
 async def initialize_user_manager(context=None):
-    """Initialize user manager instance."""
-    global user_manager
-    if user_manager is None:
+    """Initialize telegram user service instance."""
+    global telegram_user_service
+    if telegram_user_service is None:
         try:
-            user_manager = UserManager()
+            telegram_user_service = get_service(ITelegramUserService)
             # Import here to avoid circular imports
             import logging
             logger = logging.getLogger(__name__)
-            logger.info("user_manager initialized successfully")
+            logger.info("telegram_user_service initialized successfully")
         except Exception as e:
             # Import here to avoid circular imports
             import logging
             logger = logging.getLogger(__name__)
-            logger.error(f"Failed to initialize user_manager: {e}")
+            logger.error(f"Failed to initialize telegram_user_service: {e}")
             raise
 
 
 async def set_current_user_language(user_id: int, lang: str):
     """Sets user language in DB and memory."""
-    global user_manager
+    global telegram_user_service
     try:
-        await user_manager.set_user_language(user_id, lang)
+        await telegram_user_service.set_user_language(user_id, lang)
         USER_LANGUAGES[user_id] = {"language": lang, "last_access": time.time()}
     except Exception as e:
         # Log error but don't raise - language setting is not critical
@@ -56,8 +57,8 @@ async def get_current_user_language(user_id: int) -> str:
             return data
 
     try:
-        global user_manager
-        lang = await user_manager.get_user_language(user_id)
+        global telegram_user_service
+        lang = await telegram_user_service.get_user_language(user_id)
         if lang:
             USER_LANGUAGES[user_id] = {"language": lang, "last_access": time.time()}
         return lang or "en"

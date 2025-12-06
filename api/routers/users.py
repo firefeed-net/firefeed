@@ -3,7 +3,9 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from api.middleware import limiter
-from api import database, models
+from api import models
+from di_container import get_service
+from interfaces import IUserRepository, IRSSItemRepository
 from api.deps import get_current_user, validate_rss_items_query_params, sanitize_search_phrase
 from api.routers.rss_items import process_rss_items_results
 
@@ -81,12 +83,10 @@ async def update_current_user(request: Request, user_update: models.UserUpdate, 
     if user_update.email and len(user_update.email) > 255:
         raise HTTPException(status_code=400, detail="Email too long (max 255 characters)")
 
-    pool = await database.get_db_pool()
-    if pool is None:
-        raise HTTPException(status_code=500, detail="Database error")
+    user_repo = get_service(IUserRepository)
 
     if user_update.email and user_update.email != current_user["email"]:
-        existing_user = await database.get_user_by_email(pool, user_update.email)
+        existing_user = await user_repo.get_user_by_email(user_update.email)
         if existing_user:
             raise HTTPException(status_code=400, detail="Email already registered")
 
@@ -96,7 +96,7 @@ async def update_current_user(request: Request, user_update: models.UserUpdate, 
     if user_update.language is not None:
         update_data["language"] = user_update.language
 
-    updated_user = await database.update_user(pool, current_user["id"], update_data)
+    updated_user = await user_repo.update_user(current_user["id"], update_data)
     if not updated_user:
         raise HTTPException(status_code=500, detail="Failed to update user")
     return models.UserResponse(**updated_user)
@@ -125,10 +125,8 @@ async def update_current_user(request: Request, user_update: models.UserUpdate, 
 )
 @limiter.limit("300/minute")
 async def delete_current_user(request: Request, current_user: dict = Depends(get_current_user)):
-    pool = await database.get_db_pool()
-    if pool is None:
-        raise HTTPException(status_code=500, detail="Database error")
-    success = await database.delete_user(pool, current_user["id"])
+    user_repo = get_service(IUserRepository)
+    success = await user_repo.delete_user(current_user["id"])
     if not success:
         raise HTTPException(status_code=500, detail="Failed to delete user")
     return
@@ -184,15 +182,12 @@ async def get_user_rss_items(
     if search_phrase:
         search_phrase = sanitize_search_phrase(search_phrase)
 
-    # Get database connection
-    pool = await database.get_db_pool()
-    if pool is None:
-        raise HTTPException(status_code=500, detail="Database error")
+    rss_item_repo = get_service(IRSSItemRepository)
 
     try:
         # Get user's RSS items
-        total_count, results, columns = await database.get_user_rss_items_list(
-            pool, current_user["id"], display_language, original_language, limit, offset
+        total_count, results, columns = await rss_item_repo.get_user_rss_items_list(
+            current_user["id"], display_language, original_language, limit, offset
         )
     except Exception as e:
         logger.error(f"[API] Error in get_user_rss_items: {e}")

@@ -3,9 +3,16 @@ import logging
 from typing import List, Dict, Any, Optional
 import aiohttp
 
-from telegram_bot.config import API_BASE_URL, BOT_API_KEY
+# Configuration moved to DI
 
 logger = logging.getLogger(__name__)
+
+# Configuration moved to DI
+from di_container import get_service
+
+config_obj = get_service(dict)
+API_BASE_URL = config_obj.get('API_BASE_URL', 'http://127.0.0.1:8000/api/v1')
+BOT_API_KEY = config_obj.get('BOT_API_KEY')
 
 # Log API key status on import
 logger.info(f"BOT_API_KEY configured: {'Yes' if BOT_API_KEY else 'No'}")
