@@ -8,5 +8,5 @@ eval "$(pyenv init -)"
 # Set Python version
 pyenv shell 3.13.6
 
-# Start FastAPI via python module
-python -m api.app
+# Start RSS parser
+python -m apps.rss_parser

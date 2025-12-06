@@ -24,4 +24,4 @@ EXPOSE 8000
 
 # By default, start API via uvicorn
 # To run bot or parser, you can override CMD when starting the container
-CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "apps.api:app", "--host", "0.0.0.0", "--port", "8000"]

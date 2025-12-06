@@ -3,16 +3,16 @@ import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from api.middleware import setup_middleware
-from api.routers import auth as auth_router
-from api.routers import users as users_router
-from api.routers import categories as categories_router
-from api.routers import rss_feeds as rss_feeds_router
-from api.routers import telegram as telegram_router
-from api.routers import rss_items as rss_items_router
-from api.routers import rss as rss_router
-from api.routers import api_keys as api_keys_router
-from api.websocket import router as ws_router, check_for_new_rss_items
+from .middleware import setup_middleware
+from .routers import auth as auth_router
+from .routers import users as users_router
+from .routers import categories as categories_router
+from .routers import rss_feeds as rss_feeds_router
+from .routers import telegram as telegram_router
+from .routers import rss_items as rss_items_router
+from .routers import rss as rss_router
+from .routers import api_keys as api_keys_router
+from .websocket import router as ws_router, check_for_new_rss_items
 from utils.cleanup import periodic_cleanup_users
 from config.logging_config import setup_logging
 

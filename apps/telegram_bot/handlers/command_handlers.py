@@ -4,14 +4,14 @@ import logging
 from telegram import Update
 from telegram.ext import ContextTypes
 
-import telegram_bot.services.user_state_service as user_state_service
-from telegram_bot.services.user_state_service import (
+from ..services import user_state_service
+from ..services.user_state_service import (
     get_current_user_language, set_current_user_language, set_user_menu,
     update_user_state, get_user_state, clear_user_state
 )
-from telegram_bot.services.api_service import get_categories
-from telegram_bot.utils.keyboard_utils import get_main_menu_keyboard, get_language_selection_keyboard
-from telegram_bot.translations import get_message, LANG_NAMES
+from ..services.api_service import get_categories
+from ..utils.keyboard_utils import get_main_menu_keyboard, get_language_selection_keyboard
+from ..translations import get_message, LANG_NAMES
 
 logger = logging.getLogger(__name__)
 

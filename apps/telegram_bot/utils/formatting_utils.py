@@ -1,5 +1,5 @@
 # telegram_bot/utils/formatting_utils.py - Message formatting utilities
-from telegram_bot.translations import TRANSLATED_FROM_LABELS, READ_MORE_LABELS, SOURCE_LABELS
+from ..translations import TRANSLATED_FROM_LABELS, READ_MORE_LABELS, SOURCE_LABELS
 
 
 def format_personal_rss_message(title: str, content: str, source: str, category: str, lang_note: str, user_lang: str, source_url: str) -> str:

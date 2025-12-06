@@ -91,9 +91,9 @@ FireFeed is a high-performance system for automatic collection, processing, and 
 
 The project consists of several key components:
 
-1. **Telegram Bot** (`telegram_bot/bot.py`) - main user interaction interface
-2. **RSS Parser Service** (`services/rss/`) - background service for RSS feed parsing
-3. **REST API** (`api/app.py`) - web API for external integrations
+1. **Telegram Bot** (`apps/telegram_bot.py`) - main user interaction interface
+2. **RSS Parser Service** (`apps/rss_parser.py`) - background service for RSS feed parsing
+3. **REST API** (`apps/api.py`) - web API for external integrations
 4. **Translation Services** (`services/translation/`) - translation system with caching
 5. **Duplicate Detector** (`services/text_analysis/duplicate_detector.py`) - ML-based duplicate detection
 6. **User Management** (`services/user/user_manager.py`) - user and subscription management
@@ -383,14 +383,18 @@ python bot.py
 
 ```bash
 # Make scripts executable
-chmod +x ./run_bot.sh
-chmod +x ./run_api.sh
+chmod +x ./scripts/run_telegram_bot.sh
+chmod +x ./scripts/run_rss_parser.sh
+chmod +x ./scripts/run_api.sh
 
-# Run bot
-./run_bot.sh
+# Run Telegram bot
+./scripts/run_telegram_bot.sh
+
+# Run RSS parser
+./scripts/run_rss_parser.sh
 
 # Run API
-./run_api.sh
+./scripts/run_api.sh
 ```
 
 ## Configuration
@@ -510,9 +514,9 @@ After=network.target
 Type=simple
 User=firefeed
 Group=firefeed
-WorkingDirectory=/var/www/firefeed/data/integrations/telegram
+WorkingDirectory=/path/to/firefeed/
 
-ExecStart=/var/www/firefeed/data/integrations/telegram/run_bot.sh
+ExecStart=/path/to/firefeed/scripts/run_telegram_bot.sh
 
 Restart=on-failure
 RestartSec=10
@@ -540,8 +544,8 @@ Type=simple
 User=firefeed
 Group=firefeed
 
-WorkingDirectory=/var/www/firefeed/data/integrations/telegram
-ExecStart=/var/www/firefeed/data/integrations/telegram/run_api.sh
+WorkingDirectory=/path/to/firefeed/
+ExecStart=/path/to/firefeed/scripts/run_api.sh
 
 Restart=always
 RestartSec=5
@@ -649,38 +653,101 @@ pytest tests/ --tb=short
 
 ```
 firefeed/
-├── api/                        # FastAPI REST API
+├── apps/                       # Application entry points
 │   ├── __init__.py
-│   ├── app.py                  # FastAPI application
-│   ├── database.py             # Database connection
-│   ├── deps.py                 # Dependencies
-│   ├── main.py                 # API entry point
-│   ├── middleware.py           # Custom middleware
-│   ├── models.py               # Pydantic models
-│   ├── websocket.py            # WebSocket support
-│   ├── email_service/          # Email service
+│   ├── rss_parser/             # RSS parser application
+│   │   └── __main__.py         # RSS parser entry point
+│   ├── telegram_bot/           # Telegram bot application
 │   │   ├── __init__.py
-│   │   ├── sender.py           # Email sending
-│   │   └── templates/          # Email templates
-│   │       ├── password_reset_email_de.html
-│   │       ├── password_reset_email_en.html
-│   │       ├── password_reset_email_ru.html
-│   │       ├── registration_success_email_de.html
-│   │       ├── registration_success_email_en.html
-│   │       ├── registration_success_email_ru.html
-│   │       ├── verification_email_de.html
-│   │       ├── verification_email_en.html
-│   │       └── verification_email_ru.html
-│   └── routers/                # API endpoints
+│   │   ├── __main__.py         # Telegram bot entry point
+│   │   ├── bot.py              # Main bot logic
+│   │   ├── config.py           # Bot configuration
+│   │   ├── translations.py     # Bot translations
+│   │   ├── handlers/           # Telegram bot handlers
+│   │   │   ├── __init__.py
+│   │   │   ├── callback_handlers.py # Callback query handlers
+│   │   │   ├── command_handlers.py # Command handlers
+│   │   │   ├── error_handlers.py   # Error handlers
+│   │   │   └── message_handlers.py # Message handlers
+│   │   ├── models/             # Telegram bot models
+│   │   │   ├── __init__.py
+│   │   │   ├── rss_item.py     # RSS item models
+│   │   │   ├── telegram_models.py # Telegram models
+│   │   │   └── user_state.py   # User state models
+│   │   ├── services/           # Telegram bot services
+│   │   │   ├── __init__.py
+│   │   │   ├── api_service.py      # API communication service
+│   │   │   ├── database_service.py # Database service
+│   │   │   ├── rss_service.py      # RSS service
+│   │   │   ├── telegram_service.py # Telegram messaging service
+│   │   │   └── user_state_service.py # User state service
+│   │   └── utils/              # Telegram bot utilities
+│   │       ├── __init__.py
+│   │       ├── cleanup_utils.py    # Cleanup utilities
+│   │       ├── formatting_utils.py # Message formatting
+│   │       ├── keyboard_utils.py   # Keyboard utilities
+│   │       └── validation_utils.py # Validation utilities
+│   └── api/                    # FastAPI REST API application
 │       ├── __init__.py
-│       ├── api_keys.py         # API key management
-│       ├── auth.py             # Authentication
-│       ├── categories.py       # News categories
-│       ├── rss_feeds.py        # RSS feed management
-│       ├── rss_items.py        # RSS items
-│       ├── rss.py              # RSS operations
-│       ├── telegram.py         # Telegram integration
-│       └── users.py            # User management
+│       ├── __main__.py         # FastAPI entry point
+│       ├── app.py              # FastAPI application
+│       ├── database.py         # Database connection
+│       ├── deps.py             # Dependencies
+│       ├── middleware.py       # Custom middleware
+│       ├── models.py           # Pydantic models
+│       ├── websocket.py        # WebSocket support
+│       ├── email_service/      # Email service
+│       │   ├── __init__.py
+│       │   ├── sender.py       # Email sending
+│       │   └── templates/      # Email templates
+│       │       ├── password_reset_email_de.html
+│       │       ├── password_reset_email_en.html
+│       │       ├── password_reset_email_ru.html
+│       │       ├── registration_success_email_de.html
+│       │       ├── registration_success_email_en.html
+│       │       ├── registration_success_email_ru.html
+│       │       ├── verification_email_de.html
+│       │       ├── verification_email_en.html
+│       │       └── verification_email_ru.html
+│       └── routers/            # API endpoints
+│           ├── __init__.py
+│           ├── api_keys.py     # API key management
+│           ├── auth.py         # Authentication
+│           ├── categories.py   # News categories
+│           ├── rss_feeds.py    # RSS feed management
+│           ├── rss_items.py    # RSS items
+│           ├── rss.py          # RSS operations
+│           ├── telegram.py     # Telegram integration
+│           └── users.py        # User management
+├── config/                     # Configuration modules
+│   ├── logging_config.py       # Logging configuration
+│   └── services_config.py      # Service configuration
+├── database/                   # Database related files
+│   └── migrations.sql          # Database migrations
+├── exceptions/                 # Custom exceptions
+│   ├── __init__.py
+│   ├── base_exceptions.py      # Base exception classes
+│   ├── cache_exceptions.py     # Cache related exceptions
+│   ├── database_exceptions.py  # Database exceptions
+│   ├── rss_exceptions.py       # RSS processing exceptions
+│   ├── service_exceptions.py   # Service exceptions
+│   └── translation_exceptions.py # Translation exceptions
+├── interfaces/                 # Service interfaces
+│   ├── __init__.py
+│   ├── core_interfaces.py      # Core interfaces
+│   ├── repository_interfaces.py # Repository interfaces
+│   ├── rss_interfaces.py       # RSS interfaces
+│   ├── translation_interfaces.py # Translation interfaces
+│   └── user_interfaces.py      # User interfaces
+├── repositories/               # Data access layer
+│   ├── __init__.py
+│   ├── api_key_repository.py   # API key repository
+│   ├── category_repository.py  # Category repository
+│   ├── rss_feed_repository.py  # RSS feed repository
+│   ├── rss_item_repository.py  # RSS item repository
+│   ├── source_repository.py    # Source repository
+│   ├── telegram_repository.py  # Telegram repository
+│   └── user_repository.py      # User repository
 ├── services/                   # Service-oriented architecture
 │   ├── database_pool_adapter.py # Database connection pool
 │   ├── maintenance_service.py  # System maintenance
@@ -689,6 +756,7 @@ firefeed/
 │   │   ├── media_extractor.py  # Media content extraction
 │   │   ├── rss_fetcher.py      # RSS feed fetching
 │   │   ├── rss_manager.py      # RSS processing orchestration
+│   │   ├── rss_parser.py       # RSS parsing logic
 │   │   ├── rss_storage.py      # RSS data storage
 │   │   └── rss_validator.py    # RSS feed validation
 │   ├── text_analysis/          # Text analysis and ML services
@@ -708,50 +776,17 @@ firefeed/
 │       ├── telegram_user_service.py # Telegram bot user management
 │       ├── web_user_service.py # Web user management and Telegram linking
 │       └── user_manager.py     # Backward compatibility wrapper
-├── telegram_bot/               # Telegram bot implementation
-│   ├── __init__.py
-│   ├── bot.py                  # Telegram bot main file
-│   ├── config.py               # Bot configuration
-│   ├── translations.py         # Bot translations
-│   ├── handlers/               # Telegram bot handlers
-│   │   ├── __init__.py
-│   │   ├── callback_handlers.py # Callback query handlers
-│   │   ├── command_handlers.py # Command handlers
-│   │   ├── error_handlers.py   # Error handlers
-│   │   └── message_handlers.py # Message handlers
-│   ├── models/                 # Telegram bot models
-│   │   ├── __init__.py
-│   │   ├── rss_item.py         # RSS item models
-│   │   ├── telegram_models.py  # Telegram models
-│   │   └── user_state.py       # User state models
-│   ├── services/               # Telegram bot services
-│   │   ├── __init__.py
-│   │   ├── api_service.py      # API communication service
-│   │   ├── database_service.py # Database service
-│   │   ├── rss_service.py      # RSS service
-│   │   ├── telegram_service.py # Telegram messaging service
-│   │   └── user_state_service.py # User state service
-│   └── utils/                  # Telegram bot utilities
-│       ├── __init__.py
-│       ├── cleanup_utils.py    # Cleanup utilities
-│       ├── formatting_utils.py # Message formatting
-│       ├── keyboard_utils.py   # Keyboard utilities
-│       └── validation_utils.py # Validation utilities
 ├── tests/                      # Unit and integration tests
 │   ├── __init__.py
 │   ├── test_api_keys.py        # API key tests
 │   ├── test_bot.py             # Telegram bot tests
 │   ├── test_database.py        # Database tests
-│   ├── test_duplicate_detector_config.py # Duplicate detector config tests
-│   ├── test_duplicate_detector_logic.py # Duplicate detector logic tests
+│   ├── test_di_integration.py  # Dependency injection tests
 │   ├── test_email.py           # Email service tests
 │   ├── test_models.py          # Model tests
 │   ├── test_registration_success_email.py # Email template tests
 │   ├── test_rss_manager.py     # RSS manager tests
-│   ├── test_rss_manager_translation.py # RSS manager translation tests
 │   ├── test_services.py        # Service tests
-│   ├── test_translation_config.py # Translation config tests
-│   ├── test_translation_logic.py # Translation logic tests
 │   ├── test_user_services.py   # User services tests
 │   ├── test_user_state_service.py # User state service tests
 │   └── test_utils.py           # Utility tests
@@ -766,16 +801,12 @@ firefeed/
 │   ├── retry.py                # Retry mechanisms
 │   ├── text.py                 # Text processing
 │   └── video.py                # Video processing
-├── config.py                   # Configuration constants
-├── config_services.py          # Service configuration
+├── scripts/                    # Startup scripts
+│   ├── run_api.sh              # API startup script
+│   ├── run_rss_parser.sh       # RSS parser startup script
+│   └── run_telegram_bot.sh     # Telegram bot startup script
 ├── di_container.py             # Dependency injection container
-├── exceptions.py               # Custom exceptions
-├── interfaces.py               # Service interfaces
-├── logging_config.py           # Logging configuration
 ├── requirements.txt            # Python dependencies
-├── run_api.sh                  # API startup script
-├── run_bot.sh                  # Bot startup script
-├── run_parser.sh               # Parser startup script
 ├── .dockerignore               # Docker ignore file
 ├── .env.example                # Environment variables example
 ├── .gitignore                  # Git ignore file

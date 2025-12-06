@@ -5,15 +5,15 @@ from typing import Dict, Any, Optional
 from tenacity import retry, stop_after_attempt, wait_exponential
 from telegram.error import RetryAfter, BadRequest, Forbidden
 
-from telegram_bot.models.rss_item import PreparedRSSItem
-import telegram_bot.services.user_state_service as user_state_service
-from telegram_bot.services.api_service import get_categories
-from telegram_bot.utils.validation_utils import validate_image_url
-from telegram_bot.utils.formatting_utils import (
+from ..models.rss_item import PreparedRSSItem
+from ..services import user_state_service
+from ..services.api_service import get_categories
+from ..utils.validation_utils import validate_image_url
+from ..utils.formatting_utils import (
     format_personal_rss_message, format_channel_rss_message,
     create_lang_note, create_hashtags, truncate_caption
 )
-from telegram_bot.translations import TRANSLATED_FROM_LABELS, READ_MORE_LABELS
+from ..translations import TRANSLATED_FROM_LABELS, READ_MORE_LABELS
 # Channel configuration moved to DI
 from di_container import get_service
 from utils.text import TextProcessor
@@ -94,7 +94,7 @@ async def send_personal_rss_items(bot, prepared_rss_item: PreparedRSSItem, subsc
                 title_to_send = translation_data.get("title", "")
                 content_to_send = translation_data.get("content", "")
                 # Get translation ID for tracking
-                from telegram_bot.services.database_service import get_translation_id
+                from ..services.database_service import get_translation_id
                 translation_id = await get_translation_id(news_id, user_lang)
 
             # If no suitable content, skip user
@@ -112,7 +112,7 @@ async def send_personal_rss_items(bot, prepared_rss_item: PreparedRSSItem, subsc
             # Acquire lock to prevent concurrent sends
             async with USER_SEND_LOCKS[lock_key]:
                 # Check if already sent to this user (double-check after acquiring lock)
-                from telegram_bot.services.database_service import check_bot_published
+                from ..services.database_service import check_bot_published
                 already_sent = await check_bot_published(
                     news_id=news_id,
                     translation_id=translation_id,
@@ -191,7 +191,7 @@ async def send_personal_rss_items(bot, prepared_rss_item: PreparedRSSItem, subsc
                         message_id = message.message_id
 
                     # Mark as sent in DB
-                    from telegram_bot.services.database_service import mark_bot_published
+                    from ..services.database_service import mark_bot_published
                     await mark_bot_published(
                         news_id=news_id,
                         translation_id=translation_id,
@@ -218,7 +218,7 @@ async def send_personal_rss_items(bot, prepared_rss_item: PreparedRSSItem, subsc
                         message_id = message.message_id
 
                     # Mark as sent in DB after retry
-                    from telegram_bot.services.database_service import mark_bot_published
+                    from ..services.database_service import mark_bot_published
                     await mark_bot_published(
                         news_id=news_id,
                         translation_id=translation_id,
@@ -242,7 +242,7 @@ async def send_personal_rss_items(bot, prepared_rss_item: PreparedRSSItem, subsc
                             )
                             message_id = message.message_id
                             # Mark as sent in DB
-                            from telegram_bot.services.database_service import mark_bot_published
+                            from ..services.database_service import mark_bot_published
                             await mark_bot_published(
                                 news_id=news_id,
                                 translation_id=translation_id,
@@ -276,7 +276,7 @@ async def post_to_channel(bot, prepared_rss_item: PreparedRSSItem):
     feed_id = prepared_rss_item.feed_id
 
     # Get or create feed lock
-    from telegram_bot.services.rss_service import FEED_LOCKS
+    from ..services.rss_service import FEED_LOCKS
     if feed_id not in FEED_LOCKS:
         FEED_LOCKS[feed_id] = asyncio.Lock()
     feed_lock = FEED_LOCKS[feed_id]
@@ -285,7 +285,7 @@ async def post_to_channel(bot, prepared_rss_item: PreparedRSSItem):
         logger.info(f"Publishing RSS item to channels: {original_title[:50]}...")
 
         # Check Telegram publication limits
-        from telegram_bot.services.database_service import get_feed_cooldown_and_max_news, get_recent_telegram_publications_count
+        from ..services.database_service import get_feed_cooldown_and_max_news, get_recent_telegram_publications_count
         cooldown_minutes, max_news_per_hour = await get_feed_cooldown_and_max_news(feed_id)
         recent_telegram_count = await get_recent_telegram_publications_count(feed_id, cooldown_minutes)
 
@@ -294,7 +294,7 @@ async def post_to_channel(bot, prepared_rss_item: PreparedRSSItem):
             return
 
         # Check time-based limit
-        from telegram_bot.services.database_service import get_last_telegram_publication_time
+        from ..services.database_service import get_last_telegram_publication_time
         from datetime import datetime, timezone, timedelta
         last_telegram_time = await get_last_telegram_publication_time(feed_id)
         if last_telegram_time:
@@ -334,7 +334,7 @@ async def post_to_channel(bot, prepared_rss_item: PreparedRSSItem):
                     content = TextProcessor.clean(translation_data.get("content", original_content))
                     lang_note = create_lang_note(target_lang, original_lang)
                     # Get translation ID for tracking publication
-                    from telegram_bot.services.database_service import get_translation_id
+                    from ..services.database_service import get_translation_id
                     translation_id = await get_translation_id(news_id, target_lang)
                     if not translation_id:
                         logger.warning(f"Translation ID not found for {news_id} in {target_lang}, skipping publication")
@@ -437,7 +437,7 @@ async def post_to_channel(bot, prepared_rss_item: PreparedRSSItem):
                         continue
 
                 # Mark publication in DB
-                from telegram_bot.services.database_service import mark_bot_published
+                from ..services.database_service import mark_bot_published
                 await mark_bot_published(
                     news_id=news_id,
                     translation_id=translation_id,
