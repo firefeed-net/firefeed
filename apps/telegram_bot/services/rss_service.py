@@ -4,10 +4,10 @@ import logging
 from typing import Dict, Any, Optional
 from collections import defaultdict
 
-from ..models.rss_item import PreparedRSSItem
-from ..services.api_service import get_rss_items_list
-from ..services import user_state_service
-from ..services.telegram_service import send_personal_rss_items, post_to_channel, SEND_SEMAPHORE
+from apps.telegram_bot.models.rss_item import PreparedRSSItem
+from apps.telegram_bot.services.api_service import get_rss_items_list
+from apps.telegram_bot.services import user_state_service
+from apps.telegram_bot.services.telegram_service import send_personal_rss_items, post_to_channel, SEND_SEMAPHORE
 from di_container import get_service
 
 logger = logging.getLogger(__name__)
