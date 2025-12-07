@@ -344,6 +344,18 @@ async def post_to_channel(bot, prepared_rss_item: PreparedRSSItem):
                     logger.debug(f"No translation for {news_id} in {target_lang}, skipping publication")
                     continue
 
+                # Check if already sent to this channel
+                from ..services.database_service import check_bot_published
+                already_sent = await check_bot_published(
+                    news_id=news_id,
+                    translation_id=translation_id,
+                    recipient_type='channel',
+                    recipient_id=channel_id
+                )
+                if already_sent:
+                    logger.debug(f"Skipping channel {channel_id} - already sent this item")
+                    continue
+
                 hashtags = create_hashtags(category, original_source)
                 source_url = prepared_rss_item.original_data.get("link", "")
                 content_text = format_channel_rss_message(title, content, lang_note, hashtags, source_url)

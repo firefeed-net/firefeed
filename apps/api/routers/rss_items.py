@@ -182,7 +182,10 @@ async def get_rss_items(
             from_date=from_datetime,
             search_phrase=search_phrase,
             before_created_at=before_created_at,
-            cursor_news_id=cursor_rss_item_id
+            cursor_news_id=cursor_rss_item_id,
+            telegram_published=telegram_published,
+            telegram_channels_published=telegram_channels_published,
+            telegram_users_published=telegram_users_published
         )
         query_time = time.time() - start_time
         logger.info(f"[API] RSS items query completed in {query_time:.2f} seconds, returned {len(results)} items")
