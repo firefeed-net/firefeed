@@ -132,6 +132,19 @@ class RSSFetcher(IRSSFetcher):
                 logger.debug("[RSS] Entry missing title or link, skipping")
                 return None
 
+            # Check word count filters
+            config_obj = get_service(dict)
+            min_title_words = config_obj.rss.min_item_title_words_length
+            min_content_words = config_obj.rss.min_item_content_words_length
+
+            if min_title_words > 0 and len(title.split()) < min_title_words:
+                logger.debug(f"[FILTER] Title too short ({len(title.split())} words < {min_title_words}): {title[:50]}...")
+                return None
+
+            if min_content_words > 0 and len(content.split()) < min_content_words:
+                logger.debug(f"[FILTER] Content too short ({len(content.split())} words < {min_content_words}): {title[:50]}...")
+                return None
+
             # Check for duplicates
             if await self.check_for_duplicates(title, content, link, feed_info["lang"]):
                 logger.debug(f"[RSS] Duplicate found, skipping: {title[:50]}...")

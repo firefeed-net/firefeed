@@ -13,6 +13,8 @@ class RSSConfig:
     validation_cache_ttl: int = 300  # 5 minutes
     request_timeout: int = 15
     max_total_rss_items: int = 1000
+    min_item_title_words_length: int = 0
+    min_item_content_words_length: int = 0
 
     @classmethod
     def from_env(cls) -> 'RSSConfig':
@@ -21,7 +23,9 @@ class RSSConfig:
             max_entries_per_feed=int(os.getenv('RSS_MAX_ENTRIES_PER_FEED', '50')),
             validation_cache_ttl=int(os.getenv('RSS_VALIDATION_CACHE_TTL', '300')),
             request_timeout=int(os.getenv('RSS_REQUEST_TIMEOUT', '15')),
-            max_total_rss_items=int(os.getenv('RSS_MAX_TOTAL_ITEMS', '1000'))
+            max_total_rss_items=int(os.getenv('RSS_MAX_TOTAL_ITEMS', '1000')),
+            min_item_title_words_length=int(os.getenv('RSS_PARSER_MIN_ITEM_TITLE_WORDS_LENGTH', '0')),
+            min_item_content_words_length=int(os.getenv('RSS_PARSER_MIN_ITEM_CONTENT_WORDS_LENGTH', '0'))
         )
 
 

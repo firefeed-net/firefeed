@@ -176,6 +176,8 @@ Service for fetching and parsing RSS feeds.
 ```env
 RSS_MAX_CONCURRENT_FEEDS=10
 RSS_MAX_ENTRIES_PER_FEED=50
+RSS_PARSER_MIN_ITEM_TITLE_WORDS_LENGTH=0
+RSS_PARSER_MIN_ITEM_CONTENT_WORDS_LENGTH=0
 ```
 
 #### RSSValidator (`services/rss/rss_validator.py`)
@@ -455,6 +457,10 @@ RSS_REQUEST_TIMEOUT=15
 RSS_MAX_TOTAL_ITEMS=1000
 RSS_PARSER_MEDIA_TYPE_PRIORITY=image
 
+# RSS parser content filtering
+RSS_PARSER_MIN_ITEM_TITLE_WORDS_LENGTH=0
+RSS_PARSER_MIN_ITEM_CONTENT_WORDS_LENGTH=0
+
 # Default User-Agent for HTTP requests
 # Using Chrome-like User-Agent to avoid blocking while remaining minimally identifiable
 DEFAULT_USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 FireFeed/1.0"
@@ -517,6 +523,18 @@ FireFeed provides optional AI-powered features that can be enabled or disabled b
 - **Description**: Controls ML-based duplicate detection using semantic analysis
 - **Impact**: When disabled, all news items will be processed without duplicate checking
 - **Use case**: Disable for faster processing or when duplicate detection is handled externally
+
+#### RSS_PARSER_MIN_ITEM_TITLE_WORDS_LENGTH
+- **Default**: `0`
+- **Description**: Minimum number of words required in RSS item title
+- **Impact**: RSS items with titles containing fewer words than this threshold will be skipped
+- **Use case**: Filter out low-quality or incomplete news items with very short titles
+
+#### RSS_PARSER_MIN_ITEM_CONTENT_WORDS_LENGTH
+- **Default**: `0`
+- **Description**: Minimum number of words required in RSS item content/description
+- **Impact**: RSS items with content containing fewer words than this threshold will be skipped
+- **Use case**: Filter out low-quality or incomplete news items with very short content
 
 ### AI Model Configuration
 
