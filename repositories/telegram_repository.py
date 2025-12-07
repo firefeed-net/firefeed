@@ -1,7 +1,7 @@
 # repositories/telegram_repository.py - Telegram repository implementation
 import logging
 from typing import List, Dict, Any, Optional, Tuple
-from datetime import datetime
+from datetime import datetime, timezone
 from interfaces import ITelegramRepository
 
 logger = logging.getLogger(__name__)
@@ -119,8 +119,12 @@ class TelegramRepository(ITelegramRepository):
                 """
                 await cur.execute(query, (feed_id,))
                 row = await cur.fetchone()
-                if row and row[0] and row[0] > datetime(1970, 1, 1, tzinfo=None):
-                    return row[0]
+                if row and row[0] and row[0] > datetime(1970, 1, 1, tzinfo=timezone.utc):
+                    dt = row[0]
+                    # Ensure datetime is offset-aware
+                    if dt.tzinfo is None:
+                        dt = dt.replace(tzinfo=timezone.utc)
+                    return dt
                 return None
 
     async def get_recent_telegram_publications_count(self, feed_id: int, minutes: int) -> int:

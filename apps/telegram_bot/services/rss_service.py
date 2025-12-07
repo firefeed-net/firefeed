@@ -12,9 +12,6 @@ from di_container import get_service
 
 logger = logging.getLogger(__name__)
 
-# Global feed locks for concurrent processing control
-FEED_LOCKS: Dict[int, asyncio.Lock] = {}
-
 
 async def process_rss_item(context, rss_item_from_api, subscribers_cache=None, channel_categories_cache=None):
     """Processes RSS item received from API."""

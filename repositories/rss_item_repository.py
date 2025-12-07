@@ -49,11 +49,23 @@ class RSSItemRepository(IRSSItemRepository):
                 s.alias as source_alias,
                 pnd.source_url,
                 pnd.created_at,
-                pnd.rss_feed_id as rss_feed_id
+                pnd.rss_feed_id as rss_feed_id,
+                nt_ru.translated_title as title_ru,
+                nt_ru.translated_content as content_ru,
+                nt_de.translated_title as title_de,
+                nt_de.translated_content as content_de,
+                nt_fr.translated_title as title_fr,
+                nt_fr.translated_content as content_fr,
+                nt_en.translated_title as title_en,
+                nt_en.translated_content as content_en
             FROM published_news_data pnd
             JOIN categories c ON pnd.category_id = c.id
             LEFT JOIN rss_feeds rf ON pnd.rss_feed_id = rf.id
             LEFT JOIN sources s ON rf.source_id = s.id
+            LEFT JOIN news_translations nt_ru ON pnd.news_id = nt_ru.news_id AND nt_ru.language = 'ru'
+            LEFT JOIN news_translations nt_de ON pnd.news_id = nt_de.news_id AND nt_de.language = 'de'
+            LEFT JOIN news_translations nt_fr ON pnd.news_id = nt_fr.news_id AND nt_fr.language = 'fr'
+            LEFT JOIN news_translations nt_en ON pnd.news_id = nt_en.news_id AND nt_en.language = 'en'
             WHERE 1=1
         """
 
@@ -212,11 +224,23 @@ class RSSItemRepository(IRSSItemRepository):
                         s.alias as source_alias,
                         pnd.source_url,
                         pnd.created_at,
-                        pnd.embedding
+                        pnd.embedding,
+                        nt_ru.translated_title as title_ru,
+                        nt_ru.translated_content as content_ru,
+                        nt_de.translated_title as title_de,
+                        nt_de.translated_content as content_de,
+                        nt_fr.translated_title as title_fr,
+                        nt_fr.translated_content as content_fr,
+                        nt_en.translated_title as title_en,
+                        nt_en.translated_content as content_en
                     FROM published_news_data pnd
                     JOIN categories c ON pnd.category_id = c.id
                     LEFT JOIN rss_feeds rf ON pnd.rss_feed_id = rf.id
                     LEFT JOIN sources s ON rf.source_id = s.id
+                    LEFT JOIN news_translations nt_ru ON pnd.news_id = nt_ru.news_id AND nt_ru.language = 'ru'
+                    LEFT JOIN news_translations nt_de ON pnd.news_id = nt_de.news_id AND nt_de.language = 'de'
+                    LEFT JOIN news_translations nt_fr ON pnd.news_id = nt_fr.news_id AND nt_fr.language = 'fr'
+                    LEFT JOIN news_translations nt_en ON pnd.news_id = nt_en.news_id AND nt_en.language = 'en'
                     WHERE pnd.news_id = %s
                 """
                 await cur.execute(query, (rss_item_id,))

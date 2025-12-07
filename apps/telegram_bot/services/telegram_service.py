@@ -25,7 +25,6 @@ from apps.telegram_bot.services.database_service import (
     get_recent_telegram_publications_count,
     get_last_telegram_publication_time
 )
-from apps.telegram_bot.services.rss_service import FEED_LOCKS
 from datetime import datetime, timezone, timedelta
 
 logger = logging.getLogger(__name__)
@@ -36,6 +35,9 @@ RSS_ITEM_PROCESSING_SEMAPHORE = asyncio.Semaphore(10)
 
 # Global locks for preventing duplicate sends to users
 USER_SEND_LOCKS: Dict[str, asyncio.Lock] = {}
+
+# Global feed locks for concurrent processing control
+FEED_LOCKS: Dict[int, asyncio.Lock] = {}
 
 # Cleanup old locks periodically to prevent memory leaks
 async def cleanup_old_user_send_locks():
