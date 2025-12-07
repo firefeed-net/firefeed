@@ -698,7 +698,7 @@ async def get_user_rss_items_list_by_feed(
                 COALESCE(c.name, 'Unknown Category') AS category_name,
                 COALESCE(s.name, 'Unknown Source') AS source_name,
                 nd.source_url as source_url, -- Get original news URL from published_news_data
-                nd.created_at as published_at, -- Use created_at from published_news_data as published_at
+                nd.created_at as created_at, -- Use created_at from published_news_data
                 nt_ru.translated_title as title_ru,
                 nt_ru.translated_content as content_ru,
                 nt_en.translated_title as title_en,
@@ -764,7 +764,7 @@ async def get_rss_item_by_id(pool, news_id: str) -> Optional[Tuple]:
                 COALESCE(c.name, 'Unknown Category') AS category_name,
                 COALESCE(s.name, 'Unknown Source') AS source_name,
                 nd.source_url as source_url, -- Get original news URL from published_news_data
-                nd.created_at as published_at, -- Use created_at from published_news_data as published_at
+                nd.created_at as created_at, -- Use created_at from published_news_data
                 nt_ru.translated_title as title_ru,
                 nt_ru.translated_content as content_ru,
                 nt_en.translated_title as title_en,
@@ -806,7 +806,7 @@ async def get_rss_item_by_id_full(pool, news_id: str) -> Tuple[Optional[Tuple], 
                 COALESCE(s.name, 'Unknown Source') AS source_name,
                 COALESCE(s.alias, 'unknown') AS source_alias,
                 nd.source_url as source_url,
-                nd.created_at as published_at,
+                nd.created_at as created_at,
                 nt_ru.translated_title as title_ru,
                 nt_ru.translated_content as content_ru,
                 nt_en.translated_title as title_en,
@@ -845,7 +845,7 @@ async def get_all_rss_items_list(
     telegram_users_published: Optional[bool],
     from_date: Optional[datetime],
     search_phrase: Optional[str],
-    before_published_at: Optional[datetime],
+    before_created_at: Optional[datetime],
     cursor_news_id: Optional[str],
     limit: int,
     offset: int,
@@ -853,7 +853,7 @@ async def get_all_rss_items_list(
     """
     Gets list of all RSS items with filtering.
     Always joins translations for all languages (ru/en/de/fr).
-    Supports keyset pagination via before_published_at and cursor_news_id.
+    Supports keyset pagination via before_created_at and cursor_news_id.
     """
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
@@ -866,7 +866,7 @@ async def get_all_rss_items_list(
                     "COALESCE(s.name, 'Unknown Source') AS source_name",
                     "COALESCE(s.alias, 'unknown') AS source_alias",
                     "nd.source_url as source_url",
-                    "nd.created_at as published_at",
+                    "nd.created_at as created_at",
                     "nt_ru.translated_title as title_ru",
                     "nt_ru.translated_content as content_ru",
                     "nt_en.translated_title as title_en",
@@ -981,9 +981,9 @@ async def get_all_rss_items_list(
                         params.extend([phrase, phrase])
 
                 # Keyset pagination (by descending created_at, then news_id)
-                if before_published_at is not None:
+                if before_created_at is not None:
                     query += " AND (nd.created_at < %s OR (nd.created_at = %s AND nd.news_id < %s))"
-                    params.extend([before_published_at, before_published_at, cursor_news_id or "\uffff"])
+                    params.extend([before_created_at, before_created_at, cursor_news_id or "\uffff"])
 
                 query += " ORDER BY nd.created_at DESC, nd.news_id DESC LIMIT %s OFFSET %s"
                 params.extend([limit, offset])
@@ -1261,7 +1261,7 @@ async def get_recent_rss_items_for_broadcast(pool, last_check_time: datetime) ->
                     nd.original_title,
                     nd.original_language,
                     c.name as category_name,
-                    nd.created_at as published_at,
+                    nd.created_at as created_at,
                     nt_ru.translated_title as title_ru,
                     nt_ru.translated_content as content_ru,
                     nt_en.translated_title as title_en,
@@ -1299,7 +1299,7 @@ async def get_recent_rss_items_for_broadcast(pool, last_check_time: datetime) ->
                             "original_title": row_dict["original_title"],
                             "original_language": row_dict["original_language"],
                             "category": row_dict["category_name"],
-                            "published_at": row_dict["published_at"].isoformat() if row_dict["published_at"] else None,
+                            "created_at": row_dict["created_at"].isoformat() if row_dict["created_at"] else None,
                             "translations": {
                                 "ru": {"title": row_dict.get("title_ru"), "content": row_dict.get("content_ru")},
                                 "en": {"title": row_dict.get("title_en"), "content": row_dict.get("content_en")},

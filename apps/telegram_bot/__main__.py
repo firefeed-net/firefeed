@@ -32,6 +32,16 @@ from telegram_bot.services.telegram_service import cleanup_old_user_send_locks
 
 # Logging setup
 setup_logging()
+
+# Load environment variables
+import dotenv
+dotenv.load_dotenv()
+
+# Setup DI container
+import asyncio
+from di_container import setup_di_container
+asyncio.run(setup_di_container())
+
 logger = logging.getLogger(__name__)
 
 

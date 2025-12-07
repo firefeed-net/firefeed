@@ -37,9 +37,11 @@ class IRSSItemRepository(ABC):
     """Interface for RSS item repository"""
 
     @abstractmethod
-    async def get_all_rss_items_list(self, limit: int, offset: int, category_name: Optional[str] = None,
-                                    source_alias: Optional[str] = None, from_date: Optional[datetime] = None,
-                                    display_language: Optional[str] = None, original_language: Optional[str] = None) -> Tuple[int, List[Dict[str, Any]], List[str]]:
+    async def get_all_rss_items_list(self, limit: int, offset: int, category_id: Optional[List[int]] = None,
+                                    source_id: Optional[List[int]] = None, from_date: Optional[datetime] = None,
+                                    display_language: Optional[str] = None, original_language: Optional[str] = None,
+                                    search_phrase: Optional[str] = None, before_created_at: Optional[datetime] = None,
+                                    cursor_news_id: Optional[str] = None) -> Tuple[int, List[Dict[str, Any]], List[str]]:
         """Get all RSS items list"""
         pass
 

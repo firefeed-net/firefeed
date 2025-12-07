@@ -38,9 +38,11 @@ class CategoryRepository(ICategoryRepository):
                     # Insert new categories
                     if category_ids:
                         values = [(user_id, cat_id) for cat_id in category_ids]
+                        placeholders = ','.join(['(%s, %s)'] * len(category_ids))
+                        flattened_values = [item for sublist in values for item in sublist]
                         await cur.execute(
-                            "INSERT INTO user_categories (user_id, category_id) VALUES %s",
-                            values
+                            f"INSERT INTO user_categories (user_id, category_id) VALUES {placeholders}",
+                            flattened_values
                         )
 
                     await cur.execute("COMMIT")

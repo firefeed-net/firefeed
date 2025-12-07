@@ -18,9 +18,6 @@ logger = logging.getLogger(__name__)
 
 class RSSParserService:
     def __init__(self):
-        # Initialize DI container
-        setup_di_container()
-
         # Get services via DI
         self.duplicate_detector = get_service(IDuplicateDetector)
         self.translation_service = get_service(ITranslationService)

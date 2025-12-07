@@ -139,6 +139,50 @@ class DeduplicationConfig:
 
 
 @dataclass
+class DatabaseConfig:
+    """Configuration for database connection"""
+    host: str = "localhost"
+    user: str = "your_db_user"
+    password: str = "your_db_password"
+    name: str = "firefeed"
+    port: int = 5432
+    minsize: int = 5
+    maxsize: int = 20
+
+    @classmethod
+    def from_env(cls) -> 'DatabaseConfig':
+        return cls(
+            host=os.getenv('DB_HOST', 'localhost'),
+            user=os.getenv('DB_USER', 'your_db_user'),
+            password=os.getenv('DB_PASSWORD', 'your_db_password'),
+            name=os.getenv('DB_NAME', 'firefeed'),
+            port=int(os.getenv('DB_PORT', '5432')),
+            minsize=int(os.getenv('DB_MINSIZE', '5')),
+            maxsize=int(os.getenv('DB_MAXSIZE', '20'))
+        )
+
+
+@dataclass
+class RedisConfig:
+    """Configuration for Redis connection"""
+    host: str = "localhost"
+    port: int = 6379
+    username: Optional[str] = None
+    password: Optional[str] = None
+    db: int = 0
+
+    @classmethod
+    def from_env(cls) -> 'RedisConfig':
+        return cls(
+            host=os.getenv('REDIS_HOST', 'localhost'),
+            port=int(os.getenv('REDIS_PORT', '6379')),
+            username=os.getenv('REDIS_USERNAME') or None,
+            password=os.getenv('REDIS_PASSWORD') or None,
+            db=int(os.getenv('REDIS_DB', '0'))
+        )
+
+
+@dataclass
 class TelegramBotConfig:
     """Configuration for Telegram bot job queue"""
     rss_monitor_interval: int = 180  # 3 minutes
@@ -165,23 +209,58 @@ class TelegramBotConfig:
 @dataclass
 class ServiceConfig:
     """Main service configuration"""
+    database: DatabaseConfig
+    redis: RedisConfig
     rss: RSSConfig
     translation: TranslationConfig
     cache: CacheConfig
     queue: QueueConfig
     deduplication: DeduplicationConfig
     telegram_bot: TelegramBotConfig
+    # Additional config keys
+    jwt_secret_key: str = "your-secret-key"
+    jwt_algorithm: str = "HS256"
+    jwt_access_token_expire_minutes: int = 30
+    http_images_root_dir: str = ""
+    redis_config: Dict[str, Any] = None
+    site_api_key: Optional[str] = None
+    bot_api_key: Optional[str] = None
+    rss_parser_media_type_priority: str = "image"
+
+    def __post_init__(self):
+        if self.redis_config is None:
+            self.redis_config = {
+                'host': self.redis.host,
+                'port': self.redis.port,
+                'username': self.redis.username,
+                'password': self.redis.password,
+                'db': self.redis.db
+            }
 
     @classmethod
     def from_env(cls) -> 'ServiceConfig':
         return cls(
+            database=DatabaseConfig.from_env(),
+            redis=RedisConfig.from_env(),
             rss=RSSConfig.from_env(),
             translation=TranslationConfig.from_env(),
             cache=CacheConfig.from_env(),
             queue=QueueConfig.from_env(),
             deduplication=DeduplicationConfig.from_env(),
-            telegram_bot=TelegramBotConfig.from_env()
+            telegram_bot=TelegramBotConfig.from_env(),
+            jwt_secret_key=os.getenv('JWT_SECRET_KEY', 'your-secret-key'),
+            jwt_algorithm=os.getenv('JWT_ALGORITHM', 'HS256'),
+            jwt_access_token_expire_minutes=int(os.getenv('JWT_ACCESS_TOKEN_EXPIRE_MINUTES', '30')),
+            http_images_root_dir=os.getenv('HTTP_IMAGES_ROOT_DIR', ''),
+            site_api_key=os.getenv('SITE_API_KEY'),
+            bot_api_key=os.getenv('BOT_API_KEY'),
+            rss_parser_media_type_priority=os.getenv('RSS_PARSER_MEDIA_TYPE_PRIORITY', 'image')
         )
+
+    def get(self, key: str, default=None):
+        """Dict-like get method for compatibility"""
+        attr_name = key.lower().replace('_', '_')
+        return getattr(self, attr_name, default)
 
 
 # Global configuration instance

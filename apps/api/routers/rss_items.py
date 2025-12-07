@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from api.middleware import limiter
 from api import models
 from di_container import get_service
-from interfaces import IRSSItemRepository, ICategoryRepository, ISourceRepository
+from interfaces import IRSSItemRepository, ICategoryRepository, ISourceRepository, IUserRepository
 from api.deps import format_datetime, get_full_image_url, build_translations_dict, validate_rss_items_query_params, sanitize_search_phrase, get_current_user_by_api_key
 # Config will be accessed via DI
 
@@ -38,11 +38,11 @@ def process_rss_items_results(results, columns):
             "original_language": row_dict["original_language"],
             "image_url": get_full_image_url(row_dict["image_filename"]),
             "category": row_dict["category_name"],
-            "source": row_dict["source_name"],
-            "source_alias": row_dict["source_alias"],
+            "source": "Unknown",  # Default since no source_name in query
+            "source_alias": "unknown",  # Default since no source_alias in query
             "source_url": row_dict["source_url"],
-            "published_at": format_datetime(row_dict["published_at"]),
-            "feed_id": row_dict["rss_feed_id"],  # Add feed_id for proper grouping in bot processing
+            "created_at": format_datetime(row_dict.get("created_at")),
+            "feed_id": row_dict.get("rss_feed_id"),  # May not be present
             "translations": translations,
         }
         rss_items_list.append(models.RSSItem(**item_data))
@@ -71,7 +71,7 @@ def process_rss_items_results(results, columns):
 
     **Pagination:**
     - **Offset-based:** Use `limit` and `offset` parameters
-    - **Cursor-based:** Use `cursor_published_at` and `cursor_rss_item_id` for keyset pagination
+    - **Cursor-based:** Use `cursor_created_at` and `cursor_rss_item_id` for keyset pagination
 
     **Rate limit:** 1000 requests per minute
     """,
@@ -93,7 +93,7 @@ def process_rss_items_results(results, columns):
                                 "source": "Tech News",
                                 "source_alias": "bbc",
                                 "source_url": "https://technews.com/article123",
-                                "published_at": "2024-01-01T12:00:00Z",
+                                "created_at": "2024-01-01T12:00:00Z",
                                 "translations": {
                                     "ru": {"title": "Главные новости", "content": "Полный текст статьи..."},
                                     "de": {"title": "Wichtige Nachrichten", "content": "Vollständiger Artikeltext..."}
@@ -119,7 +119,7 @@ async def get_rss_items(
     telegram_users_published: Optional[bool] = Query(None),
     from_date: Optional[int] = Query(None),
     search_phrase: Optional[str] = Query(None, alias="searchPhrase"),
-    cursor_published_at: Optional[int] = Query(None),
+    cursor_created_at: Optional[int] = Query(None),
     cursor_rss_item_id: Optional[str] = Query(None),
     limit: Optional[int] = Query(50, le=100, gt=0),
     offset: Optional[int] = Query(0, ge=0),
@@ -165,8 +165,8 @@ async def get_rss_items(
     logger.info(f"[API] RSS items request: original_language={original_language}, "
                 f"category_id={category_id}, source_id={source_id}, from_date={from_date}, limit={limit}, offset={offset}")
 
-    from_datetime, before_published_at = validate_rss_items_query_params(from_date, cursor_published_at)
-    page_offset = 0 if (cursor_published_at is not None or cursor_rss_item_id is not None) else offset
+    from_datetime, before_created_at = validate_rss_items_query_params(from_date, cursor_created_at)
+    page_offset = 0 if (cursor_created_at is not None or cursor_rss_item_id is not None) else offset
 
     rss_item_repo = get_service(IRSSItemRepository)
 
@@ -181,7 +181,7 @@ async def get_rss_items(
             source_id=source_ids,
             from_date=from_datetime,
             search_phrase=search_phrase,
-            before_published_at=before_published_at,
+            before_created_at=before_created_at,
             cursor_news_id=cursor_rss_item_id
         )
         query_time = time.time() - start_time
@@ -238,10 +238,10 @@ async def get_rss_item_by_id(request: Request, rss_item_id: str, current_user: d
             "original_language": row_dict["original_language"],
             "image_url": get_full_image_url(row_dict["image_filename"]),
             "category": row_dict["category_name"],
-            "source": row_dict["source_name"],
-            "source_alias": row_dict["source_alias"],
+            "source": "Unknown",  # Default
+            "source_alias": "unknown",  # Default
             "source_url": row_dict["source_url"],
-            "published_at": format_datetime(row_dict["published_at"]),
+            "created_at": format_datetime(row_dict.get("created_at")),
             "translations": build_translations_dict(row_dict),
         }
     except Exception as e:
@@ -485,11 +485,11 @@ async def get_languages(request: Request, current_user: dict = Depends(get_curre
 async def health_check(request: Request):
     try:
         user_repo = get_service(IUserRepository)
-        pool = user_repo.db_pool
-        if pool:
+        pool_adapter = user_repo.db_pool
+        if pool_adapter and hasattr(pool_adapter, '_pool') and pool_adapter._pool:
             db_status = "ok"
-            pool_total = pool.size
-            pool_free = pool.freesize
+            pool_total = getattr(pool_adapter._pool, 'size', 0)
+            pool_free = getattr(pool_adapter._pool, 'freesize', 0)
         else:
             db_status = "error"
             pool_total = 0

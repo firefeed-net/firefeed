@@ -17,7 +17,7 @@ class TelegramRepository(ITelegramRepository):
         async with self.db_pool.acquire() as conn:
             async with conn.cursor() as cur:
                 await cur.execute(
-                    "SELECT telegram_id, linked_at FROM telegram_links WHERE user_id = %s",
+                    "SELECT telegram_id, linked_at FROM user_telegram_links WHERE user_id = %s",
                     (user_id,)
                 )
                 row = await cur.fetchone()

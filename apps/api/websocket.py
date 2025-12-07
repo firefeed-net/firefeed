@@ -113,7 +113,7 @@ async def broadcast_new_rss_items(rss_items_payload: List[dict]):
                     "news_id": item.get("news_id"),
                     "title": title,
                     "category": item.get("category", "No category"),
-                    "published_at": item.get("published_at"),
+                    "created_at": item.get("created_at"),
                 }
             )
         if filtered_items:

@@ -14,13 +14,24 @@ logger.setLevel(logging.INFO)
 
 class EmailSender:
     def __init__(self):
-        config_obj = get_service(dict)
-        self.smtp_config = config_obj.get('SMTP_CONFIG')
-        self.sender_email = self.smtp_config["email"]
+        self.smtp_config = None
+        self.sender_email = None
 
         # Setting up Jinja2 for template loading
         template_dir = os.path.join(os.path.dirname(__file__), "templates")
         self.jinja_env = Environment(loader=FileSystemLoader(template_dir))
+
+    def _ensure_config(self):
+        if self.smtp_config is None:
+            config_obj = get_service(dict)
+            self.smtp_config = {
+                "server": config_obj.get('SMTP_SERVER', 'smtp.yourdomain.com'),
+                "port": int(config_obj.get('SMTP_PORT', '465')),
+                "email": config_obj.get('SMTP_EMAIL', 'your_email@yourdomain.com'),
+                "password": config_obj.get('SMTP_PASSWORD', 'your_smtp_password'),
+                "use_tls": config_obj.get('SMTP_USE_TLS', 'True').lower() == 'true'
+            }
+            self.sender_email = self.smtp_config["email"]
 
     async def send_password_reset_email(self, to_email: str, reset_token: str, language: str = "en") -> bool:
         """
@@ -34,6 +45,7 @@ class EmailSender:
         Returns:
             bool: True if email sent successfully, False on error
         """
+        self._ensure_config()
         start_ts = datetime.utcnow()
         logger.info(f"[EmailSender] Password reset email start: to={to_email} at {start_ts.isoformat()}Z")
         try:
@@ -95,6 +107,7 @@ class EmailSender:
         Returns:
             bool: True if email sent successfully, False on error
         """
+        self._ensure_config()
         start_ts = datetime.utcnow()
         logger.info(f"[EmailSender] Verification email start: to={to_email} at {start_ts.isoformat()}Z")
         try:
@@ -155,6 +168,7 @@ class EmailSender:
         Returns:
             bool: True if email sent successfully, False on error
         """
+        self._ensure_config()
         start_ts = datetime.utcnow()
         logger.info(f"[EmailSender] Registration success email start: to={to_email} at {start_ts.isoformat()}Z")
         try:

@@ -10,13 +10,19 @@ logger = logging.getLogger(__name__)
 # Configuration moved to DI
 from di_container import get_service
 
-config_obj = get_service(dict)
-API_BASE_URL = config_obj.get('API_BASE_URL', 'http://127.0.0.1:8000/api/v1')
-BOT_API_KEY = config_obj.get('BOT_API_KEY')
+API_BASE_URL = None
+BOT_API_KEY = None
 
-# Log API key status on import
-logger.info(f"BOT_API_KEY configured: {'Yes' if BOT_API_KEY else 'No'}")
-logger.info(f"API_BASE_URL: {API_BASE_URL}")
+def get_api_config():
+    global API_BASE_URL, BOT_API_KEY
+    if API_BASE_URL is None:
+        config_obj = get_service(dict)
+        API_BASE_URL = config_obj.get('API_BASE_URL', 'http://127.0.0.1:8000/api/v1')
+        BOT_API_KEY = config_obj.get('BOT_API_KEY')
+        # Log API key status
+        logger.info(f"BOT_API_KEY configured: {'Yes' if BOT_API_KEY else 'No'}")
+        logger.info(f"API_BASE_URL: {API_BASE_URL}")
+    return API_BASE_URL, BOT_API_KEY
 
 # Global HTTP session for API requests
 _http_session: Optional[aiohttp.ClientSession] = None
@@ -37,8 +43,9 @@ async def get_http_session() -> aiohttp.ClientSession:
 
 async def api_get(endpoint: str, params: dict = None) -> dict:
     """Performs a GET request to the API."""
+    api_base_url, bot_api_key = get_api_config()
     session = await get_http_session()
-    url = f"{API_BASE_URL}{endpoint}"
+    url = f"{api_base_url}{endpoint}"
     try:
         # Convert boolean parameters to strings
         if params:
@@ -53,9 +60,9 @@ async def api_get(endpoint: str, params: dict = None) -> dict:
 
         # Add API key to headers if set
         headers = {}
-        if BOT_API_KEY:
-            headers["X-API-Key"] = BOT_API_KEY
-            logger.debug(f"Using BOT_API_KEY for authentication: {BOT_API_KEY[:10]}...")
+        if bot_api_key:
+            headers["X-API-Key"] = bot_api_key
+            logger.debug(f"Using BOT_API_KEY for authentication: {bot_api_key[:10]}...")
         else:
             logger.warning("BOT_API_KEY is not set - API requests may fail with 401")
 
@@ -73,7 +80,7 @@ async def api_get(endpoint: str, params: dict = None) -> dict:
                 return {}
     except asyncio.TimeoutError:
         logger.error(f"Timeout error calling {endpoint}")
-        logger.error(f"API_BASE_URL: {API_BASE_URL}, url: {url}, params: {processed_params}, headers: {headers}")
+        logger.error(f"API_BASE_URL: {api_base_url}, url: {url}, params: {processed_params}, headers: {headers}")
         import traceback
         logger.error(f"Timeout traceback: {traceback.format_exc()}")
         return {}

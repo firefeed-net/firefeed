@@ -14,7 +14,9 @@ logger = logging.getLogger(__name__)
 
 # Redis client for caching - now from DI
 import redis
-redis_client = get_service(redis.Redis)
+
+def get_redis_client():
+    return get_service(redis.Redis)
 
 CACHE_TTL_SECONDS = 3600  # 1 hour
 
@@ -57,8 +59,8 @@ def generate_rss_feed(results, columns, language, feed_title, feed_description):
         fe.title(title)
         fe.description(content)
         fe.link(href=row_dict["source_url"] or "https://firefeed.net")
-        if row_dict["published_at"]:
-            fe.pubDate(formatdate(row_dict["published_at"].timestamp(), localtime=False))
+        if row_dict["created_at"]:
+            fe.pubDate(formatdate(row_dict["created_at"].timestamp(), localtime=False))
 
         # Add image as enclosure if available
         if row_dict["image_filename"]:
@@ -99,7 +101,7 @@ async def get_rss_feed_by_category(language: str, category_name: str):
     cache_key = f"rss:category:{category_name}:{language}"
 
     # Try to get from cache
-    cached_rss = redis_client.get(cache_key)
+    cached_rss = get_redis_client().get(cache_key)
     if cached_rss:
         return Response(content=cached_rss, media_type="application/rss+xml")
 
@@ -126,7 +128,7 @@ async def get_rss_feed_by_category(language: str, category_name: str):
         rss_xml = generate_rss_feed(results, columns, language, feed_title, feed_description)
 
         # Cache the result
-        redis_client.setex(cache_key, CACHE_TTL_SECONDS, rss_xml)
+        get_redis_client().setex(cache_key, CACHE_TTL_SECONDS, rss_xml)
 
         return Response(content=rss_xml, media_type="application/rss+xml")
 
@@ -168,7 +170,7 @@ async def get_rss_feed_by_source(language: str, source_alias: str):
     cache_key = f"rss:source:{source_alias}:{language}"
 
     # Try to get from cache
-    cached_rss = redis_client.get(cache_key)
+    cached_rss = get_redis_client().get(cache_key)
     if cached_rss:
         return Response(content=cached_rss, media_type="application/rss+xml")
 
@@ -195,7 +197,7 @@ async def get_rss_feed_by_source(language: str, source_alias: str):
         rss_xml = generate_rss_feed(results, columns, language, feed_title, feed_description)
 
         # Cache the result
-        redis_client.setex(cache_key, CACHE_TTL_SECONDS, rss_xml)
+        get_redis_client().setex(cache_key, CACHE_TTL_SECONDS, rss_xml)
 
         return Response(content=rss_xml, media_type="application/rss+xml")
 

@@ -105,7 +105,7 @@ class DIContainer:
 di_container = DIContainer()
 
 
-def setup_di_container() -> DIContainer:
+async def setup_di_container() -> DIContainer:
     """Setup the global DI container with all services"""
     global di_container
 
@@ -113,6 +113,10 @@ def setup_di_container() -> DIContainer:
     from config.services_config import get_service_config
 
     config = get_service_config()
+
+    # Register config as both dict and ServiceConfig first
+    di_container.register_instance(dict, config)
+    di_container.register_instance(type(config), config)
 
     # Import services
     from services.rss import MediaExtractor, RSSValidator, RSSStorage, RSSFetcher
@@ -126,12 +130,8 @@ def setup_di_container() -> DIContainer:
     # Register database pool adapter
     # For testing/development, create a mock pool if database is not available
     try:
-        # Import config from config_services
-        config = get_service_config()
-
         # Create database pool using config
         import aiopg
-        import asyncio
 
         db_config = {
             "host": config.database.host,
@@ -143,9 +143,12 @@ def setup_di_container() -> DIContainer:
             "maxsize": config.database.maxsize,
         }
 
-        # Get the event loop to create the pool
-        loop = asyncio.get_event_loop()
-        db_pool = loop.run_until_complete(aiopg.create_pool(**db_config))
+        # Log database connection config for debugging
+        masked_config = db_config.copy()
+        masked_config["password"] = "***" if db_config["password"] else None
+        logger.info(f"Database connection config: {masked_config}")
+
+        db_pool = await aiopg.create_pool(**db_config)
 
         db_pool_adapter = DatabasePoolAdapter(db_pool)
         di_container.register_instance(IDatabasePool, db_pool_adapter)
@@ -153,15 +156,23 @@ def setup_di_container() -> DIContainer:
         logger.warning(f"Database not available, creating mock pool: {e}")
         # Create mock pool for testing/development
         class MockPool:
-            async def acquire(self):
+            def acquire(self):
                 class MockConn:
-                    async def cursor(self):
+                    def __await__(self):
+                        async def _await():
+                            return self
+                        return _await().__await__()
+                    def cursor(self):
                         class MockCursor:
+                            rowcount = 0
+                            description = []
                             async def execute(self, *args, **kwargs): pass
                             async def fetchone(self): return None
                             async def fetchall(self): return []
                             def __aiter__(self): return self
                             async def __anext__(self): raise StopAsyncIteration
+                            async def __aenter__(self): return self
+                            async def __aexit__(self, *args): pass
                         return MockCursor()
                     async def __aenter__(self): return self
                     async def __aexit__(self, *args): pass
@@ -170,8 +181,8 @@ def setup_di_container() -> DIContainer:
             async def close(self): pass
             async def wait_closed(self): pass
 
-        mock_pool = MockPool()
-        db_pool_adapter = DatabasePoolAdapter(mock_pool)
+        db_pool = MockPool()
+        db_pool_adapter = DatabasePoolAdapter(db_pool)
         di_container.register_instance(IDatabasePool, db_pool_adapter)
 
     # Register Redis client
@@ -185,10 +196,6 @@ def setup_di_container() -> DIContainer:
         decode_responses=True
     )
     di_container.register_instance(redis.Redis, redis_client)
-
-    # Register config as both dict and ServiceConfig
-    di_container.register_instance(dict, config)
-    di_container.register_instance(type(config), config)
 
     # Register repositories
     from repositories import (

@@ -31,7 +31,7 @@ class FireFeedDuplicateDetector(IDuplicateDetector):
         if model_name is None:
             # Get config through DI
             config = get_service(dict)
-            model_name = config.get('deduplication', {}).get('embedding_models', {}).get('sentence_transformer_model', 'paraphrase-multilingual-MiniLM-L12-v2')
+            model_name = config.deduplication.embedding_models.sentence_transformer_model
         self.processor = FireFeedEmbeddingsProcessor(model_name, device)
         self.similarity_threshold = similarity_threshold
 
@@ -356,13 +356,6 @@ class FireFeedDuplicateDetector(IDuplicateDetector):
                 await asyncio.sleep(delay_between_items)
 
         logger.info(f"[BATCH_EMBEDDING] Batch processed. Successful: {success_count}, Errors: {error_count}")
-
-        # Unload unused models after batch embedding processing
-        try:
-            unloaded = await self.processor.model_manager.unload_unused_models(max_age_seconds=1800)
-            logger.info(f"[BATCH_EMBEDDING] Unloaded {unloaded} unused models after batch processing")
-        except Exception as e:
-            logger.error(f"[BATCH_EMBEDDING] Error unloading models: {e}")
 
         return success_count, error_count
 

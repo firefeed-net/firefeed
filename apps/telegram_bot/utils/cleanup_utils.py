@@ -5,14 +5,20 @@ from typing import Dict, Any
 # Configuration moved to DI
 from di_container import get_service
 
-config_obj = get_service(dict)
-USER_DATA_TTL_SECONDS = config_obj.get('USER_DATA_TTL_SECONDS', 86400)
+USER_DATA_TTL_SECONDS = None
+
+def get_user_data_ttl():
+    global USER_DATA_TTL_SECONDS
+    if USER_DATA_TTL_SECONDS is None:
+        config_obj = get_service(dict)
+        USER_DATA_TTL_SECONDS = config_obj.get('USER_DATA_TTL_SECONDS', 86400)
+    return USER_DATA_TTL_SECONDS
 
 
 def cleanup_expired_user_data(user_states: Dict[int, Any], user_current_menus: Dict[int, Any], user_languages: Dict[int, Any]):
     """Clears expired user data (older than 24 hours)."""
     current_time = time.time()
-    expired_threshold = current_time - USER_DATA_TTL_SECONDS
+    expired_threshold = current_time - get_user_data_ttl()
 
     # Clear USER_STATES
     expired_states = [uid for uid, data in user_states.items()

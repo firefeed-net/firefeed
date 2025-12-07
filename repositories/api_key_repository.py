@@ -16,7 +16,7 @@ class ApiKeyRepository(IApiKeyRepository):
         async with self.db_pool.acquire() as conn:
             async with conn.cursor() as cur:
                 await cur.execute(
-                    "INSERT INTO user_api_keys (user_id, key, limits) VALUES (%s, %s, %s) RETURNING id, key, limits, is_active, created_at",
+                    "INSERT INTO user_api_keys (user_id, key_hash, limits) VALUES (%s, %s, %s) RETURNING id, key_hash, limits, is_active, created_at",
                     (user_id, key, limits)
                 )
                 row = await cur.fetchone()
@@ -31,7 +31,7 @@ class ApiKeyRepository(IApiKeyRepository):
         async with self.db_pool.acquire() as conn:
             async with conn.cursor() as cur:
                 await cur.execute(
-                    "SELECT id, key, limits, is_active, created_at FROM user_api_keys WHERE user_id = %s ORDER BY created_at DESC",
+                    "SELECT id, key_hash, limits, is_active, created_at FROM user_api_keys WHERE user_id = %s ORDER BY created_at DESC",
                     (user_id,)
                 )
 
@@ -48,7 +48,7 @@ class ApiKeyRepository(IApiKeyRepository):
         async with self.db_pool.acquire() as conn:
             async with conn.cursor() as cur:
                 await cur.execute(
-                    "SELECT id, key, limits, is_active, created_at FROM user_api_keys WHERE user_id = %s AND id = %s",
+                    "SELECT id, key_hash, limits, is_active, created_at FROM user_api_keys WHERE user_id = %s AND id = %s",
                     (user_id, key_id)
                 )
                 row = await cur.fetchone()
@@ -66,7 +66,7 @@ class ApiKeyRepository(IApiKeyRepository):
             set_parts.append(f"{key} = %s")
             values.append(value)
 
-        query = f"UPDATE user_api_keys SET {', '.join(set_parts)}, updated_at = NOW() WHERE user_id = %s AND id = %s RETURNING id, key, limits, is_active, updated_at"
+        query = f"UPDATE user_api_keys SET {', '.join(set_parts)}, updated_at = NOW() WHERE user_id = %s AND id = %s RETURNING id, key_hash, limits, is_active, updated_at"
         values.extend([user_id, key_id])
 
         async with self.db_pool.acquire() as conn:
@@ -90,7 +90,7 @@ class ApiKeyRepository(IApiKeyRepository):
         async with self.db_pool.acquire() as conn:
             async with conn.cursor() as cur:
                 await cur.execute(
-                    "SELECT u.id as user_id, u.email, u.language, u.is_verified, u.is_deleted, k.limits FROM user_api_keys k JOIN users u ON k.user_id = u.id WHERE k.key = %s AND k.is_active = TRUE",
+                    "SELECT u.id as user_id, u.email, u.language, u.is_verified, u.is_deleted, k.limits FROM user_api_keys k JOIN users u ON k.user_id = u.id WHERE k.key_hash = %s AND k.is_active = TRUE",
                     (api_key,)
                 )
                 row = await cur.fetchone()

@@ -29,20 +29,11 @@ class RSSItemRepository(IRSSItemRepository):
                 row = await cur.fetchone()
                 return row[0] if row else None
 
-    async def get_all_rss_items_list(self, limit: int, offset: int, category_name: Optional[str] = None,
-                                    source_alias: Optional[str] = None, from_date: Optional[datetime] = None,
-                                    display_language: Optional[str] = None, original_language: Optional[str] = None) -> Tuple[int, List[Dict[str, Any]], List[str]]:
-        # Convert category_name to category_id if provided
-        category_id = None
-        if category_name:
-            category_id_result = await self._get_category_id_by_name(category_name)
-            category_id = [category_id_result] if category_id_result else None
-
-        # Convert source_alias to source_id if provided
-        source_id = None
-        if source_alias:
-            source_id_result = await self._get_source_id_by_alias(source_alias)
-            source_id = [source_id_result] if source_id_result else None
+    async def get_all_rss_items_list(self, limit: int, offset: int, category_id: Optional[List[int]] = None,
+                                    source_id: Optional[List[int]] = None, from_date: Optional[datetime] = None,
+                                    display_language: Optional[str] = None, original_language: Optional[str] = None,
+                                    search_phrase: Optional[str] = None, before_created_at: Optional[datetime] = None,
+                                    cursor_news_id: Optional[str] = None) -> Tuple[int, List[Dict[str, Any]], List[str]]:
 
         # Build query dynamically
         base_query = """
@@ -53,14 +44,10 @@ class RSSItemRepository(IRSSItemRepository):
                 pnd.original_language,
                 pnd.image_filename,
                 c.name as category_name,
-                s.name as source_name,
-                s.alias as source_alias,
                 pnd.source_url,
-                pnd.published_at,
                 pnd.created_at
             FROM published_news_data pnd
             JOIN categories c ON pnd.category_id = c.id
-            JOIN sources s ON pnd.source_id = s.id
             WHERE 1=1
         """
 
@@ -80,14 +67,18 @@ class RSSItemRepository(IRSSItemRepository):
             params.append(source_id)
 
         if from_date:
-            conditions.append("pnd.published_at >= %s")
+            conditions.append("pnd.created_at >= %s")
             params.append(from_date)
+
+        if before_created_at:
+            conditions.append("pnd.created_at < %s")
+            params.append(before_created_at)
 
         where_clause = " AND ".join(conditions) if conditions else ""
         if where_clause:
             base_query += f" AND {where_clause}"
 
-        base_query += " ORDER BY pnd.published_at DESC LIMIT %s OFFSET %s"
+        base_query += " ORDER BY pnd.created_at DESC LIMIT %s OFFSET %s"
         params.extend([limit, offset])
 
         async with self.db_pool.acquire() as conn:
@@ -100,7 +91,6 @@ class RSSItemRepository(IRSSItemRepository):
                 count_query = f"""
                     SELECT COUNT(*) FROM published_news_data pnd
                     JOIN categories c ON pnd.category_id = c.id
-                    JOIN sources s ON pnd.source_id = s.id
                     WHERE 1=1
                 """
                 if where_clause:
@@ -135,14 +125,10 @@ class RSSItemRepository(IRSSItemRepository):
                         pnd.original_language,
                         pnd.image_filename,
                         c.name as category_name,
-                        s.name as source_name,
-                        s.alias as source_alias,
                         pnd.source_url,
-                        pnd.published_at,
                         pnd.created_at
                     FROM published_news_data pnd
                     JOIN categories c ON pnd.category_id = c.id
-                    JOIN sources s ON pnd.source_id = s.id
                     WHERE pnd.category_id = ANY(%s)
                 """
 
@@ -157,7 +143,7 @@ class RSSItemRepository(IRSSItemRepository):
                 if where_clause:
                     base_query += f" AND {where_clause}"
 
-                base_query += " ORDER BY pnd.published_at DESC LIMIT %s OFFSET %s"
+                base_query += " ORDER BY pnd.created_at DESC LIMIT %s OFFSET %s"
                 params.extend([limit, offset])
 
                 await cur.execute(base_query, params)
@@ -169,6 +155,7 @@ class RSSItemRepository(IRSSItemRepository):
                     SELECT COUNT(*) FROM published_news_data pnd
                     WHERE pnd.category_id = ANY(%s)
                 """
+                # No need to join sources since no source_id
                 count_params = [user_categories]
                 if original_language:
                     count_query += " AND pnd.original_language = %s"
@@ -190,15 +177,11 @@ class RSSItemRepository(IRSSItemRepository):
                         pnd.original_language,
                         pnd.image_filename,
                         c.name as category_name,
-                        s.name as source_name,
-                        s.alias as source_alias,
                         pnd.source_url,
-                        pnd.published_at,
                         pnd.created_at,
                         pnd.embedding
                     FROM published_news_data pnd
                     JOIN categories c ON pnd.category_id = c.id
-                    JOIN sources s ON pnd.source_id = s.id
                     WHERE pnd.news_id = %s
                 """
                 await cur.execute(query, (rss_item_id,))
@@ -216,14 +199,10 @@ class RSSItemRepository(IRSSItemRepository):
                         pnd.original_language,
                         pnd.image_filename,
                         c.name as category_name,
-                        s.name as source_name,
-                        s.alias as source_alias,
                         pnd.source_url,
-                        pnd.published_at,
                         pnd.created_at
                     FROM published_news_data pnd
                     JOIN categories c ON pnd.category_id = c.id
-                    JOIN sources s ON pnd.source_id = s.id
                     WHERE pnd.created_at > %s
                     ORDER BY pnd.created_at ASC
                 """
@@ -234,7 +213,11 @@ class RSSItemRepository(IRSSItemRepository):
                 # Convert to list of dicts
                 items = []
                 for row in results:
-                    items.append(dict(zip(columns, row)))
+                    item = dict(zip(columns, row))
+                    # Add default values for missing fields
+                    item['source_name'] = 'Unknown'
+                    item['source_alias'] = 'unknown'
+                    items.append(item)
 
                 return items
 

@@ -2,7 +2,7 @@
 import time
 from typing import Dict, Any, Optional
 
-from .utils.cleanup_utils import cleanup_expired_user_data
+from telegram_bot.utils.cleanup_utils import cleanup_expired_user_data
 from di_container import get_service
 from interfaces import ITelegramUserService
 

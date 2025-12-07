@@ -119,6 +119,10 @@ app.include_router(ws_router)
 
 @app.on_event("startup")
 async def startup_event():
+    # Setup DI container
+    from di_container import setup_di_container
+    await setup_di_container()
+
     # Start background rss items checking task
     import asyncio
 

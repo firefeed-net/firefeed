@@ -71,6 +71,8 @@ class RSSFetcher(IRSSFetcher):
         logger.info(f"[RSS] Starting fetch: {feed_name} ({url})")
 
         try:
+            # Filter headers to remove None keys
+            headers = {k: v for k, v in headers.items() if k is not None}
             # Fetch RSS feed content with UTF-8 encoding to handle encoding issues
             async with aiohttp.ClientSession() as session:
                 async with session.get(url, headers=headers) as response:

@@ -2,6 +2,7 @@ import asyncio
 import sys
 import logging
 from config.logging_config import setup_logging
+from di_container import setup_di_container
 from services.rss.rss_parser import RSSParserService
 
 setup_logging()
@@ -12,6 +13,7 @@ async def main():
     """Asynchronous entry point"""
     service = None
     try:
+        await setup_di_container()
         service = RSSParserService()
         await service.start()
     except KeyboardInterrupt:

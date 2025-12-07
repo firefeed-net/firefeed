@@ -169,7 +169,7 @@ def build_translations_dict(row_dict):
     return translations
 
 
-def validate_rss_items_query_params(from_date, cursor_published_at):
+def validate_rss_items_query_params(from_date, cursor_created_at):
     from fastapi import HTTPException, status
     from datetime import datetime
 
@@ -182,17 +182,17 @@ def validate_rss_items_query_params(from_date, cursor_published_at):
                 status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid timestamp format in from_date parameter"
             )
 
-    before_published_at = None
-    if cursor_published_at is not None:
+    before_created_at = None
+    if cursor_created_at is not None:
         try:
-            before_published_at = datetime.fromtimestamp(cursor_published_at / 1000.0)
+            before_created_at = datetime.fromtimestamp(cursor_created_at / 1000.0)
         except (ValueError, OSError):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid timestamp format in cursor_published_at parameter",
+                detail="Invalid timestamp format in cursor_created_at parameter",
             )
 
-    return from_datetime, before_published_at
+    return from_datetime, before_created_at
 
 
 # Redis client for rate limiting
