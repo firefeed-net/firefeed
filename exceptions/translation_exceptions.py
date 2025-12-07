@@ -1,6 +1,6 @@
 # exceptions/translation_exceptions.py - Translation-related exceptions
 from typing import Optional, Dict, Any
-from .base_exceptions import FireFeedException
+from exceptions.base_exceptions import FireFeedException
 
 
 class TranslationException(FireFeedException):

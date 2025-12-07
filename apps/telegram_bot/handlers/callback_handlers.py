@@ -1,7 +1,7 @@
 # telegram_bot/handlers/callback_handlers.py - Callback query handlers
 import logging
 
-from telegram import Update
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 
 from apps.telegram_bot.services import user_state_service
@@ -85,7 +85,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await context.bot.send_message(
                 chat_id=user_id, text=status_text, reply_markup=get_main_menu_keyboard(current_lang)
             )
-            from apps.telegram_bot.services.user_state_service import set_user_menu
             set_user_menu(user_id, "main")
         elif query.data.startswith("lang_"):
             lang = query.data.split("_", 1)[1]
@@ -105,7 +104,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await context.bot.send_message(
                 chat_id=user_id, text=welcome_text, reply_markup=get_main_menu_keyboard(lang)
             )
-            from apps.telegram_bot.services.user_state_service import set_user_menu
             set_user_menu(user_id, "main")
         elif query.data == "change_lang":
             current_lang = await get_current_user_language(user_id)
@@ -113,7 +111,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.message.edit_text(
                 text=get_message("language_select", current_lang), reply_markup=keyboard
             )
-            from apps.telegram_bot.services.user_state_service import set_user_menu
             set_user_menu(user_id, "language")
     except Exception as e:
         logger.error(f"Error processing button for {user_id}: {e}")
@@ -123,7 +120,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             text=get_message("button_error", current_lang),
             reply_markup=get_main_menu_keyboard(current_lang),
         )
-        from apps.telegram_bot.services.user_state_service import set_user_menu
         set_user_menu(user_id, "main")
 
 

@@ -1,18 +1,23 @@
+import asyncio
 import logging
 import os
+import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .middleware import setup_middleware
-from .routers import auth as auth_router
-from .routers import users as users_router
-from .routers import categories as categories_router
-from .routers import rss_feeds as rss_feeds_router
-from .routers import telegram as telegram_router
-from .routers import rss_items as rss_items_router
-from .routers import rss as rss_router
-from .routers import api_keys as api_keys_router
-from .websocket import router as ws_router, check_for_new_rss_items
+from di_container import get_service, setup_di_container
+from interfaces import IUserRepository
+
+from apps.api.middleware import setup_middleware
+from apps.api.routers import auth as auth_router
+from apps.api.routers import users as users_router
+from apps.api.routers import categories as categories_router
+from apps.api.routers import rss_feeds as rss_feeds_router
+from apps.api.routers import telegram as telegram_router
+from apps.api.routers import rss_items as rss_items_router
+from apps.api.routers import rss as rss_router
+from apps.api.routers import api_keys as api_keys_router
+from apps.api.websocket import router as ws_router, check_for_new_rss_items
 from utils.cleanup import periodic_cleanup_users
 from config.logging_config import setup_logging
 
@@ -120,12 +125,9 @@ app.include_router(ws_router)
 @app.on_event("startup")
 async def startup_event():
     # Setup DI container
-    from di_container import setup_di_container
     await setup_di_container()
 
     # Start background rss items checking task
-    import asyncio
-
     asyncio.create_task(check_for_new_rss_items())
     logger.info("[Startup] RSS items checking task started")
 
@@ -137,8 +139,6 @@ async def startup_event():
 @app.on_event("shutdown")
 async def shutdown_event():
     try:
-        from di_container import get_service
-        from interfaces import IUserRepository
         user_repo = get_service(IUserRepository)
         await user_repo.db_pool.close()
         logger.info("[Shutdown] Database pool closed")
@@ -147,5 +147,4 @@ async def shutdown_event():
 
 
 if __name__ == "__main__":
-    import uvicorn
     uvicorn.run(app, host="127.0.0.1", port=8000)

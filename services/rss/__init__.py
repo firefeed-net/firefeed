@@ -1,9 +1,9 @@
 # services/rss/__init__.py
-from .media_extractor import MediaExtractor
-from .rss_validator import RSSValidator
-from .rss_storage import RSSStorage
-from .rss_fetcher import RSSFetcher
-from .rss_manager import RSSManager
+from services.rss.media_extractor import MediaExtractor
+from services.rss.rss_validator import RSSValidator
+from services.rss.rss_storage import RSSStorage
+from services.rss.rss_fetcher import RSSFetcher
+from services.rss.rss_manager import RSSManager
 
 __all__ = [
     'MediaExtractor',

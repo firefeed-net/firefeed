@@ -1,6 +1,6 @@
 # interfaces/__init__.py - Interface imports
-from .core_interfaces import *
-from .rss_interfaces import *
-from .translation_interfaces import *
-from .user_interfaces import *
-from .repository_interfaces import *
+from interfaces.core_interfaces import *
+from interfaces.rss_interfaces import *
+from interfaces.translation_interfaces import *
+from interfaces.user_interfaces import *
+from interfaces.repository_interfaces import *

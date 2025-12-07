@@ -13,6 +13,7 @@ from fastapi import Depends, HTTPException, status, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 from di_container import get_service
+from interfaces import IUserRepository, IApiKeyRepository
 
 logger = logging.getLogger(__name__)
 
@@ -70,8 +71,6 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
                 headers={"WWW-Authenticate": "Bearer"},
             )
         # Get full user data from database
-        from di_container import get_service
-        from interfaces import IUserRepository
         user_repo = get_service(IUserRepository)
         user_data = await user_repo.get_user_by_id(int(user_id))
         if not user_data:
@@ -170,8 +169,6 @@ def build_translations_dict(row_dict):
 
 
 def validate_rss_items_query_params(from_date, cursor_created_at):
-    from fastapi import HTTPException, status
-    from datetime import datetime
 
     from_datetime = None
     if from_date is not None:
@@ -306,8 +303,6 @@ async def get_current_user_by_api_key(request: Request):
         logger.info("[API_KEY_AUTH] No special API key match, checking user API keys")
 
         # Get API key data from database
-        from di_container import get_service
-        from interfaces import IApiKeyRepository, IUserRepository
         api_key_repo = get_service(IApiKeyRepository)
         user_repo = get_service(IUserRepository)
 

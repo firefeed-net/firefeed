@@ -1,4 +1,5 @@
 # database.py
+import json
 import os
 import sys
 import logging
@@ -7,6 +8,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from datetime import datetime, timezone
 from typing import Optional, Dict, Any, List, Set, Tuple
 from di_container import get_service
+from apps.api.deps import hash_api_key
 
 logger = logging.getLogger(__name__)
 
@@ -1319,8 +1321,6 @@ async def get_recent_rss_items_for_broadcast(pool, last_check_time: datetime) ->
 
 async def create_user_api_key(pool, user_id: int, plain_key: str, limits: Dict[str, int], expires_at: Optional[datetime] = None) -> Optional[Dict[str, Any]]:
     """Creates new API key for user"""
-    import json
-    from .deps import hash_api_key
     key_hash = hash_api_key(plain_key)
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
@@ -1368,7 +1368,6 @@ async def get_user_api_keys(pool, user_id: int) -> List[Dict[str, Any]]:
 
 async def get_user_api_key_by_key(pool, plain_key: str) -> Optional[Dict[str, Any]]:
     """Gets API key by key value"""
-    from .deps import hash_api_key
     key_hash = hash_api_key(plain_key)
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:

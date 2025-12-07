@@ -1,6 +1,6 @@
 # exceptions/rss_exceptions.py - RSS-related exceptions
 from typing import Optional, Dict, Any
-from .base_exceptions import FireFeedException
+from exceptions.base_exceptions import FireFeedException
 
 
 class RSSException(FireFeedException):

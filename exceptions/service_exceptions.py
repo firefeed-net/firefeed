@@ -1,6 +1,6 @@
 # exceptions/service_exceptions.py - Service-related exceptions
 from typing import Optional, Dict, Any
-from .base_exceptions import FireFeedException
+from exceptions.base_exceptions import FireFeedException
 
 
 class DuplicateDetectionException(FireFeedException):

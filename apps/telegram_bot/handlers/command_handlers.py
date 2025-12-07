@@ -1,7 +1,7 @@
 # telegram_bot/handlers/command_handlers.py - Command handlers
 import logging
 
-from telegram import Update
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 
 from apps.telegram_bot.services import user_state_service
@@ -137,10 +137,8 @@ async def _show_settings_menu(bot, chat_id: int, user_id: int):
             category_name = category.get("name", str(category))
             is_selected = category_name in current_subs
             text = f"{'✅ ' if is_selected else '🔲 '}{category_name.capitalize()}"
-            from telegram import InlineKeyboardButton
             keyboard.append([InlineKeyboardButton(text, callback_data=f"toggle_{category_name}")])
         keyboard.append([InlineKeyboardButton(get_message("save_button", current_lang), callback_data="save_settings")])
-        from telegram import InlineKeyboardMarkup
         reply_markup = InlineKeyboardMarkup(keyboard)
         await bot.send_message(
             chat_id=chat_id, text=get_message("settings_title", current_lang), reply_markup=reply_markup
