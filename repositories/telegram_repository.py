@@ -31,18 +31,30 @@ class TelegramRepository(ITelegramRepository):
         """Marks publication in unified Telegram bot table (channels and users)."""
         async with self.db_pool.acquire() as conn:
             async with conn.cursor() as cur:
-                query = """
-                    INSERT INTO rss_items_telegram_bot_published
-                    (news_id, translation_id, recipient_type, recipient_id, message_id, language, sent_at)
-                    VALUES (%s, %s, %s, %s, %s, %s, NOW())
-                    ON CONFLICT (news_id, translation_id, recipient_type, recipient_id)
-                    DO UPDATE SET
-                        message_id = EXCLUDED.message_id,
-                        language = EXCLUDED.language,
-                        sent_at = NOW(),
-                        updated_at = NOW()
+                # First check if exists
+                check_query = """
+                    SELECT id FROM rss_items_telegram_bot_published
+                    WHERE news_id = %s AND ((translation_id = %s) OR (translation_id IS NULL AND %s IS NULL)) AND recipient_type = %s AND recipient_id = %s
                 """
-                await cur.execute(query, (news_id, translation_id, recipient_type, recipient_id, message_id, language))
+                await cur.execute(check_query, (news_id, translation_id, translation_id, recipient_type, recipient_id))
+                existing = await cur.fetchone()
+
+                if existing:
+                    # Update existing
+                    update_query = """
+                        UPDATE rss_items_telegram_bot_published
+                        SET message_id = %s, language = %s, sent_at = NOW(), updated_at = NOW()
+                        WHERE id = %s
+                    """
+                    await cur.execute(update_query, (message_id, language, existing[0]))
+                else:
+                    # Insert new
+                    insert_query = """
+                        INSERT INTO rss_items_telegram_bot_published
+                        (news_id, translation_id, recipient_type, recipient_id, message_id, language, sent_at)
+                        VALUES (%s, %s, %s, %s, %s, %s, NOW())
+                    """
+                    await cur.execute(insert_query, (news_id, translation_id, recipient_type, recipient_id, message_id, language))
                 return True
 
     async def check_bot_published(self, news_id: str = None, translation_id: int = None,
@@ -52,9 +64,9 @@ class TelegramRepository(ITelegramRepository):
             async with conn.cursor() as cur:
                 query = """
                     SELECT 1 FROM rss_items_telegram_bot_published
-                    WHERE news_id = %s AND translation_id = %s AND recipient_type = %s AND recipient_id = %s
+                    WHERE news_id = %s AND ((translation_id = %s) OR (translation_id IS NULL AND %s IS NULL)) AND recipient_type = %s AND recipient_id = %s
                 """
-                await cur.execute(query, (news_id, translation_id, recipient_type, recipient_id))
+                await cur.execute(query, (news_id, translation_id, translation_id, recipient_type, recipient_id))
                 result = await cur.fetchone()
                 return result is not None
 
