@@ -4,11 +4,8 @@ import logging
 from typing import List, Dict, Any, Optional
 import aiohttp
 
-# Configuration moved to DI
-
 logger = logging.getLogger(__name__)
 
-# Configuration moved to DI
 from di_container import get_service
 
 API_BASE_URL = None

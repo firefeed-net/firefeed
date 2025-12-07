@@ -2,7 +2,6 @@
 import time
 from typing import Dict, Any
 
-# Configuration moved to DI
 from di_container import get_service
 
 USER_DATA_TTL_SECONDS = None

@@ -264,40 +264,16 @@ class ServiceConfig:
                 'webhook_url': self.webhook_url,
                 'url_path': self.webhook_url_path
             }
-        if self.channel_ids is None:
-            # Fallback default if not set
-            self.channel_ids = {
-                'ru': '-1002584789230',
-                'de': '-1002959373215',
-                'fr': '-1002910849909',
-                'en': '-1003035894895',
-            }
-        if self.channel_categories is None:
-            # Fallback default if not set
-            self.channel_categories = ["world", "technology", "lifestyle", "politics", "economy", "autos", "sports"]
 
     @classmethod
     def from_env(cls) -> 'ServiceConfig':
         # Parse CHANNEL_IDS as JSON, with default values if not provided
         channel_ids_str = os.getenv('CHANNEL_IDS', '{"ru": "-1002584789230", "de": "-1002959373215", "fr": "-1002910849909", "en": "-1003035894895"}')
-        try:
-            channel_ids = json.loads(channel_ids_str)
-        except json.JSONDecodeError:
-            # Fallback to default if JSON is invalid
-            channel_ids = {
-                'ru': '-1002584789230',
-                'de': '-1002959373215',
-                'fr': '-1002910849909',
-                'en': '-1003035894895',
-            }
+        channel_ids = json.loads(channel_ids_str)
 
         # Parse CHANNEL_CATEGORIES as JSON, with default values if not provided
         channel_categories_str = os.getenv('CHANNEL_CATEGORIES', '["world", "technology", "lifestyle", "politics", "economy", "autos", "sports"]')
-        try:
-            channel_categories = json.loads(channel_categories_str)
-        except json.JSONDecodeError:
-            # Fallback to default if JSON is invalid
-            channel_categories = ["world", "technology", "lifestyle", "politics", "economy", "autos", "sports"]
+        channel_categories = json.loads(channel_categories_str)
 
         return cls(
             database=DatabaseConfig.from_env(),

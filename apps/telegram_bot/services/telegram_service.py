@@ -14,7 +14,6 @@ from apps.telegram_bot.utils.formatting_utils import (
     create_lang_note, create_hashtags, truncate_caption
 )
 from apps.telegram_bot.translations import TRANSLATED_FROM_LABELS, READ_MORE_LABELS
-# Channel configuration moved to DI
 from di_container import get_service
 from utils.text import TextProcessor
 from apps.telegram_bot.services.database_service import (
