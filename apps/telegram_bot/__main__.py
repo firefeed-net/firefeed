@@ -37,11 +37,6 @@ setup_logging()
 import dotenv
 dotenv.load_dotenv()
 
-# Setup DI container
-import asyncio
-from di_container import setup_di_container
-asyncio.run(setup_di_container())
-
 logger = logging.getLogger(__name__)
 
 
@@ -68,6 +63,16 @@ def main():
     logger.info("=== BOT STARTUP BEGINNING ===")
     logger.info(f"Python version: {sys.version}")
     logger.info(f"Current working directory: {os.getcwd()}")
+
+    # Create a new event loop for the application
+    import asyncio
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+
+    # Setup DI container in the current loop
+    from di_container import setup_di_container
+    loop.run_until_complete(setup_di_container())
+
     # Get bot configuration from DI
     config_obj = get_service(dict)
     bot_token = config_obj.get('BOT_TOKEN')

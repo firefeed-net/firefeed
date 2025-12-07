@@ -44,10 +44,12 @@ class RSSItemRepository(IRSSItemRepository):
                 pnd.original_language,
                 pnd.image_filename,
                 c.name as category_name,
+                s.name as source_name,
                 pnd.source_url,
                 pnd.created_at
             FROM published_news_data pnd
             JOIN categories c ON pnd.category_id = c.id
+            JOIN sources s ON pnd.source_id = s.id
             WHERE 1=1
         """
 
@@ -91,6 +93,7 @@ class RSSItemRepository(IRSSItemRepository):
                 count_query = f"""
                     SELECT COUNT(*) FROM published_news_data pnd
                     JOIN categories c ON pnd.category_id = c.id
+                    JOIN sources s ON pnd.source_id = s.id
                     WHERE 1=1
                 """
                 if where_clause:
@@ -125,10 +128,12 @@ class RSSItemRepository(IRSSItemRepository):
                         pnd.original_language,
                         pnd.image_filename,
                         c.name as category_name,
+                        s.name as source_name,
                         pnd.source_url,
                         pnd.created_at
                     FROM published_news_data pnd
                     JOIN categories c ON pnd.category_id = c.id
+                    JOIN sources s ON pnd.source_id = s.id
                     WHERE pnd.category_id = ANY(%s)
                 """
 
@@ -177,11 +182,13 @@ class RSSItemRepository(IRSSItemRepository):
                         pnd.original_language,
                         pnd.image_filename,
                         c.name as category_name,
+                        s.name as source_name,
                         pnd.source_url,
                         pnd.created_at,
                         pnd.embedding
                     FROM published_news_data pnd
                     JOIN categories c ON pnd.category_id = c.id
+                    JOIN sources s ON pnd.source_id = s.id
                     WHERE pnd.news_id = %s
                 """
                 await cur.execute(query, (rss_item_id,))

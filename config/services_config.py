@@ -222,10 +222,27 @@ class ServiceConfig:
     jwt_algorithm: str = "HS256"
     jwt_access_token_expire_minutes: int = 30
     http_images_root_dir: str = ""
+    images_root_dir: str = ""
+    videos_root_dir: str = ""
+    http_videos_root_dir: str = ""
     redis_config: Dict[str, Any] = None
     site_api_key: Optional[str] = None
     bot_api_key: Optional[str] = None
+    bot_token: Optional[str] = None
+    api_base_url: str = "http://127.0.0.1:8000/api/v1"
+    webhook_listen: str = "127.0.0.1"
+    webhook_port: int = 5000
+    webhook_url_path: str = "webhook"
+    webhook_url: str = ""
+    webhook_config: Dict[str, Any] = None
+    channel_id_ru: str = "-1002584789230"
+    channel_id_de: str = "-1002959373215"
+    channel_id_fr: str = "-1002910849909"
+    channel_id_en: str = "-1003035894895"
+    channel_categories: str = "world,technology,lifestyle,politics,economy,autos,sports"
+    user_data_ttl_seconds: int = 86400
     rss_parser_media_type_priority: str = "image"
+    default_user_agent: str = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 FireFeed/1.0"
 
     def __post_init__(self):
         if self.redis_config is None:
@@ -235,6 +252,13 @@ class ServiceConfig:
                 'username': self.redis.username,
                 'password': self.redis.password,
                 'db': self.redis.db
+            }
+        if self.webhook_config is None:
+            self.webhook_config = {
+                'listen': self.webhook_listen,
+                'port': self.webhook_port,
+                'webhook_url': self.webhook_url,
+                'url_path': self.webhook_url_path
             }
 
     @classmethod
@@ -252,9 +276,25 @@ class ServiceConfig:
             jwt_algorithm=os.getenv('JWT_ALGORITHM', 'HS256'),
             jwt_access_token_expire_minutes=int(os.getenv('JWT_ACCESS_TOKEN_EXPIRE_MINUTES', '30')),
             http_images_root_dir=os.getenv('HTTP_IMAGES_ROOT_DIR', ''),
+            images_root_dir=os.getenv('IMAGES_ROOT_DIR', ''),
+            videos_root_dir=os.getenv('VIDEOS_ROOT_DIR', ''),
+            http_videos_root_dir=os.getenv('HTTP_VIDEOS_ROOT_DIR', ''),
             site_api_key=os.getenv('SITE_API_KEY'),
             bot_api_key=os.getenv('BOT_API_KEY'),
-            rss_parser_media_type_priority=os.getenv('RSS_PARSER_MEDIA_TYPE_PRIORITY', 'image')
+            bot_token=os.getenv('BOT_TOKEN'),
+            api_base_url=os.getenv('API_BASE_URL', 'http://127.0.0.1:8000/api/v1'),
+            webhook_listen=os.getenv('WEBHOOK_LISTEN', '127.0.0.1'),
+            webhook_port=int(os.getenv('WEBHOOK_PORT', '5000')),
+            webhook_url_path=os.getenv('WEBHOOK_URL_PATH', 'webhook'),
+            webhook_url=os.getenv('WEBHOOK_URL', ''),
+            channel_id_ru=os.getenv('CHANNEL_ID_RU', '-1002584789230'),
+            channel_id_de=os.getenv('CHANNEL_ID_DE', '-1002959373215'),
+            channel_id_fr=os.getenv('CHANNEL_ID_FR', '-1002910849909'),
+            channel_id_en=os.getenv('CHANNEL_ID_EN', '-1003035894895'),
+            channel_categories=os.getenv('CHANNEL_CATEGORIES', 'world,technology,lifestyle,politics,economy,autos,sports'),
+            user_data_ttl_seconds=int(os.getenv('USER_DATA_TTL_SECONDS', '86400')),
+            rss_parser_media_type_priority=os.getenv('RSS_PARSER_MEDIA_TYPE_PRIORITY', 'image'),
+            default_user_agent=os.getenv('DEFAULT_USER_AGENT', 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 FireFeed/1.0')
         )
 
     def get(self, key: str, default=None):

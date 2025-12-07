@@ -28,7 +28,7 @@ async def process_rss_item(context, rss_item_from_api, subscribers_cache=None, c
             "title": rss_item_from_api.get("original_title"),
             "content": rss_item_from_api.get("original_content"),
             "category": rss_item_from_api.get("category"),
-            "source": rss_item_from_api.get("source"),
+            "source": rss_item_from_api.get("source_name"),
             "lang": rss_item_from_api.get("original_language"),
             "link": rss_item_from_api.get("source_url"),
             "image_url": rss_item_from_api.get("image_url"),
@@ -109,9 +109,8 @@ async def monitor_rss_items_task(context):
         # Group RSS items by feed_id
         items_by_feed = defaultdict(list)
         for rss_item in unprocessed_rss_list:
-            feed_id = rss_item.get("feed_id")
-            if feed_id:
-                items_by_feed[feed_id].append(rss_item)
+            feed_id = rss_item.get("feed_id") or "no_feed"
+            items_by_feed[feed_id].append(rss_item)
 
         logger.info(f"Grouped into {len(items_by_feed)} feeds")
 

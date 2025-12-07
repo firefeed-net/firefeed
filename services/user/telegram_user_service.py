@@ -45,3 +45,15 @@ class TelegramUserService(ITelegramUserService):
     async def remove_blocked_user(self, user_id: int) -> bool:
         """Remove blocked user"""
         return await self.user_repository.remove_telegram_blocked_user(user_id)
+
+    async def update_user_settings(self, user_id: int, settings: Dict[str, Any]) -> bool:
+        """Update user settings"""
+        subscriptions = settings.get("subscriptions", [])
+        language = settings.get("language", "en")
+        return await self.save_user_settings(user_id, subscriptions, language)
+
+    async def confirm_telegram_link(self, user_id: int, link_code: str) -> bool:
+        """Confirm Telegram account linking"""
+        # This method is for confirming link from the bot side
+        # Since the repository method takes telegram_id, we assume user_id is telegram_id here
+        return await self.user_repository.confirm_telegram_link(user_id, link_code)
