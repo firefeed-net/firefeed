@@ -1,4 +1,5 @@
 # telegram_bot/services/api_service.py - Internal API communication service
+import asyncio
 import logging
 from typing import List, Dict, Any, Optional
 import aiohttp

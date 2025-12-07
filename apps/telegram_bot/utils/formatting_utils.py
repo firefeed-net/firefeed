@@ -34,7 +34,13 @@ def create_lang_note(target_lang: str, original_lang: str) -> str:
 
 def create_hashtags(category: str, source: str) -> str:
     """Creates hashtags for channel messages."""
-    return f"\n#{category} #{source}"
+    # Only include source if it's a real source name (not Unknown or similar)
+    if source and source not in {None, "", "None", "Unknown", "UnknownSource"}:
+        # Clean the source name for hashtag (remove spaces, special chars)
+        clean_source = "".join(c for c in source if c.isalnum()).title()
+        return f"\n#{category} #{clean_source}"
+    else:
+        return f"\n#{category}"
 
 
 def truncate_caption(caption: str, max_length: int = 1024) -> str:

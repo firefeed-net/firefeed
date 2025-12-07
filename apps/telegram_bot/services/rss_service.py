@@ -28,7 +28,7 @@ async def process_rss_item(context, rss_item_from_api, subscribers_cache=None, c
             "title": rss_item_from_api.get("original_title"),
             "content": rss_item_from_api.get("original_content"),
             "category": rss_item_from_api.get("category"),
-            "source": rss_item_from_api.get("source_name"),
+            "source": rss_item_from_api.get("source"),
             "lang": rss_item_from_api.get("original_language"),
             "link": rss_item_from_api.get("source_url"),
             "image_url": rss_item_from_api.get("image_url"),

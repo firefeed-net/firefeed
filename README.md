@@ -416,6 +416,9 @@ DB_PORT=5432
 DB_MINSIZE=5
 DB_MAXSIZE=20
 
+# Telegram bot API configuration
+API_BASE_URL=http://127.0.0.1:8000/api/v1
+
 # SMTP configuration for email notifications
 SMTP_SERVER=smtp.yourdomain.com
 SMTP_PORT=465
@@ -432,33 +435,77 @@ WEBHOOK_URL=https://yourdomain.com/webhook
 # Telegram Bot Token (get from @BotFather)
 BOT_TOKEN=your_telegram_bot_token
 
+# Telegram bot channel IDs
+CHANNEL_ID_RU=-1000000000000
+CHANNEL_ID_DE=-1000000000001
+CHANNEL_ID_FR=-1000000000002
+CHANNEL_ID_EN=-1000000000003
+
+# Telegram bot channel categories
+CHANNEL_CATEGORIES=world,technology,lifestyle,politics,economy,autos,sports
+
+# TTL for cleaning expired user data (24 hours)
+USER_DATA_TTL_SECONDS=86400
+
 # JWT configuration for API authentication
 JWT_SECRET_KEY=your_jwt_secret_key
 JWT_ALGORITHM=HS256
 JWT_ACCESS_TOKEN_EXPIRE_MINUTES=30
 
-# Redis configuration for caching and task queues
-REDIS_HOST=localhost
-REDIS_PORT=6379
-REDIS_PASSWORD=your_redis_password
-REDIS_DB=0
+# Service configuration
+# RSS services
+RSS_MAX_CONCURRENT_FEEDS=10
+RSS_MAX_ENTRIES_PER_FEED=50
+RSS_VALIDATION_CACHE_TTL=300
+RSS_REQUEST_TIMEOUT=15
+RSS_MAX_TOTAL_ITEMS=1000
+RSS_PARSER_MEDIA_TYPE_PRIORITY=image
 
-# API Key configuration
-API_KEY_SALT=change_in_production
-SITE_API_KEY=your_site_api_key
-BOT_API_KEY=your_bot_api_key
+# Default User-Agent for HTTP requests
+# Using Chrome-like User-Agent to avoid blocking while remaining minimally identifiable
+DEFAULT_USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 FireFeed/1.0"
 
-# Optional AI features (enabled by default)
-TRANSLATION_ENABLED=true          # Enable/disable automatic news translation
-DUPLICATE_DETECTOR_ENABLED=true   # Enable/disable ML-based duplicate detection
+# Absolute path to images directory on server
+IMAGES_ROOT_DIR=/path/to/data/images/
+# Absolute path to videos directory on server
+VIDEOS_ROOT_DIR=/path/to/data/videos/
+# Absolute path to videos directory on website
+HTTP_VIDEOS_ROOT_DIR=https://yourdomain.com/data/videos/
+# Absolute path to images directory on website
+HTTP_IMAGES_ROOT_DIR=https://yourdomain.com/data/images/
 
-# AI Model configuration
-TRANSLATION_MODEL=facebook/m2m100_418M                    # Translation model (M2M100, Helsinki-NLP, etc.)
-EMBEDDING_SENTENCE_TRANSFORMER_MODEL=paraphrase-multilingual-MiniLM-L12-v2  # Sentence transformer for embeddings
-SPACY_EN_MODEL=en_core_web_sm                              # English spaCy model
-SPACY_RU_MODEL=ru_core_news_sm                             # Russian spaCy model
-SPACY_DE_MODEL=de_core_news_sm                             # German spaCy model
-SPACY_FR_MODEL=fr_core_news_sm                             # French spaCy model
+# Translation services
+TRANSLATION_MAX_CONCURRENT=3
+TRANSLATION_MAX_CACHED_MODELS=15
+TRANSLATION_CLEANUP_INTERVAL=1800
+TRANSLATION_DEVICE=cpu
+TRANSLATION_MAX_WORKERS=4
+
+# Translation models
+TRANSLATION_MODEL=facebook/m2m100_418M
+TRANSLATION_ENABLED=true
+
+# Cache services
+CACHE_DEFAULT_TTL=3600
+CACHE_MAX_SIZE=10000
+CACHE_CLEANUP_INTERVAL=300
+
+# Queue services
+QUEUE_MAX_SIZE=30
+QUEUE_DEFAULT_WORKERS=1
+QUEUE_TASK_TIMEOUT=300
+
+# Deduplication services
+DUPLICATE_DETECTOR_ENABLED=true
+
+# Embedding models
+EMBEDDING_SENTENCE_TRANSFORMER_MODEL=paraphrase-multilingual-MiniLM-L12-v2
+
+# spaCy models
+SPACY_EN_MODEL=en_core_web_sm
+SPACY_RU_MODEL=ru_core_news_sm
+SPACY_DE_MODEL=de_core_news_sm
+SPACY_FR_MODEL=fr_core_news_sm
 ```
 
 ### Optional AI Features Configuration

@@ -38,8 +38,8 @@ def process_rss_items_results(results, columns):
             "original_language": row_dict["original_language"],
             "image_url": get_full_image_url(row_dict["image_filename"]),
             "category": row_dict["category_name"],
-            "source": "Unknown",  # Default since no source_name in query
-            "source_alias": "unknown",  # Default since no source_alias in query
+            "source": row_dict.get("source_name", "Unknown"),
+            "source_alias": row_dict.get("source_alias", "unknown"),
             "source_url": row_dict["source_url"],
             "created_at": format_datetime(row_dict.get("created_at")),
             "feed_id": row_dict.get("rss_feed_id"),  # May not be present
@@ -238,8 +238,8 @@ async def get_rss_item_by_id(request: Request, rss_item_id: str, current_user: d
             "original_language": row_dict["original_language"],
             "image_url": get_full_image_url(row_dict["image_filename"]),
             "category": row_dict["category_name"],
-            "source": "Unknown",  # Default
-            "source_alias": "unknown",  # Default
+            "source": row_dict.get("source_name", "Unknown"),
+            "source_alias": row_dict.get("source_alias", "unknown"),
             "source_url": row_dict["source_url"],
             "created_at": format_datetime(row_dict.get("created_at")),
             "translations": build_translations_dict(row_dict),

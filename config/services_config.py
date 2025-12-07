@@ -1,5 +1,6 @@
 # config_services.py - Service configuration via environment variables
 import os
+import json
 from typing import Optional, Dict, Any
 from dataclasses import dataclass
 
@@ -234,11 +235,8 @@ class ServiceConfig:
     webhook_port: int = 5000
     webhook_url_path: str = "webhook"
     webhook_url: str = ""
+    channel_ids: Dict[str, str] = None
     webhook_config: Dict[str, Any] = None
-    channel_id_ru: str = "-1002584789230"
-    channel_id_de: str = "-1002959373215"
-    channel_id_fr: str = "-1002910849909"
-    channel_id_en: str = "-1003035894895"
     channel_categories: str = "world,technology,lifestyle,politics,economy,autos,sports"
     user_data_ttl_seconds: int = 86400
     rss_parser_media_type_priority: str = "image"
@@ -260,9 +258,30 @@ class ServiceConfig:
                 'webhook_url': self.webhook_url,
                 'url_path': self.webhook_url_path
             }
+        if self.channel_ids is None:
+            # Fallback default if not set
+            self.channel_ids = {
+                'ru': '-1002584789230',
+                'de': '-1002959373215',
+                'fr': '-1002910849909',
+                'en': '-1003035894895',
+            }
 
     @classmethod
     def from_env(cls) -> 'ServiceConfig':
+        # Parse CHANNEL_IDS as JSON, with default values if not provided
+        channel_ids_str = os.getenv('CHANNEL_IDS', '{"ru": "-1002584789230", "de": "-1002959373215", "fr": "-1002910849909", "en": "-1003035894895"}')
+        try:
+            channel_ids = json.loads(channel_ids_str)
+        except json.JSONDecodeError:
+            # Fallback to default if JSON is invalid
+            channel_ids = {
+                'ru': '-1002584789230',
+                'de': '-1002959373215',
+                'fr': '-1002910849909',
+                'en': '-1003035894895',
+            }
+
         return cls(
             database=DatabaseConfig.from_env(),
             redis=RedisConfig.from_env(),
@@ -287,10 +306,7 @@ class ServiceConfig:
             webhook_port=int(os.getenv('WEBHOOK_PORT', '5000')),
             webhook_url_path=os.getenv('WEBHOOK_URL_PATH', 'webhook'),
             webhook_url=os.getenv('WEBHOOK_URL', ''),
-            channel_id_ru=os.getenv('CHANNEL_ID_RU', '-1002584789230'),
-            channel_id_de=os.getenv('CHANNEL_ID_DE', '-1002959373215'),
-            channel_id_fr=os.getenv('CHANNEL_ID_FR', '-1002910849909'),
-            channel_id_en=os.getenv('CHANNEL_ID_EN', '-1003035894895'),
+            channel_ids=channel_ids,
             channel_categories=os.getenv('CHANNEL_CATEGORIES', 'world,technology,lifestyle,politics,economy,autos,sports'),
             user_data_ttl_seconds=int(os.getenv('USER_DATA_TTL_SECONDS', '86400')),
             rss_parser_media_type_priority=os.getenv('RSS_PARSER_MEDIA_TYPE_PRIORITY', 'image'),
