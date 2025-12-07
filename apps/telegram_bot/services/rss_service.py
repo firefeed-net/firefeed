@@ -127,7 +127,7 @@ async def monitor_rss_items_task(context):
         channel_categories_cache = {}
 
         config_obj = get_service(dict)
-        channel_categories = config_obj.get('CHANNEL_CATEGORIES', [])
+        channel_categories = config_obj.get('channel_categories', ["world", "technology", "lifestyle", "politics", "economy", "autos", "sports"])
 
         if user_state_service.telegram_user_service is not None:
             for category in unique_categories:

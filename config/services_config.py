@@ -129,13 +129,15 @@ class DeduplicationConfig:
     embedding_models: EmbeddingModelsConfig
     spacy_models: SpacyModelsConfig
     duplicate_detector_enabled: bool = True
+    similarity_threshold: float = 0.9
 
     @classmethod
     def from_env(cls) -> 'DeduplicationConfig':
         return cls(
             embedding_models=EmbeddingModelsConfig.from_env(),
             spacy_models=SpacyModelsConfig.from_env(),
-            duplicate_detector_enabled=os.getenv('DUPLICATE_DETECTOR_ENABLED', 'true').lower() == 'true'
+            duplicate_detector_enabled=os.getenv('DUPLICATE_DETECTOR_ENABLED', 'true').lower() == 'true',
+            similarity_threshold=float(os.getenv('RSS_ITEM_SIMILARITY_THRESHOLD', '0.9'))
         )
 
 
@@ -237,7 +239,7 @@ class ServiceConfig:
     webhook_url: str = ""
     channel_ids: Dict[str, str] = None
     webhook_config: Dict[str, Any] = None
-    channel_categories: str = "world,technology,lifestyle,politics,economy,autos,sports"
+    channel_categories: list = None
     user_data_ttl_seconds: int = 86400
     rss_parser_media_type_priority: str = "image"
     default_user_agent: str = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 FireFeed/1.0"
@@ -266,6 +268,9 @@ class ServiceConfig:
                 'fr': '-1002910849909',
                 'en': '-1003035894895',
             }
+        if self.channel_categories is None:
+            # Fallback default if not set
+            self.channel_categories = ["world", "technology", "lifestyle", "politics", "economy", "autos", "sports"]
 
     @classmethod
     def from_env(cls) -> 'ServiceConfig':
@@ -281,6 +286,14 @@ class ServiceConfig:
                 'fr': '-1002910849909',
                 'en': '-1003035894895',
             }
+
+        # Parse CHANNEL_CATEGORIES as JSON, with default values if not provided
+        channel_categories_str = os.getenv('CHANNEL_CATEGORIES', '["world", "technology", "lifestyle", "politics", "economy", "autos", "sports"]')
+        try:
+            channel_categories = json.loads(channel_categories_str)
+        except json.JSONDecodeError:
+            # Fallback to default if JSON is invalid
+            channel_categories = ["world", "technology", "lifestyle", "politics", "economy", "autos", "sports"]
 
         return cls(
             database=DatabaseConfig.from_env(),
@@ -307,7 +320,7 @@ class ServiceConfig:
             webhook_url_path=os.getenv('WEBHOOK_URL_PATH', 'webhook'),
             webhook_url=os.getenv('WEBHOOK_URL', ''),
             channel_ids=channel_ids,
-            channel_categories=os.getenv('CHANNEL_CATEGORIES', 'world,technology,lifestyle,politics,economy,autos,sports'),
+            channel_categories=channel_categories,
             user_data_ttl_seconds=int(os.getenv('USER_DATA_TTL_SECONDS', '86400')),
             rss_parser_media_type_priority=os.getenv('RSS_PARSER_MEDIA_TYPE_PRIORITY', 'image'),
             default_user_agent=os.getenv('DEFAULT_USER_AGENT', 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 FireFeed/1.0')

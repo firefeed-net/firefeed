@@ -48,7 +48,8 @@ class RSSItemRepository(IRSSItemRepository):
                 s.name as source_name,
                 s.alias as source_alias,
                 pnd.source_url,
-                pnd.created_at
+                pnd.created_at,
+                pnd.rss_feed_id as rss_feed_id
             FROM published_news_data pnd
             JOIN categories c ON pnd.category_id = c.id
             LEFT JOIN rss_feeds rf ON pnd.rss_feed_id = rf.id

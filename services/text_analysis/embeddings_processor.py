@@ -19,23 +19,25 @@ class FireFeedEmbeddingsProcessor:
     _spacy_cache = {}
     _spacy_usage_order = []
 
-    def __new__(cls, model_name: Optional[str] = None, device: str = "cpu", max_spacy_cache: int = 3):
+    def __new__(cls, model_name: Optional[str] = None, device: str = "cpu", max_spacy_cache: int = 3, similarity_threshold: float = 0.9):
         """Singleton pattern for model caching"""
         if model_name is None:
             config = get_service_config()
             model_name = config.deduplication.embedding_models.sentence_transformer_model
-        cache_key = f"{model_name}_{device}_{max_spacy_cache}"
+        cache_key = f"{model_name}_{device}_{max_spacy_cache}_{similarity_threshold}"
         if cls._instance is None:
             cls._instance = super().__new__(cls)
             cls._instance._initialized = False
         return cls._instance
 
     def __init__(
-        self, model_name: Optional[str] = None, device: str = "cpu", max_spacy_cache: int = 3
+        self, model_name: Optional[str] = None, device: str = "cpu", max_spacy_cache: int = 3, similarity_threshold: float = 0.9
     ):
         if model_name is None:
             config = get_service_config()
             model_name = config.deduplication.embedding_models.sentence_transformer_model
+            if similarity_threshold == 0.9:  # default value
+                similarity_threshold = config.deduplication.similarity_threshold
         """
         Initialize embeddings processor with model caching
 
@@ -43,6 +45,7 @@ class FireFeedEmbeddingsProcessor:
             model_name: Name of sentence-transformers model
             device: Device for model (cpu/cuda)
             max_spacy_cache: Maximum number of cached spacy models
+            similarity_threshold: Base similarity threshold
         """
         if self._initialized:
             return
@@ -50,6 +53,7 @@ class FireFeedEmbeddingsProcessor:
         self.model_name = model_name
         self.device = device
         self.max_spacy_cache = max_spacy_cache
+        self.similarity_threshold = similarity_threshold
 
         # Load or get SentenceTransformer model from cache
         model_key = f"{model_name}_{device}"
@@ -206,13 +210,13 @@ class FireFeedEmbeddingsProcessor:
         Returns:
             Similarity threshold
         """
-        base_threshold = 0.9
+        base_threshold = self.similarity_threshold
 
         # Adjustment by type
         if text_type == "title":
-            base_threshold = 0.85  # Softer for titles
+            base_threshold = max(0.7, base_threshold - 0.05)  # Softer for titles
         elif text_type == "content":
-            base_threshold = 0.95  # Stricter for articles
+            base_threshold = min(0.98, base_threshold + 0.05)  # Stricter for articles
 
         # Adjustment by length
         if text_length < 50:  # Short texts

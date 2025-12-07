@@ -16,7 +16,7 @@ class FireFeedDuplicateDetector(IDuplicateDetector):
         rss_item_repository: IRSSItemRepository,
         model_name: Optional[str] = None,
         device: str = "cpu",
-        similarity_threshold: float = 0.7,
+        similarity_threshold: float = None,
     ):
         """
         Initialization of asynchronous news duplicate detector
@@ -25,14 +25,16 @@ class FireFeedDuplicateDetector(IDuplicateDetector):
             rss_item_repository: Repository for RSS item operations
             model_name: Name of the sentence-transformers model
             device: Device for the model
-            similarity_threshold: Base similarity threshold
+            similarity_threshold: Base similarity threshold (from config if None)
         """
         self.rss_item_repository = rss_item_repository
         if model_name is None:
             # Get config through DI
             config = get_service(dict)
             model_name = config.deduplication.embedding_models.sentence_transformer_model
-        self.processor = FireFeedEmbeddingsProcessor(model_name, device)
+            if similarity_threshold is None:
+                similarity_threshold = config.deduplication.similarity_threshold
+        self.processor = FireFeedEmbeddingsProcessor(model_name, device, similarity_threshold=similarity_threshold)
         self.similarity_threshold = similarity_threshold
 
     async def _combine_text_fields(self, title: str, content: str, lang_code: str = "en") -> str:

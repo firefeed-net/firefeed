@@ -12,6 +12,9 @@ logger = logging.getLogger(__name__)
 async def mark_bot_published(news_id: str = None, translation_id: int = None, recipient_type: str = 'channel', recipient_id: int = None, message_id: int = None, language: str = None):
     """Marks publication in unified Telegram bot table (channels and users)."""
     try:
+        # Convert recipient_id to int if it's a string (for channels)
+        if isinstance(recipient_id, str):
+            recipient_id = int(recipient_id)
         telegram_repo = get_service(ITelegramRepository)
         result = await telegram_repo.mark_bot_published(news_id, translation_id, recipient_type, recipient_id, message_id, language)
         logger.info(f"Marked as published: news_id={news_id}, translation_id={translation_id}, type={recipient_type}, recipient={recipient_id}")
@@ -24,6 +27,9 @@ async def mark_bot_published(news_id: str = None, translation_id: int = None, re
 async def check_bot_published(news_id: str = None, translation_id: int = None, recipient_type: str = 'channel', recipient_id: int = None) -> bool:
     """Checks if item was already published to recipient."""
     try:
+        # Convert recipient_id to int if it's a string (for channels)
+        if isinstance(recipient_id, str):
+            recipient_id = int(recipient_id)
         telegram_repo = get_service(ITelegramRepository)
         return await telegram_repo.check_bot_published(news_id, translation_id, recipient_type, recipient_id)
     except Exception as e:
