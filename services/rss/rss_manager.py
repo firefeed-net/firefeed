@@ -4,8 +4,8 @@ import logging
 from typing import List, Dict, Any, Optional
 from datetime import datetime, timezone, timedelta
 
-from config import DEFAULT_USER_AGENT
-from config_services import get_service_config
+from di_container import get_service
+from config.services_config import get_service_config
 from interfaces import (
     IRSSFetcher, IRSSValidator, IRSSStorage, IMediaExtractor,
     ITranslationService, IDuplicateDetector, ITranslatorQueue, IMaintenanceService
@@ -38,16 +38,6 @@ class RSSManager:
         self.maintenance_service = maintenance_service
         self.translator_task_queue = translator_task_queue or translator_queue
 
-    # Legacy methods for backward compatibility - delegate to services
-    async def get_pool(self):
-        """Get database pool - now handled by DI"""
-        # This is now handled by the DI container
-        # Return None to indicate this should be injected
-        return None
-
-    async def close_pool(self):
-        """Close pool - now handled by DI"""
-        pass
 
     async def get_all_active_feeds(self) -> List[Dict[str, Any]]:
         """Get all active feeds"""
@@ -132,8 +122,9 @@ class RSSManager:
             return []
 
         # Prepare headers (this should be configurable)
+        config_obj = get_service(dict)
         headers = {
-            "User-Agent": DEFAULT_USER_AGENT
+            "User-Agent": config_obj.get('DEFAULT_USER_AGENT')
         }
 
         # Fetch from all feeds concurrently
@@ -313,7 +304,8 @@ class RSSManager:
         if not feeds_info:
             return {"status": "no_feeds", "processed_feeds": 0, "total_items": 0}
 
-        headers = {"User-Agent": DEFAULT_USER_AGENT}
+        config_obj = get_service(dict)
+        headers = {"User-Agent": config_obj.get('DEFAULT_USER_AGENT')}
 
         # Process feeds concurrently with some limit
         semaphore = asyncio.Semaphore(5)  # Limit concurrent feed processing

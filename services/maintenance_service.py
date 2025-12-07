@@ -1,7 +1,6 @@
 # services/maintenance_service.py
 import logging
 from interfaces import IMaintenanceService
-from config import get_shared_db_pool
 
 logger = logging.getLogger(__name__)
 
@@ -9,11 +8,13 @@ logger = logging.getLogger(__name__)
 class MaintenanceService(IMaintenanceService):
     """Service for maintenance operations like cleanup"""
 
+    def __init__(self, db_pool):
+        self.db_pool = db_pool
+
     async def cleanup_duplicates(self) -> None:
         """Clean up duplicate RSS items from database"""
         try:
-            pool = await get_shared_db_pool()
-            async with pool.acquire() as conn:
+            async with self.db_pool.acquire() as conn:
                 async with conn.cursor() as cur:
                     # Find and delete duplicate groups based on embedding similarity
                     await cur.execute(

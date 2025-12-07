@@ -2,7 +2,7 @@ import os
 import hashlib
 import logging
 from urllib.parse import urlparse
-from config import VIDEOS_ROOT_DIR, HTTP_VIDEOS_ROOT_DIR, VIDEO_FILE_EXTENSIONS
+from di_container import get_service
 from datetime import datetime
 import aiohttp
 import aiofiles
@@ -15,7 +15,7 @@ class VideoProcessor:
     """Class for processing and downloading videos"""
 
     @staticmethod
-    async def download_and_save_video(url, rss_item_id, save_directory=VIDEOS_ROOT_DIR):
+    async def download_and_save_video(url, rss_item_id, save_directory=None):
         """
         Downloads the video and saves it locally with a filename based on rss_item_id.
         Saves to path: save_directory/YYYY/MM/DD/{rss_item_id}{ext}
@@ -28,6 +28,11 @@ class VideoProcessor:
         if not url or not rss_item_id:
             logger.debug(f"[DEBUG] Video saving skipped: no URL ({url}) or rss_item_id ({rss_item_id})")
             return None
+
+        # Get default save directory from DI if not provided
+        if save_directory is None:
+            config_obj = get_service(dict)
+            save_directory = config_obj.get('VIDEOS_ROOT_DIR')
 
         try:
             # Use current time to form path
@@ -56,8 +61,12 @@ class VideoProcessor:
                     content_lower = content_type.lower()
                     extension = ".mp4"
 
+                    # Get video file extensions from DI
+                    config_obj = get_service(dict)
+                    video_extensions = config_obj.get('VIDEO_FILE_EXTENSIONS', [".mp4", ".avi", ".mkv", ".mov", ".wmv", ".flv", ".webm", ".m4v"])
+
                     # Check content_type
-                    for ext in VIDEO_FILE_EXTENSIONS:
+                    for ext in video_extensions:
                         if ext[1:] in content_lower:
                             extension = ext
                             break
@@ -65,7 +74,7 @@ class VideoProcessor:
                         # Check URL
                         parsed_url = urlparse(url)
                         path = parsed_url.path
-                        if path.lower().endswith(tuple(VIDEO_FILE_EXTENSIONS)):
+                        if path.lower().endswith(tuple(video_extensions)):
                             extension = os.path.splitext(path)[1].lower()
 
                     safe_rss_item_id = "".join(c for c in str(rss_item_id) if c.isalnum() or c in ("-", "_")).rstrip()

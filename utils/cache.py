@@ -1,7 +1,7 @@
 import logging
 import spacy
 from typing import Optional, Dict, Any
-from config_services import get_service_config
+from config.services_config import get_service_config
 
 logger = logging.getLogger(__name__)
 

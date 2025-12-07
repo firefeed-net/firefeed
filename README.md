@@ -91,9 +91,9 @@ FireFeed is a high-performance system for automatic collection, processing, and 
 
 The project consists of several key components:
 
-1. **Telegram Bot** (`bot.py`) - main user interaction interface
-2. **RSS Parser Service** (`rss_parser.py`) - background service for RSS feed parsing
-3. **REST API** (`api/app.py`) - web API for external integrations
+1. **Telegram Bot** (`apps/telegram_bot.py`) - main user interaction interface
+2. **RSS Parser Service** (`apps/rss_parser.py`) - background service for RSS feed parsing
+3. **REST API** (`apps/api.py`) - web API for external integrations
 4. **Translation Services** (`services/translation/`) - translation system with caching
 5. **Duplicate Detector** (`services/text_analysis/duplicate_detector.py`) - ML-based duplicate detection
 6. **User Management** (`services/user/user_manager.py`) - user and subscription management
@@ -115,42 +115,36 @@ To prevent spam and ensure fair usage, the bot implements sophisticated rate lim
 
 ##### Feed-Level Limits
 Each RSS feed has configurable limits:
-- `cooldown_minutes`: Minimum time between processing feed items (default: 60 minutes)
+- `cooldown_minutes`: Minimum time between publications from this feed (default: 60 minutes)
 - `max_news_per_hour`: Maximum number of news items per hour from this feed (default: 10)
 
 ##### Telegram Publication Checks
 Before publishing any news item to Telegram channels, the system performs two types of checks:
 
 1. **Count-based Limiting**:
-   - Counts recent publications from the same feed within the `cooldown_minutes` period
+   - Counts publications from the same feed within the last 60 minutes
    - If count >= `max_news_per_hour`, skips publication
    - Uses data from `rss_items_telegram_bot_published` table
 
 2. **Time-based Limiting**:
    - Checks time since last publication from the same feed
-   - Minimum interval = `60 / max_news_per_hour` minutes (e.g., 6 minutes for 10 news/hour)
-   - Effective limit = minimum of time-based interval and `cooldown_minutes`
-   - If elapsed time < effective limit, skips publication
+   - If elapsed time < `cooldown_minutes`, skips publication
 
 ##### How It Works
 ```python
 # Example: feed with cooldown_minutes=120, max_news_per_hour=1
 # - Maximum 1 publication per 120 minutes
-# - Minimum 60 minutes between publications (60/1 = 60)
-# - Effective minimum interval: min(60, 120) = 60 minutes
+# - Minimum 120 minutes between publications
 
 # Before each publication attempt:
-recent_count = get_recent_telegram_publications_count(feed_id, 120)
+recent_count = get_recent_telegram_publications_count(feed_id, 60)
 if recent_count >= 1:
     skip_publication()
 
 last_time = get_last_telegram_publication_time(feed_id)
 if last_time:
     elapsed = now - last_time
-    min_interval = timedelta(minutes=60/1)  # 60 minutes
-    cooldown_limit = timedelta(minutes=120)
-    effective_limit = min(min_interval, cooldown_limit)
-    if elapsed < effective_limit:
+    if elapsed < timedelta(minutes=120):
         skip_publication()
 ```
 
@@ -182,6 +176,8 @@ Service for fetching and parsing RSS feeds.
 ```env
 RSS_MAX_CONCURRENT_FEEDS=10
 RSS_MAX_ENTRIES_PER_FEED=50
+RSS_PARSER_MIN_ITEM_TITLE_WORDS_LENGTH=0
+RSS_PARSER_MIN_ITEM_CONTENT_WORDS_LENGTH=0
 ```
 
 #### RSSValidator (`services/rss/rss_validator.py`)
@@ -383,14 +379,18 @@ python bot.py
 
 ```bash
 # Make scripts executable
-chmod +x ./run_bot.sh
-chmod +x ./run_api.sh
+chmod +x ./scripts/run_telegram_bot.sh
+chmod +x ./scripts/run_rss_parser.sh
+chmod +x ./scripts/run_api.sh
 
-# Run bot
-./run_bot.sh
+# Run Telegram bot
+./scripts/run_telegram_bot.sh
+
+# Run RSS parser
+./scripts/run_rss_parser.sh
 
 # Run API
-./run_api.sh
+./scripts/run_api.sh
 ```
 
 ## Configuration
@@ -412,6 +412,9 @@ DB_PORT=5432
 DB_MINSIZE=5
 DB_MAXSIZE=20
 
+# Telegram bot API configuration
+API_BASE_URL=http://127.0.0.1:8000/api/v1
+
 # SMTP configuration for email notifications
 SMTP_SERVER=smtp.yourdomain.com
 SMTP_PORT=465
@@ -428,33 +431,81 @@ WEBHOOK_URL=https://yourdomain.com/webhook
 # Telegram Bot Token (get from @BotFather)
 BOT_TOKEN=your_telegram_bot_token
 
+# Telegram bot channel IDs
+CHANNEL_ID_RU=-1000000000000
+CHANNEL_ID_DE=-1000000000001
+CHANNEL_ID_FR=-1000000000002
+CHANNEL_ID_EN=-1000000000003
+
+# Telegram bot channel categories
+CHANNEL_CATEGORIES=world,technology,lifestyle,politics,economy,autos,sports
+
+# TTL for cleaning expired user data (24 hours)
+USER_DATA_TTL_SECONDS=86400
+
 # JWT configuration for API authentication
 JWT_SECRET_KEY=your_jwt_secret_key
 JWT_ALGORITHM=HS256
 JWT_ACCESS_TOKEN_EXPIRE_MINUTES=30
 
-# Redis configuration for caching and task queues
-REDIS_HOST=localhost
-REDIS_PORT=6379
-REDIS_PASSWORD=your_redis_password
-REDIS_DB=0
+# Service configuration
+# RSS services
+RSS_MAX_CONCURRENT_FEEDS=10
+RSS_MAX_ENTRIES_PER_FEED=50
+RSS_VALIDATION_CACHE_TTL=300
+RSS_REQUEST_TIMEOUT=15
+RSS_MAX_TOTAL_ITEMS=1000
+RSS_PARSER_MEDIA_TYPE_PRIORITY=image
 
-# API Key configuration
-API_KEY_SALT=change_in_production
-SITE_API_KEY=your_site_api_key
-BOT_API_KEY=your_bot_api_key
+# RSS parser content filtering
+RSS_PARSER_MIN_ITEM_TITLE_WORDS_LENGTH=0
+RSS_PARSER_MIN_ITEM_CONTENT_WORDS_LENGTH=0
 
-# Optional AI features (enabled by default)
-TRANSLATION_ENABLED=true          # Enable/disable automatic news translation
-DUPLICATE_DETECTOR_ENABLED=true   # Enable/disable ML-based duplicate detection
+# Default User-Agent for HTTP requests
+# Using Chrome-like User-Agent to avoid blocking while remaining minimally identifiable
+DEFAULT_USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 FireFeed/1.0"
 
-# AI Model configuration
-TRANSLATION_MODEL=facebook/m2m100_418M                    # Translation model (M2M100, Helsinki-NLP, etc.)
-EMBEDDING_SENTENCE_TRANSFORMER_MODEL=paraphrase-multilingual-MiniLM-L12-v2  # Sentence transformer for embeddings
-SPACY_EN_MODEL=en_core_web_sm                              # English spaCy model
-SPACY_RU_MODEL=ru_core_news_sm                             # Russian spaCy model
-SPACY_DE_MODEL=de_core_news_sm                             # German spaCy model
-SPACY_FR_MODEL=fr_core_news_sm                             # French spaCy model
+# Absolute path to images directory on server
+IMAGES_ROOT_DIR=/path/to/data/images/
+# Absolute path to videos directory on server
+VIDEOS_ROOT_DIR=/path/to/data/videos/
+# Absolute path to videos directory on website
+HTTP_VIDEOS_ROOT_DIR=https://yourdomain.com/data/videos/
+# Absolute path to images directory on website
+HTTP_IMAGES_ROOT_DIR=https://yourdomain.com/data/images/
+
+# Translation services
+TRANSLATION_MAX_CONCURRENT=3
+TRANSLATION_MAX_CACHED_MODELS=15
+TRANSLATION_CLEANUP_INTERVAL=1800
+TRANSLATION_DEVICE=cpu
+TRANSLATION_MAX_WORKERS=4
+
+# Translation models
+TRANSLATION_MODEL=facebook/m2m100_418M
+TRANSLATION_ENABLED=true
+
+# Cache services
+CACHE_DEFAULT_TTL=3600
+CACHE_MAX_SIZE=10000
+CACHE_CLEANUP_INTERVAL=300
+
+# Queue services
+QUEUE_MAX_SIZE=30
+QUEUE_DEFAULT_WORKERS=1
+QUEUE_TASK_TIMEOUT=300
+
+# Deduplication services
+DUPLICATE_DETECTOR_ENABLED=true
+
+# Embedding models
+EMBEDDING_SENTENCE_TRANSFORMER_MODEL=paraphrase-multilingual-MiniLM-L12-v2
+
+# spaCy models
+SPACY_EN_MODEL=en_core_web_sm
+SPACY_RU_MODEL=ru_core_news_sm
+SPACY_DE_MODEL=de_core_news_sm
+SPACY_FR_MODEL=fr_core_news_sm
 ```
 
 ### Optional AI Features Configuration
@@ -472,6 +523,18 @@ FireFeed provides optional AI-powered features that can be enabled or disabled b
 - **Description**: Controls ML-based duplicate detection using semantic analysis
 - **Impact**: When disabled, all news items will be processed without duplicate checking
 - **Use case**: Disable for faster processing or when duplicate detection is handled externally
+
+#### RSS_PARSER_MIN_ITEM_TITLE_WORDS_LENGTH
+- **Default**: `0`
+- **Description**: Minimum number of words required in RSS item title
+- **Impact**: RSS items with titles containing fewer words than this threshold will be skipped
+- **Use case**: Filter out low-quality or incomplete news items with very short titles
+
+#### RSS_PARSER_MIN_ITEM_CONTENT_WORDS_LENGTH
+- **Default**: `0`
+- **Description**: Minimum number of words required in RSS item content/description
+- **Impact**: RSS items with content containing fewer words than this threshold will be skipped
+- **Use case**: Filter out low-quality or incomplete news items with very short content
 
 ### AI Model Configuration
 
@@ -510,9 +573,9 @@ After=network.target
 Type=simple
 User=firefeed
 Group=firefeed
-WorkingDirectory=/var/www/firefeed/data/integrations/telegram
+WorkingDirectory=/path/to/firefeed/
 
-ExecStart=/var/www/firefeed/data/integrations/telegram/run_bot.sh
+ExecStart=/path/to/firefeed/scripts/run_telegram_bot.sh
 
 Restart=on-failure
 RestartSec=10
@@ -540,8 +603,8 @@ Type=simple
 User=firefeed
 Group=firefeed
 
-WorkingDirectory=/var/www/firefeed/data/integrations/telegram
-ExecStart=/var/www/firefeed/data/integrations/telegram/run_api.sh
+WorkingDirectory=/path/to/firefeed/
+ExecStart=/path/to/firefeed/scripts/run_api.sh
 
 Restart=always
 RestartSec=5
@@ -649,38 +712,101 @@ pytest tests/ --tb=short
 
 ```
 firefeed/
-├── api/                        # FastAPI REST API
+├── apps/                       # Application entry points
 │   ├── __init__.py
-│   ├── app.py                  # FastAPI application
-│   ├── database.py             # Database connection
-│   ├── deps.py                 # Dependencies
-│   ├── main.py                 # API entry point
-│   ├── middleware.py           # Custom middleware
-│   ├── models.py               # Pydantic models
-│   ├── websocket.py            # WebSocket support
-│   ├── email_service/          # Email service
+│   ├── rss_parser/             # RSS parser application
+│   │   └── __main__.py         # RSS parser entry point
+│   ├── telegram_bot/           # Telegram bot application
 │   │   ├── __init__.py
-│   │   ├── sender.py           # Email sending
-│   │   └── templates/          # Email templates
-│   │       ├── password_reset_email_de.html
-│   │       ├── password_reset_email_en.html
-│   │       ├── password_reset_email_ru.html
-│   │       ├── registration_success_email_de.html
-│   │       ├── registration_success_email_en.html
-│   │       ├── registration_success_email_ru.html
-│   │       ├── verification_email_de.html
-│   │       ├── verification_email_en.html
-│   │       └── verification_email_ru.html
-│   └── routers/                # API endpoints
+│   │   ├── __main__.py         # Telegram bot entry point
+│   │   ├── bot.py              # Main bot logic
+│   │   ├── config.py           # Bot configuration
+│   │   ├── translations.py     # Bot translations
+│   │   ├── handlers/           # Telegram bot handlers
+│   │   │   ├── __init__.py
+│   │   │   ├── callback_handlers.py # Callback query handlers
+│   │   │   ├── command_handlers.py # Command handlers
+│   │   │   ├── error_handlers.py   # Error handlers
+│   │   │   └── message_handlers.py # Message handlers
+│   │   ├── models/             # Telegram bot models
+│   │   │   ├── __init__.py
+│   │   │   ├── rss_item.py     # RSS item models
+│   │   │   ├── telegram_models.py # Telegram models
+│   │   │   └── user_state.py   # User state models
+│   │   ├── services/           # Telegram bot services
+│   │   │   ├── __init__.py
+│   │   │   ├── api_service.py      # API communication service
+│   │   │   ├── database_service.py # Database service
+│   │   │   ├── rss_service.py      # RSS service
+│   │   │   ├── telegram_service.py # Telegram messaging service
+│   │   │   └── user_state_service.py # User state service
+│   │   └── utils/              # Telegram bot utilities
+│   │       ├── __init__.py
+│   │       ├── cleanup_utils.py    # Cleanup utilities
+│   │       ├── formatting_utils.py # Message formatting
+│   │       ├── keyboard_utils.py   # Keyboard utilities
+│   │       └── validation_utils.py # Validation utilities
+│   └── api/                    # FastAPI REST API application
 │       ├── __init__.py
-│       ├── api_keys.py         # API key management
-│       ├── auth.py             # Authentication
-│       ├── categories.py       # News categories
-│       ├── rss_feeds.py        # RSS feed management
-│       ├── rss_items.py        # RSS items
-│       ├── rss.py              # RSS operations
-│       ├── telegram.py         # Telegram integration
-│       └── users.py            # User management
+│       ├── __main__.py         # FastAPI entry point
+│       ├── app.py              # FastAPI application
+│       ├── database.py         # Database connection
+│       ├── deps.py             # Dependencies
+│       ├── middleware.py       # Custom middleware
+│       ├── models.py           # Pydantic models
+│       ├── websocket.py        # WebSocket support
+│       ├── email_service/      # Email service
+│       │   ├── __init__.py
+│       │   ├── sender.py       # Email sending
+│       │   └── templates/      # Email templates
+│       │       ├── password_reset_email_de.html
+│       │       ├── password_reset_email_en.html
+│       │       ├── password_reset_email_ru.html
+│       │       ├── registration_success_email_de.html
+│       │       ├── registration_success_email_en.html
+│       │       ├── registration_success_email_ru.html
+│       │       ├── verification_email_de.html
+│       │       ├── verification_email_en.html
+│       │       └── verification_email_ru.html
+│       └── routers/            # API endpoints
+│           ├── __init__.py
+│           ├── api_keys.py     # API key management
+│           ├── auth.py         # Authentication
+│           ├── categories.py   # News categories
+│           ├── rss_feeds.py    # RSS feed management
+│           ├── rss_items.py    # RSS items
+│           ├── rss.py          # RSS operations
+│           ├── telegram.py     # Telegram integration
+│           └── users.py        # User management
+├── config/                     # Configuration modules
+│   ├── logging_config.py       # Logging configuration
+│   └── services_config.py      # Service configuration
+├── database/                   # Database related files
+│   └── migrations.sql          # Database migrations
+├── exceptions/                 # Custom exceptions
+│   ├── __init__.py
+│   ├── base_exceptions.py      # Base exception classes
+│   ├── cache_exceptions.py     # Cache related exceptions
+│   ├── database_exceptions.py  # Database exceptions
+│   ├── rss_exceptions.py       # RSS processing exceptions
+│   ├── service_exceptions.py   # Service exceptions
+│   └── translation_exceptions.py # Translation exceptions
+├── interfaces/                 # Service interfaces
+│   ├── __init__.py
+│   ├── core_interfaces.py      # Core interfaces
+│   ├── repository_interfaces.py # Repository interfaces
+│   ├── rss_interfaces.py       # RSS interfaces
+│   ├── translation_interfaces.py # Translation interfaces
+│   └── user_interfaces.py      # User interfaces
+├── repositories/               # Data access layer
+│   ├── __init__.py
+│   ├── api_key_repository.py   # API key repository
+│   ├── category_repository.py  # Category repository
+│   ├── rss_feed_repository.py  # RSS feed repository
+│   ├── rss_item_repository.py  # RSS item repository
+│   ├── source_repository.py    # Source repository
+│   ├── telegram_repository.py  # Telegram repository
+│   └── user_repository.py      # User repository
 ├── services/                   # Service-oriented architecture
 │   ├── database_pool_adapter.py # Database connection pool
 │   ├── maintenance_service.py  # System maintenance
@@ -689,6 +815,7 @@ firefeed/
 │   │   ├── media_extractor.py  # Media content extraction
 │   │   ├── rss_fetcher.py      # RSS feed fetching
 │   │   ├── rss_manager.py      # RSS processing orchestration
+│   │   ├── rss_parser.py       # RSS parsing logic
 │   │   ├── rss_storage.py      # RSS data storage
 │   │   └── rss_validator.py    # RSS feed validation
 │   ├── text_analysis/          # Text analysis and ML services
@@ -708,50 +835,17 @@ firefeed/
 │       ├── telegram_user_service.py # Telegram bot user management
 │       ├── web_user_service.py # Web user management and Telegram linking
 │       └── user_manager.py     # Backward compatibility wrapper
-├── telegram_bot/               # Telegram bot implementation
-│   ├── __init__.py
-│   ├── bot.py                  # Telegram bot main file
-│   ├── config.py               # Bot configuration
-│   ├── translations.py         # Bot translations
-│   ├── handlers/               # Telegram bot handlers
-│   │   ├── __init__.py
-│   │   ├── callback_handlers.py # Callback query handlers
-│   │   ├── command_handlers.py # Command handlers
-│   │   ├── error_handlers.py   # Error handlers
-│   │   └── message_handlers.py # Message handlers
-│   ├── models/                 # Telegram bot models
-│   │   ├── __init__.py
-│   │   ├── rss_item.py         # RSS item models
-│   │   ├── telegram_models.py  # Telegram models
-│   │   └── user_state.py       # User state models
-│   ├── services/               # Telegram bot services
-│   │   ├── __init__.py
-│   │   ├── api_service.py      # API communication service
-│   │   ├── database_service.py # Database service
-│   │   ├── rss_service.py      # RSS service
-│   │   ├── telegram_service.py # Telegram messaging service
-│   │   └── user_state_service.py # User state service
-│   └── utils/                  # Telegram bot utilities
-│       ├── __init__.py
-│       ├── cleanup_utils.py    # Cleanup utilities
-│       ├── formatting_utils.py # Message formatting
-│       ├── keyboard_utils.py   # Keyboard utilities
-│       └── validation_utils.py # Validation utilities
 ├── tests/                      # Unit and integration tests
 │   ├── __init__.py
 │   ├── test_api_keys.py        # API key tests
 │   ├── test_bot.py             # Telegram bot tests
 │   ├── test_database.py        # Database tests
-│   ├── test_duplicate_detector_config.py # Duplicate detector config tests
-│   ├── test_duplicate_detector_logic.py # Duplicate detector logic tests
+│   ├── test_di_integration.py  # Dependency injection tests
 │   ├── test_email.py           # Email service tests
 │   ├── test_models.py          # Model tests
 │   ├── test_registration_success_email.py # Email template tests
 │   ├── test_rss_manager.py     # RSS manager tests
-│   ├── test_rss_manager_translation.py # RSS manager translation tests
 │   ├── test_services.py        # Service tests
-│   ├── test_translation_config.py # Translation config tests
-│   ├── test_translation_logic.py # Translation logic tests
 │   ├── test_user_services.py   # User services tests
 │   ├── test_user_state_service.py # User state service tests
 │   └── test_utils.py           # Utility tests
@@ -766,17 +860,12 @@ firefeed/
 │   ├── retry.py                # Retry mechanisms
 │   ├── text.py                 # Text processing
 │   └── video.py                # Video processing
-├── config.py                   # Configuration constants
-├── config_services.py          # Service configuration
+├── scripts/                    # Startup scripts
+│   ├── run_api.sh              # API startup script
+│   ├── run_rss_parser.sh       # RSS parser startup script
+│   └── run_telegram_bot.sh     # Telegram bot startup script
 ├── di_container.py             # Dependency injection container
-├── exceptions.py               # Custom exceptions
-├── interfaces.py               # Service interfaces
-├── logging_config.py           # Logging configuration
 ├── requirements.txt            # Python dependencies
-├── rss_parser.py               # RSS parser (legacy)
-├── run_api.sh                  # API startup script
-├── run_bot.sh                  # Bot startup script
-├── run_parser.sh               # Parser startup script
 ├── .dockerignore               # Docker ignore file
 ├── .env.example                # Environment variables example
 ├── .gitignore                  # Git ignore file

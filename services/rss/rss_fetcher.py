@@ -12,8 +12,8 @@ from utils.image import ImageProcessor
 from utils.video import VideoProcessor
 from exceptions import RSSFetchError, RSSParseError, RSSValidationError
 from api.deps import validate_rss_url
-from config import RSS_PARSER_MEDIA_TYPE_PRIORITY, HTTP_IMAGES_ROOT_DIR, HTTP_VIDEOS_ROOT_DIR
-from config_services import get_service_config
+from di_container import get_service
+from config.services_config import get_service_config
 
 logger = logging.getLogger(__name__)
 
@@ -71,6 +71,8 @@ class RSSFetcher(IRSSFetcher):
         logger.info(f"[RSS] Starting fetch: {feed_name} ({url})")
 
         try:
+            # Filter headers to remove None keys
+            headers = {k: v for k, v in headers.items() if k is not None}
             # Fetch RSS feed content with UTF-8 encoding to handle encoding issues
             async with aiohttp.ClientSession() as session:
                 async with session.get(url, headers=headers) as response:
@@ -130,6 +132,19 @@ class RSSFetcher(IRSSFetcher):
                 logger.debug("[RSS] Entry missing title or link, skipping")
                 return None
 
+            # Check word count filters
+            config_obj = get_service(dict)
+            min_title_words = config_obj.rss.min_item_title_words_length
+            min_content_words = config_obj.rss.min_item_content_words_length
+
+            if min_title_words > 0 and len(title.split()) < min_title_words:
+                logger.debug(f"[FILTER] Title too short ({len(title.split())} words < {min_title_words}): {title[:50]}...")
+                return None
+
+            if min_content_words > 0 and len(content.split()) < min_content_words:
+                logger.debug(f"[FILTER] Content too short ({len(content.split())} words < {min_content_words}): {title[:50]}...")
+                return None
+
             # Check for duplicates
             if await self.check_for_duplicates(title, content, link, feed_info["lang"]):
                 logger.debug(f"[RSS] Duplicate found, skipping: {title[:50]}...")
@@ -143,11 +158,12 @@ class RSSFetcher(IRSSFetcher):
             video_url = await self.media_extractor.extract_video(entry)
 
             # Process media based on priority
+            config_obj = get_service(dict)
             image_filename = None
             video_filename = None
             processed_media_url = None
 
-            priority = RSS_PARSER_MEDIA_TYPE_PRIORITY.lower()
+            priority = config_obj.get('RSS_PARSER_MEDIA_TYPE_PRIORITY', 'image').lower()
 
             if priority == "image":
                 # Try image first, then video
@@ -155,14 +171,14 @@ class RSSFetcher(IRSSFetcher):
                     try:
                         image_processor = ImageProcessor()
                         image_filename = await image_processor.process_image_from_url(image_url, news_id)
-                        processed_media_url = f"{HTTP_IMAGES_ROOT_DIR}/{image_filename}" if image_filename else None
+                        processed_media_url = f"{config_obj.get('HTTP_IMAGES_ROOT_DIR')}/{image_filename}" if image_filename else None
                     except Exception as e:
                         logger.warning(f"[RSS] Error processing image {image_url}: {e}")
                 elif video_url:
                     try:
                         video_processor = VideoProcessor()
                         video_filename = await video_processor.process_video_from_url(video_url, news_id)
-                        processed_media_url = f"{HTTP_VIDEOS_ROOT_DIR}/{video_filename}" if video_filename else None
+                        processed_media_url = f"{config_obj.get('HTTP_VIDEOS_ROOT_DIR')}/{video_filename}" if video_filename else None
                     except Exception as e:
                         logger.warning(f"[RSS] Error processing video {video_url}: {e}")
             elif priority == "video":
@@ -171,14 +187,14 @@ class RSSFetcher(IRSSFetcher):
                     try:
                         video_processor = VideoProcessor()
                         video_filename = await video_processor.process_video_from_url(video_url, news_id)
-                        processed_media_url = f"{HTTP_VIDEOS_ROOT_DIR}/{video_filename}" if video_filename else None
+                        processed_media_url = f"{config_obj.get('HTTP_VIDEOS_ROOT_DIR')}/{video_filename}" if video_filename else None
                     except Exception as e:
                         logger.warning(f"[RSS] Error processing video {video_url}: {e}")
                 elif image_url:
                     try:
                         image_processor = ImageProcessor()
                         image_filename = await image_processor.process_image_from_url(image_url, news_id)
-                        processed_media_url = f"{HTTP_IMAGES_ROOT_DIR}/{image_filename}" if image_filename else None
+                        processed_media_url = f"{config_obj.get('HTTP_IMAGES_ROOT_DIR')}/{image_filename}" if image_filename else None
                     except Exception as e:
                         logger.warning(f"[RSS] Error processing image {image_url}: {e}")
 
@@ -193,8 +209,8 @@ class RSSFetcher(IRSSFetcher):
                 "source": feed_info["source"],
                 "image_filename": image_filename,
                 "video_filename": video_filename,
-                "image_url": f"{HTTP_IMAGES_ROOT_DIR}/{image_filename}" if image_filename else None,
-                "video_url": f"{HTTP_VIDEOS_ROOT_DIR}/{video_filename}" if video_filename else None,
+                "image_url": f"{config_obj.get('HTTP_IMAGES_ROOT_DIR')}/{image_filename}" if image_filename else None,
+                "video_url": f"{config_obj.get('HTTP_VIDEOS_ROOT_DIR')}/{video_filename}" if video_filename else None,
                 "published": self._extract_entry_published(entry),
                 "feed_id": feed_info["id"]
             }

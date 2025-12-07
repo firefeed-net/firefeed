@@ -3,14 +3,14 @@ import signal
 import sys
 import time
 import logging
-from logging_config import setup_logging
+from config.logging_config import setup_logging
 from services.rss import RSSManager
 from di_container import setup_di_container, get_service
 from interfaces import (
     IDuplicateDetector, ITranslationService, ITranslatorQueue,
     IRSSFetcher, IRSSValidator, IRSSStorage, IMediaExtractor, IMaintenanceService
 )
-from config import close_shared_db_pool
+from di_container import get_service
 
 setup_logging()
 logger = logging.getLogger(__name__)
@@ -18,9 +18,6 @@ logger = logging.getLogger(__name__)
 
 class RSSParserService:
     def __init__(self):
-        # Initialize DI container
-        setup_di_container()
-
         # Get services via DI
         self.duplicate_detector = get_service(IDuplicateDetector)
         self.translation_service = get_service(ITranslationService)
@@ -324,7 +321,8 @@ class RSSParserService:
 
         # Close shared connection pool
         try:
-            await close_shared_db_pool()
+            config_obj = get_service(dict)
+            await config_obj.get('close_shared_db_pool')()
             logger.info("[RSS_PARSER] Shared connection pool closed")
         except Exception as e:
             logger.error(f"[RSS_PARSER] Error closing shared pool: {e}")

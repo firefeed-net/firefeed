@@ -2,7 +2,6 @@
 import logging
 from contextlib import asynccontextmanager
 from interfaces import IDatabasePool
-from config import get_shared_db_pool
 
 logger = logging.getLogger(__name__)
 
@@ -10,14 +9,12 @@ logger = logging.getLogger(__name__)
 class DatabasePoolAdapter(IDatabasePool):
     """Adapter for the shared database pool to implement IDatabasePool interface"""
 
-    def __init__(self):
-        self._pool = None
+    def __init__(self, db_pool):
+        self._pool = db_pool
 
     @asynccontextmanager
     async def acquire(self):
         """Acquire database connection"""
-        if self._pool is None:
-            self._pool = await get_shared_db_pool()
         conn = await self._pool.acquire()
         try:
             yield conn

@@ -16,6 +16,10 @@ class RSSStorage(IRSSStorage):
     async def save_rss_item(self, rss_item: Dict[str, Any], feed_id: int) -> Optional[str]:
         """Save RSS item to database"""
         try:
+            if feed_id is None:
+                logger.error(f"[STORAGE] Feed ID is None for rss_item {rss_item.get('id', 'unknown')}")
+                return None
+
             async with self.db_pool.acquire() as conn:
                 async with conn.cursor() as cur:
                     news_id = rss_item["id"]
