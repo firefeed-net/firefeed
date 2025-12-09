@@ -180,12 +180,16 @@ class RSSParserService:
         else:
             logger.warning("[RSS_PARSER] Translator queue does not have start method")
 
-        # Preload popular translation models to reduce I/O during runtime
-        try:
-            await self.translation_service.model_manager.preload_popular_models()
-            logger.info("[RSS_PARSER] Popular translation models preloaded successfully")
-        except Exception as e:
-            logger.error(f"[RSS_PARSER] Error preloading translation models: {e}")
+        # Preload popular translation models to reduce I/O during runtime (only if translation is enabled)
+        config_obj = get_service(dict)
+        if config_obj.get('translation_enabled', True):
+            try:
+                await self.translation_service.model_manager.preload_popular_models()
+                logger.info("[RSS_PARSER] Popular translation models preloaded successfully")
+            except Exception as e:
+                logger.error(f"[RSS_PARSER] Error preloading translation models: {e}")
+        else:
+            logger.info("[RSS_PARSER] Translation disabled, skipping model preloading")
 
         # Create tasks
         self.parse_task = asyncio.create_task(self.parse_rss_task())

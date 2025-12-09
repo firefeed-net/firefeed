@@ -2,6 +2,7 @@ import asyncio
 from asyncio import Queue
 import time
 import logging
+from config.services_config import get_service_config
 
 logger = logging.getLogger(__name__)
 

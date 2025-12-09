@@ -27,7 +27,7 @@ def get_config():
         _config = get_service(dict)
     return _config
 
-SECRET_KEY = os.getenv('JWT_SECRET_KEY', 'your-secret-key')  # Fallback for initial load
+SECRET_KEY = os.getenv('JWT_SECRET_KEY', 'your-secret-key')
 ALGORITHM = os.getenv('JWT_ALGORITHM', 'HS256')
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv('JWT_ACCESS_TOKEN_EXPIRE_MINUTES', '30'))
 

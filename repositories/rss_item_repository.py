@@ -209,7 +209,7 @@ class RSSItemRepository(IRSSItemRepository):
 
         return total_count, results, columns
 
-    async def get_rss_item_by_id_full(self, rss_item_id: str) -> Optional[Tuple]:
+    async def get_rss_item_by_id_full(self, rss_item_id: str) -> Optional[Tuple[Tuple, List[str]]]:
         async with self.db_pool.acquire() as conn:
             async with conn.cursor() as cur:
                 query = """
@@ -245,7 +245,10 @@ class RSSItemRepository(IRSSItemRepository):
                 """
                 await cur.execute(query, (rss_item_id,))
                 result = await cur.fetchone()
-                return result
+                if result:
+                    columns = [desc[0] for desc in cur.description]
+                    return result, columns
+                return None
 
     async def get_recent_rss_items_for_broadcast(self, last_check_time: datetime) -> List[Dict[str, Any]]:
         async with self.db_pool.acquire() as conn:
