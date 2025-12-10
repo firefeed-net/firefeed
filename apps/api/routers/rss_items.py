@@ -234,6 +234,13 @@ async def get_rss_item_by_id(request: Request, rss_item_id: str, current_user: d
             raise HTTPException(status_code=404, detail="News item not found")
         row, columns = full_result
         row_dict = dict(zip(columns, row))
+        translations = build_translations_dict(row_dict)
+        row_original_language = row_dict["original_language"]
+        # Always include original language in translations
+        translations[row_original_language] = {
+            "title": row_dict["original_title"],
+            "content": row_dict["original_content"],
+        }
         item_data = {
             "news_id": row_dict["news_id"],
             "original_title": row_dict["original_title"],
@@ -245,7 +252,7 @@ async def get_rss_item_by_id(request: Request, rss_item_id: str, current_user: d
             "source_alias": row_dict.get("source_alias", "unknown"),
             "source_url": row_dict["source_url"],
             "created_at": format_datetime(row_dict.get("created_at")),
-            "translations": build_translations_dict(row_dict),
+            "translations": translations,
         }
     except Exception as e:
         logger.error(f"[API] Error executing query in get_rss_item_by_id: {e}")

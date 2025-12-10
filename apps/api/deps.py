@@ -1,7 +1,6 @@
 import logging
 import os
 import re
-import hashlib
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any
 from urllib.parse import urlparse
