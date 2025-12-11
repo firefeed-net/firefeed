@@ -63,11 +63,14 @@ class SpacyModelsConfig:
 
     @classmethod
     def from_env(cls) -> 'SpacyModelsConfig':
+        # Parse SPACY_MODELS as JSON dictionary
+        spacy_models_str = os.getenv('SPACY_MODELS', '{"en": "en_core_web_sm", "ru": "ru_core_news_sm", "de": "de_core_news_sm", "fr": "fr_core_news_sm"}')
+        spacy_models = json.loads(spacy_models_str)
         return cls(
-            en_model=os.getenv('SPACY_EN_MODEL', 'en_core_web_sm'),
-            ru_model=os.getenv('SPACY_RU_MODEL', 'ru_core_news_sm'),
-            de_model=os.getenv('SPACY_DE_MODEL', 'de_core_news_sm'),
-            fr_model=os.getenv('SPACY_FR_MODEL', 'fr_core_news_sm')
+            en_model=spacy_models.get('en', 'en_core_web_sm'),
+            ru_model=spacy_models.get('ru', 'ru_core_news_sm'),
+            de_model=spacy_models.get('de', 'de_core_news_sm'),
+            fr_model=spacy_models.get('fr', 'fr_core_news_sm')
         )
 
 
@@ -246,6 +249,7 @@ class ServiceConfig:
     channel_categories: list = None
     user_data_ttl_seconds: int = 86400
     rss_parser_media_type_priority: str = "image"
+    rss_parser_cleanup_interval_hours: int = 0  # 0 = disabled, >0 = cleanup interval in hours
     default_user_agent: str = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 FireFeed/1.0"
 
     def __post_init__(self):

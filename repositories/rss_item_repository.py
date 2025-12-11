@@ -346,6 +346,60 @@ class RSSItemRepository(IRSSItemRepository):
                     )
                 results = await cur.fetchall()
                 return [dict(zip([column[0] for column in cur.description], row)) for row in results]
+        
+            async def cleanup_old_rss_items(self, hours_old: int) -> Tuple[int, List[Tuple[str, str]], bool]:
+                """Atomic cleanup of RSS items older than the specified number of hours and all related data
+
+                Returns:
+                    Tuple[int, List[Tuple[str, str]], bool]:
+                    (number of deleted news items, list of files to delete (image, video), operation success)
+                """
+                cutoff_time = datetime.now(timezone.utc) - timedelta(hours=hours_old)
+
+                async with self.db_pool.acquire() as conn:
+                    async with conn.transaction():  # Atomic transaction
+                        try:
+                            async with conn.cursor() as cur:
+                                # 1. Get list of image and video files to delete BEFORE deleting records
+                                await cur.execute("""
+                                    SELECT image_filename, video_filename
+                                    FROM published_news_data
+                                    WHERE created_at < %s AND (image_filename IS NOT NULL OR video_filename IS NOT NULL)
+                                """, (cutoff_time,))
+
+                                files_to_delete = await cur.fetchall()
+
+                                # 2. Delete Telegram publication records (linked by news_id)
+                                await cur.execute("""
+                                    DELETE FROM rss_items_telegram_bot_published
+                                    WHERE news_id IN (
+                                        SELECT news_id FROM published_news_data WHERE created_at < %s
+                                    )
+                                """, (cutoff_time,))
+
+                                # 3. Delete news translations
+                                await cur.execute("""
+                                    DELETE FROM news_translations
+                                    WHERE news_id IN (
+                                        SELECT news_id FROM published_news_data WHERE created_at < %s
+                                    )
+                                """, (cutoff_time,))
+
+                                # 4. Delete the news items themselves (published_news_data) - last step
+                                await cur.execute("""
+                                    DELETE FROM published_news_data
+                                    WHERE created_at < %s
+                                """, (cutoff_time,))
+
+                                deleted_count = cur.rowcount
+
+                                logger.info(f"[CLEANUP] Transaction successful: deleted {deleted_count} old RSS items older than {hours_old} hours")
+
+                                return deleted_count, files_to_delete, True
+
+                        except Exception as e:
+                            logger.error(f"[CLEANUP] Error in cleanup transaction: {e}")
+                            raise  # Automatic rollback of transaction
 
     async def check_duplicate_by_url(self, url: str) -> Optional[Dict[str, Any]]:
         """Check if URL already exists in published news"""

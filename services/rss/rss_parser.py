@@ -4,6 +4,7 @@ import sys
 import time
 import logging
 from config.logging_config import setup_logging
+from config.services_config import get_service_config
 from services.rss import RSSManager
 from di_container import setup_di_container, get_service
 from interfaces import (
@@ -44,6 +45,7 @@ class RSSParserService:
         self.parse_task = None
         self.batch_processor_task = None
         self.cleanup_task = None
+        self.old_data_cleanup_task = None
 
     async def parse_rss_task(self):
         """Periodic RSS parsing task"""
@@ -196,12 +198,23 @@ class RSSParserService:
         self.batch_processor_task = asyncio.create_task(self.batch_processor_task_loop())
         self.cleanup_task = asyncio.create_task(self.cleanup_duplicates_task())
 
+        # Check if time-based cleanup is enabled
+        config = get_service_config()
+        if config.rss_parser_cleanup_interval_hours > 0:
+            self.old_data_cleanup_task = asyncio.create_task(self.cleanup_old_data_task())
+            logger.info(f"[RSS_PARSER] Automatic data cleanup enabled (interval: {config.rss_parser_cleanup_interval_hours} hours)")
+        else:
+            self.old_data_cleanup_task = None
+            logger.info("[RSS_PARSER] Automatic data cleanup disabled - data will be stored indefinitely")
+
         try:
             # Wait for any task to complete (usually doesn't happen if running=True)
             # Or completion by signal (which sets running=False and tasks will complete)
-            done, pending = await asyncio.wait(
-                [self.parse_task, self.batch_processor_task, self.cleanup_task], return_when=asyncio.FIRST_COMPLETED
-            )
+            tasks_to_wait = [self.parse_task, self.batch_processor_task, self.cleanup_task]
+            if self.old_data_cleanup_task:
+                tasks_to_wait.append(self.old_data_cleanup_task)
+
+            done, pending = await asyncio.wait(tasks_to_wait, return_when=asyncio.FIRST_COMPLETED)
             logger.info(f"[RSS_PARSER] One of the tasks completed. Done: {len(done)}, Pending: {len(pending)}")
 
             # Cancel remaining tasks
@@ -254,6 +267,20 @@ class RSSParserService:
             (self.parse_task and not self.parse_task.done())
             or (self.batch_processor_task and not self.batch_processor_task.done())
             or (self.cleanup_task and not self.cleanup_task.done())
+            or (self.old_data_cleanup_task and not self.old_data_cleanup_task.done())
+        ):
+            await asyncio.sleep(0.1)
+        logger.info("[RSS_PARSER] All tasks stopped by running flag.")
+        # For SIGINT, continue
+
+    async def _wait_for_tasks_to_stop(self):
+        """Helper function to wait for tasks to stop"""
+        # Wait until tasks complete themselves via self.running=False
+        # This is needed for use with wait_for
+        while (
+            (self.parse_task and not self.parse_task.done())
+            or (self.batch_processor_task and not self.batch_processor_task.done())
+            or (self.cleanup_task and not self.cleanup_task.done())
         ):
             await asyncio.sleep(0.1)
         logger.info("[RSS_PARSER] All tasks stopped by running flag.")
@@ -280,6 +307,12 @@ class RSSParserService:
             self.cleanup_task.cancel()
             tasks_to_cancel.append(self.cleanup_task)
 
+        # Отменить задачу очистки по времени только если она была создана
+        if self.old_data_cleanup_task and not self.old_data_cleanup_task.done():
+            logger.info("[RSS_PARSER] Cancelling active old data cleanup task...")
+            self.old_data_cleanup_task.cancel()
+            tasks_to_cancel.append(self.old_data_cleanup_task)
+
         # Wait for cancelled tasks to complete
         if tasks_to_cancel:
             logger.info(f"[RSS_PARSER] Waiting for {len(tasks_to_cancel)} cancelled tasks to complete...")
@@ -304,6 +337,47 @@ class RSSParserService:
                 import traceback
 
                 traceback.print_exc()
+
+        # Close managers (stubs, but leave them)
+        managers_to_close = [(self.rss_manager, "RSSManager"), (self.duplicate_detector, "FireFeedDuplicateDetector")]
+
+    async def cleanup_old_data_task(self):
+        """Background task for full cleanup of old data by time"""
+        config = get_service_config()
+        cleanup_interval_hours = config.rss_parser_cleanup_interval_hours
+
+        # Additional check in case config changes during runtime
+        if cleanup_interval_hours <= 0:
+            logger.info("[CLEANUP] Data cleanup is disabled, task will not run")
+            return
+
+        while self.running:
+            try:
+                logger.info(f"[CLEANUP] Starting periodic full cleanup of data older than {cleanup_interval_hours} hours...")
+
+                result = await self.maintenance_service.cleanup_old_data_by_age(cleanup_interval_hours)
+
+                logger.info(f"[CLEANUP] Full cleanup completed: deleted {result['news_items_deleted']} news items, "
+                           f"{result['images_deleted']} images, {result['videos_deleted']} videos")
+
+                # Wait for next cleanup interval (interval in hours)
+                wait_seconds = cleanup_interval_hours * 3600
+                for _ in range(wait_seconds):
+                    if not self.running:
+                        logger.info("[CLEANUP] Stopping full cleanup task on signal")
+                        return
+                    await asyncio.sleep(1)
+
+            except Exception as e:
+                logger.error(f"[CLEANUP] Error in full cleanup task: {e}")
+                import traceback
+                traceback.print_exc()
+
+                # Wait 5 minutes before retry in case of error
+                for _ in range(300):
+                    if not self.running:
+                        return
+                    await asyncio.sleep(1)
 
         # Close managers (stubs, but leave them)
         managers_to_close = [(self.rss_manager, "RSSManager"), (self.duplicate_detector, "FireFeedDuplicateDetector")]
