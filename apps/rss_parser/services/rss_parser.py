@@ -5,7 +5,7 @@ import time
 import logging
 from config.logging_config import setup_logging
 from config.services_config import get_service_config
-from services.rss import RSSManager
+from apps.rss_parser.services import RSSManager
 from di_container import setup_di_container, get_service
 from interfaces import (
     IDuplicateDetector, ITranslationService, ITranslatorQueue,
@@ -30,7 +30,7 @@ class RSSParserService:
         self.maintenance_service = get_service(IMaintenanceService)
 
         # Create RSSManager via DI (it will get all dependencies automatically)
-        from services.rss.rss_manager import RSSManager
+        from apps.rss_parser.services.rss_manager import RSSManager
         self.rss_manager = RSSManager(
             rss_fetcher=self.rss_fetcher,
             rss_validator=self.rss_validator,

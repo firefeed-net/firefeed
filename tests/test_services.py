@@ -3,7 +3,7 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock
 from di_container import DIContainer, get_service
 from interfaces import IRSSFetcher, IRSSValidator, IRSSStorage, IMediaExtractor, ITranslationService
-from services.rss import RSSFetcher, RSSValidator, RSSStorage, MediaExtractor
+from apps.rss_parser.services import RSSFetcher, RSSValidator, RSSStorage, MediaExtractor
 from services.translation import TranslationService, TranslationCache
 
 

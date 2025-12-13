@@ -3,7 +3,7 @@ import sys
 import logging
 from config.logging_config import setup_logging
 from di_container import setup_di_container
-from services.rss.rss_parser import RSSParserService
+from apps.rss_parser.services.rss_parser import RSSParserService
 
 setup_logging()
 logger = logging.getLogger(__name__)

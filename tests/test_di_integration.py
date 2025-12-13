@@ -123,7 +123,7 @@ class TestDIIntegration:
         setup_di_container()
 
         # Test RSS Manager dependencies
-        from services.rss import RSSManager
+        from apps.rss_parser.services import RSSManager
         rss_manager = RSSManager(
             rss_fetcher=get_service(IRSSFetcher),
             rss_validator=get_service(IRSSValidator),

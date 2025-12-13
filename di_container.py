@@ -119,7 +119,7 @@ async def setup_di_container() -> DIContainer:
     di_container.register_instance(type(config), config)
 
     # Import services
-    from services.rss import MediaExtractor, RSSValidator, RSSStorage, RSSFetcher
+    from apps.rss_parser.services import MediaExtractor, RSSValidator, RSSStorage, RSSFetcher
     from services.translation import ModelManager, TranslationService, TranslationCache
     from services.translation.task_queue import FireFeedTranslatorTaskQueue
     from services.text_analysis.duplicate_detector import FireFeedDuplicateDetector

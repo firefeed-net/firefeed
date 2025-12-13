@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from datetime import datetime, timezone, timedelta
-from services.rss import RSSManager
+from apps.rss_parser.services import RSSManager
 from utils.media_extractors import extract_image_from_rss_item, extract_video_from_rss_item
 
 
@@ -429,7 +429,7 @@ class TestRSSManager:
         class Cfg:
             class translation:
                 translation_enabled = True
-        monkeypatch.setattr("services.rss.rss_manager.get_service_config", lambda: Cfg)
+        monkeypatch.setattr("apps.rss_parser.services.rss_manager.get_service_config", lambda: Cfg)
 
         # Act
         items = await manager.process_rss_feed({"id": 3, "name": "Feed", "lang": "en", "url": "u"}, {"User-Agent": "X"})
@@ -491,7 +491,7 @@ class TestRSSManager:
         )
 
         # Provide DEFAULT_USER_AGENT
-        monkeypatch.setattr("services.rss.rss_manager.get_service", lambda t: {"DEFAULT_USER_AGENT": "UA"})
+        monkeypatch.setattr("apps.rss_parser.services.rss_manager.get_service", lambda t: {"DEFAULT_USER_AGENT": "UA"})
 
         # Act
         batches = await manager.fetch_rss_items()
@@ -528,7 +528,7 @@ class TestRSSManager:
         manager.get_all_active_feeds = fake_get_all_active_feeds
 
         # Provide DEFAULT_USER_AGENT
-        monkeypatch.setattr("services.rss.rss_manager.get_service", lambda t: {"DEFAULT_USER_AGENT": "UA"})
+        monkeypatch.setattr("apps.rss_parser.services.rss_manager.get_service", lambda t: {"DEFAULT_USER_AGENT": "UA"})
 
         # Stub process_rss_feed to return varying results, and one raises
         async def prf(feed, headers):
