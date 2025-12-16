@@ -57,7 +57,7 @@ class TestDatabaseFunctions:
         return cur
 
     async def test_get_db_pool_success(self, mock_pool):
-        with patch('config.get_shared_db_pool', return_value=mock_pool):
+        with patch('apps.api.database.get_service', return_value={'get_shared_db_pool': lambda: mock_pool}):
             result = await get_db_pool()
             assert result == mock_pool
 
@@ -77,8 +77,8 @@ class TestDatabaseFunctions:
     async def test_create_user_success(self, mock_pool, mock_conn, mock_cur):
         mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
         mock_conn.cursor.return_value.__aenter__.return_value = mock_cur
-        mock_cur.fetchone.return_value = (1, 'test@example.com', 'en', True, datetime.utcnow(), datetime.utcnow())
-        mock_cur.description = [('id',), ('email',), ('language',), ('is_active',), ('created_at',), ('updated_at',)]
+        mock_cur.fetchone.return_value = (1, 'test@example.com', 'en', True, False, False, datetime.utcnow(), datetime.utcnow())
+        mock_cur.description = [('id',), ('email',), ('language',), ('is_active',), ('is_verified',), ('is_deleted',), ('created_at',), ('updated_at',)]
 
         result = await create_user(mock_pool, 'test@example.com', 'hashed_pass', 'en')
         assert result['email'] == 'test@example.com'
@@ -94,8 +94,8 @@ class TestDatabaseFunctions:
     async def test_get_user_by_email_success(self, mock_pool, mock_conn, mock_cur):
         mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
         mock_conn.cursor.return_value.__aenter__.return_value = mock_cur
-        mock_cur.fetchone.return_value = (1, 'test@example.com', 'hashed_pass', 'en', True, datetime.utcnow(), datetime.utcnow())
-        mock_cur.description = [('id',), ('email',), ('password_hash',), ('language',), ('is_active',), ('created_at',), ('updated_at',)]
+        mock_cur.fetchone.return_value = (1, 'test@example.com', 'hashed_pass', 'en', True, False, False, datetime.utcnow(), datetime.utcnow())
+        mock_cur.description = [('id',), ('email',), ('password_hash',), ('language',), ('is_active',), ('is_verified',), ('is_deleted',), ('created_at',), ('updated_at',)]
 
         result = await get_user_by_email(mock_pool, 'test@example.com')
         assert result['email'] == 'test@example.com'
@@ -111,8 +111,8 @@ class TestDatabaseFunctions:
     async def test_get_user_by_id_success(self, mock_pool, mock_conn, mock_cur):
         mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
         mock_conn.cursor.return_value.__aenter__.return_value = mock_cur
-        mock_cur.fetchone.return_value = (1, 'test@example.com', 'hashed_pass', 'en', True, datetime.utcnow(), datetime.utcnow())
-        mock_cur.description = [('id',), ('email',), ('password_hash',), ('language',), ('is_active',), ('created_at',), ('updated_at',)]
+        mock_cur.fetchone.return_value = (1, 'test@example.com', 'hashed_pass', 'en', True, False, False, datetime.utcnow(), datetime.utcnow())
+        mock_cur.description = [('id',), ('email',), ('password_hash',), ('language',), ('is_active',), ('is_verified',), ('is_deleted',), ('created_at',), ('updated_at',)]
 
         result = await get_user_by_id(mock_pool, 1)
         assert result['id'] == 1
@@ -120,8 +120,8 @@ class TestDatabaseFunctions:
     async def test_update_user_success(self, mock_pool, mock_conn, mock_cur):
         mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
         mock_conn.cursor.return_value.__aenter__.return_value = mock_cur
-        mock_cur.fetchone.return_value = (1, 'new@example.com', 'hashed_pass', 'es', True, datetime.utcnow(), datetime.utcnow())
-        mock_cur.description = [('id',), ('email',), ('password_hash',), ('language',), ('is_active',), ('created_at',), ('updated_at',)]
+        mock_cur.fetchone.return_value = (1, 'new@example.com', 'hashed_pass', 'es', True, False, False, datetime.utcnow(), datetime.utcnow())
+        mock_cur.description = [('id',), ('email',), ('password_hash',), ('language',), ('is_active',), ('is_verified',), ('is_deleted',), ('created_at',), ('updated_at',)]
 
         result = await update_user(mock_pool, 1, {'email': 'new@example.com', 'language': 'es'})
         assert result['email'] == 'new@example.com'
@@ -129,8 +129,8 @@ class TestDatabaseFunctions:
     async def test_update_user_no_changes(self, mock_pool, mock_conn, mock_cur):
         mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
         mock_conn.cursor.return_value.__aenter__.return_value = mock_cur
-        mock_cur.fetchone.return_value = (1, 'test@example.com', 'hashed_pass', 'en', True, datetime.utcnow(), datetime.utcnow())
-        mock_cur.description = [('id',), ('email',), ('password_hash',), ('language',), ('is_active',), ('created_at',), ('updated_at',)]
+        mock_cur.fetchone.return_value = (1, 'test@example.com', 'hashed_pass', 'en', True, False, False, datetime.utcnow(), datetime.utcnow())
+        mock_cur.description = [('id',), ('email',), ('password_hash',), ('language',), ('is_active',), ('is_verified',), ('is_deleted',), ('created_at',), ('updated_at',)]
 
         result = await update_user(mock_pool, 1, {})
         assert result['email'] == 'test@example.com'

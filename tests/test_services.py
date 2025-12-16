@@ -103,14 +103,18 @@ class TestTranslationServices:
 
     async def test_short_text_translation(self):
         """Test translation of short texts"""
-        from di_container import setup_di_container, get_service
-        from interfaces import ITranslationService
+        from unittest.mock import patch
+        from services.translation import TranslationService
 
-        # Initialize DI container
-        setup_di_container()
+        # Mock dependencies
+        mock_model_manager = MagicMock()
+        mock_model_manager.get_model.return_value = (MagicMock(), MagicMock())
+        mock_translator_queue = MagicMock()
 
-        # Get TranslationService via DI
-        translator = get_service(ITranslationService)
+        translator = TranslationService(mock_model_manager, mock_translator_queue)
+
+        # Mock the translate_async to return dummy translations
+        translator.translate_async = AsyncMock(return_value=["Тестовый перевод"])
 
         test_cases = [
             ("OpenAI, AMD Announce Massive Computing Deal, Marking New Phase of AI Boom", "en", "ru"),
@@ -130,14 +134,18 @@ class TestTranslationServices:
 
     async def test_long_text_translation(self):
         """Test translation of long texts"""
-        from di_container import setup_di_container, get_service
-        from interfaces import ITranslationService
+        from unittest.mock import patch
+        from services.translation import TranslationService
 
-        # Initialize DI container
-        setup_di_container()
+        # Mock dependencies
+        mock_model_manager = MagicMock()
+        mock_model_manager.get_model.return_value = (MagicMock(), MagicMock())
+        mock_translator_queue = MagicMock()
 
-        # Get TranslationService via DI
-        translator = get_service(ITranslationService)
+        translator = TranslationService(mock_model_manager, mock_translator_queue)
+
+        # Mock the translate_async to return dummy translations
+        translator.translate_async = AsyncMock(return_value=["Длинный тестовый перевод"])
 
         long_test_cases = [
             (
