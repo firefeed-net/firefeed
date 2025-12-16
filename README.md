@@ -460,34 +460,53 @@ FireFeed allows customization of the AI models used for translation, embeddings,
 
 For production environments, systemd services are recommended.
 
-**API Service** (`/etc/systemd/system/firefeed-api.service`):
+**RSS Parser Service** (`/var/www/firefeed/data/.config/systemd/user/firefeed-telegram-bot.service`):
+
+```ini
+[Unit]
+Description=FireFeed RSS-parser Service
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/var/www/firefeed/data/firefeed
+Environment=HOME=/var/www/firefeed/data
+ExecStart=/var/www/firefeed/data/firefeed/scripts/run_rss_parser.sh
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=30
+KillMode=mixed
+KillSignal=SIGTERM
+SendSIGKILL=yes
+NoNewPrivileges=no
+
+[Install]
+WantedBy=default.target
+```
+
+**API Service** (`/var/www/firefeed/data/.config/systemd/user/firefeed-telegram-bot.service`):
 
 ```ini
 [Unit]
 Description=Firefeed News API (FastAPI)
 After=network.target
-After=postgresql@17-main.service
-Wants=postgresql@17-main.service
 
 [Service]
 Type=simple
-User=firefeed
-Group=firefeed
-
-WorkingDirectory=/path/to/firefeed/
-ExecStart=/path/to/firefeed/scripts/run_api.sh
-
+WorkingDirectory=/var/www/firefeed/firefeed
+Environment=HOME=/var/www/firefeed/data
+ExecStart=/var/www/firefeed/data/firefeed/scripts/run_api.sh
 Restart=always
 RestartSec=5
-
 StandardOutput=journal
 StandardError=journal
+NoNewPrivileges=no
 
 [Install]
-WantedBy=multi-user.target
+WantedBy=default.target
 ```
 
-**Telegram Bot Service** (`/etc/systemd/system/firefeed-telegram-bot.service`):
+**Telegram Bot Service** (`/var/www/firefeed/data/.config/systemd/user/firefeed-telegram-bot.service`):
 
 ```ini
 [Unit]
@@ -496,49 +515,19 @@ After=network.target
 
 [Service]
 Type=simple
-User=firefeed
-Group=firefeed
-WorkingDirectory=/path/to/firefeed/
-
-ExecStart=/path/to/firefeed/scripts/run_telegram_bot.sh
-
+WorkingDirectory=/var/www/firefeed/data/firefeed
+Environment=HOME=/var/www/firefeed/data
+ExecStart=/var/www/firefeed/data/firefeed/scripts/run_telegram_bot.sh
 Restart=on-failure
 RestartSec=10
-
 TimeoutStopSec=30
 KillMode=mixed
 KillSignal=SIGTERM
 SendSIGKILL=yes
+NoNewPrivileges=no
 
 [Install]
-WantedBy=multi-user.target
-```
-
-**RSS Parser Service** (`/etc/systemd/system/firefeed-rss-parser.service`):
-
-```ini
-[Unit]
-Description=FireFeed RSS Parser Service
-After=network.target
-After=postgresql@17-main.service
-Wants=postgresql@17-main.service
-
-[Service]
-Type=simple
-User=firefeed
-Group=firefeed
-
-WorkingDirectory=/path/to/firefeed/
-ExecStart=/path/to/firefeed/scripts/run_rss_parser.sh
-
-Restart=always
-RestartSec=5
-
-StandardOutput=journal
-StandardError=journal
-
-[Install]
-WantedBy=multi-user.target
+WantedBy=default.target
 ```
 
 ### Nginx Configuration
