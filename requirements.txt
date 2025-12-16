@@ -28,7 +28,7 @@ dnspython==2.7.0
 email-validator==2.3.0
 python-multipart==0.0.20
 spacy==3.8.7
-aiosmtplib==4.0.2
+aiosmtplib==5.0.0
 bcrypt==5.0.0
 feedgen==1.0.0
 redis==7.0.1
