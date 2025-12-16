@@ -17,10 +17,10 @@ from apps.telegram_bot.services.api_service import (
     close_http_session,
 )
 from apps.telegram_bot.services.user_state_service import (
-    get_main_menu_keyboard,
     set_current_user_language,
     get_current_user_language,
 )
+from apps.telegram_bot.utils.keyboard_utils import get_main_menu_keyboard
 from apps.telegram_bot.services.rss_service import (
     process_rss_item,
     monitor_rss_items_task,
