@@ -22,7 +22,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: '3.13'
           cache: 'pip'
 
       - name: Install system deps (if any)
@@ -46,7 +46,7 @@ jobs:
           # Provide safe defaults for tests. Override via repo/Org secrets if needed
           ENV: test
         run: |
-          pytest -q
+          pytest tests/
 
   docker-build:
     name: Build Docker image
