@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import AsyncMock, patch, MagicMock
 
-from apps.apps.telegram_bot.services.user_state_service import (
+from apps.telegram_bot.services.user_state_service import (
     initialize_user_manager,
     set_current_user_language,
     get_current_user_language,
