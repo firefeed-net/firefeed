@@ -1,12 +1,12 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
-from apps.apps.telegram_bot.models.rss_item import PreparedRSSItem
-from apps.apps.telegram_bot.services.database_service import (
+from apps.telegram_bot.models.rss_item import PreparedRSSItem
+from apps.telegram_bot.services.database_service import (
     mark_translation_as_published,
     mark_original_as_published,
     get_translation_id,
 )
-from apps.apps.telegram_bot.services.api_service import (
+from apps.telegram_bot.services.api_service import (
     api_get,
     get_rss_items_list,
     get_rss_item_by_id,
@@ -16,12 +16,12 @@ from apps.apps.telegram_bot.services.api_service import (
     initialize_http_session,
     cleanup_http_session,
 )
-from apps.apps.telegram_bot.services.user_state_service import (
+from apps.telegram_bot.services.user_state_service import (
     get_main_menu_keyboard,
     set_current_user_language,
     get_current_user_language,
 )
-from apps.apps.telegram_bot.services.rss_service import (
+from apps.telegram_bot.services.rss_service import (
     process_rss_item,
     monitor_rss_items_task,
 )
@@ -45,7 +45,7 @@ class TestBotFunctions:
         return cur
 
     async def test_mark_translation_as_published_success(self, mock_pool, mock_conn, mock_cur):
-        with patch('apps.apps.telegram_bot.services.database_service.get_shared_db_pool', return_value=mock_pool):
+        with patch('apps.telegram_bot.services.database_service.get_shared_db_pool', return_value=mock_pool):
             mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
             mock_conn.cursor.return_value.__aenter__.return_value = mock_cur
 
@@ -53,7 +53,7 @@ class TestBotFunctions:
             assert result is True
 
     async def test_mark_original_as_published_success(self, mock_pool, mock_conn, mock_cur):
-        with patch('apps.apps.telegram_bot.services.database_service.get_shared_db_pool', return_value=mock_pool):
+        with patch('apps.telegram_bot.services.database_service.get_shared_db_pool', return_value=mock_pool):
             mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
             mock_conn.cursor.return_value.__aenter__.return_value = mock_cur
 
