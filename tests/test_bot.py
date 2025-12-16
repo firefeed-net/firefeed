@@ -13,8 +13,8 @@ from apps.telegram_bot.services.api_service import (
     get_categories,
     get_sources,
     get_languages,
-    initialize_http_session,
-    cleanup_http_session,
+    get_http_session,
+    close_http_session,
 )
 from apps.telegram_bot.services.user_state_service import (
     get_main_menu_keyboard,
@@ -200,13 +200,13 @@ class TestBotFunctions:
                 assert mock_process.call_count == 2
 
     async def test_initialize_http_session(self):
-        with patch('apps.telegram_bot.services.api_service.http_session', None):
+        with patch('apps.telegram_bot.services.api_service._http_session', None):
             with patch('aiohttp.ClientSession') as mock_session:
-                await initialize_http_session()
+                await get_http_session()
                 assert mock_session.called
 
     async def test_cleanup_http_session(self):
         mock_session = AsyncMock()
-        with patch('apps.telegram_bot.services.api_service.http_session', mock_session):
-            await cleanup_http_session()
+        with patch('apps.telegram_bot.services.api_service._http_session', mock_session):
+            await close_http_session()
             assert mock_session.close.called
