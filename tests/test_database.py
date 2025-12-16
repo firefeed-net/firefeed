@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from datetime import datetime, timedelta
-from api.database import (
+from apps.api.database import (
     get_db_pool,
     close_db_pool,
     create_user,

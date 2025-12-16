@@ -1,12 +1,12 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
-from telegram_bot.models.rss_item import PreparedRSSItem
-from telegram_bot.services.database_service import (
+from apps.apps.telegram_bot.models.rss_item import PreparedRSSItem
+from apps.apps.telegram_bot.services.database_service import (
     mark_translation_as_published,
     mark_original_as_published,
     get_translation_id,
 )
-from telegram_bot.services.api_service import (
+from apps.apps.telegram_bot.services.api_service import (
     api_get,
     get_rss_items_list,
     get_rss_item_by_id,
@@ -16,12 +16,12 @@ from telegram_bot.services.api_service import (
     initialize_http_session,
     cleanup_http_session,
 )
-from telegram_bot.services.user_state_service import (
+from apps.apps.telegram_bot.services.user_state_service import (
     get_main_menu_keyboard,
     set_current_user_language,
     get_current_user_language,
 )
-from telegram_bot.services.rss_service import (
+from apps.apps.telegram_bot.services.rss_service import (
     process_rss_item,
     monitor_rss_items_task,
 )
@@ -45,7 +45,7 @@ class TestBotFunctions:
         return cur
 
     async def test_mark_translation_as_published_success(self, mock_pool, mock_conn, mock_cur):
-        with patch('telegram_bot.services.database_service.get_shared_db_pool', return_value=mock_pool):
+        with patch('apps.apps.telegram_bot.services.database_service.get_shared_db_pool', return_value=mock_pool):
             mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
             mock_conn.cursor.return_value.__aenter__.return_value = mock_cur
 
@@ -53,7 +53,7 @@ class TestBotFunctions:
             assert result is True
 
     async def test_mark_original_as_published_success(self, mock_pool, mock_conn, mock_cur):
-        with patch('telegram_bot.services.database_service.get_shared_db_pool', return_value=mock_pool):
+        with patch('apps.apps.telegram_bot.services.database_service.get_shared_db_pool', return_value=mock_pool):
             mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
             mock_conn.cursor.return_value.__aenter__.return_value = mock_cur
 
@@ -61,7 +61,7 @@ class TestBotFunctions:
             assert result is True
 
     async def test_get_translation_id_success(self, mock_pool, mock_conn, mock_cur):
-        with patch('telegram_bot.services.database_service.get_shared_db_pool', return_value=mock_pool):
+        with patch('apps.telegram_bot.services.database_service.get_shared_db_pool', return_value=mock_pool):
             mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
             mock_conn.cursor.return_value.__aenter__.return_value = mock_cur
             mock_cur.fetchone.return_value = (42,)
@@ -70,7 +70,7 @@ class TestBotFunctions:
             assert result == 42
 
     async def test_get_translation_id_not_found(self, mock_pool, mock_conn, mock_cur):
-        with patch('telegram_bot.services.database_service.get_shared_db_pool', return_value=mock_pool):
+        with patch('apps.telegram_bot.services.database_service.get_shared_db_pool', return_value=mock_pool):
             mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
             mock_conn.cursor.return_value.__aenter__.return_value = mock_cur
             mock_cur.fetchone.return_value = None
@@ -79,7 +79,7 @@ class TestBotFunctions:
             assert result is None
 
     async def test_api_get_success(self):
-        with patch('telegram_bot.services.api_service.http_session') as mock_session:
+        with patch('apps.telegram_bot.services.api_service.http_session') as mock_session:
             mock_response = AsyncMock()
             mock_response.status = 200
             mock_response.json.return_value = {"data": "test"}
@@ -89,7 +89,7 @@ class TestBotFunctions:
             assert result == {"data": "test"}
 
     async def test_api_get_failure(self):
-        with patch('telegram_bot.services.api_service.http_session') as mock_session:
+        with patch('apps.telegram_bot.services.api_service.http_session') as mock_session:
             mock_response = AsyncMock()
             mock_response.status = 404
             mock_response.text.return_value = "Not Found"
@@ -99,12 +99,12 @@ class TestBotFunctions:
             assert result == {}
 
     async def test_get_rss_items_list(self):
-        with patch('telegram_bot.services.api_service.api_get', return_value={"results": []}):
+        with patch('apps.telegram_bot.services.api_service.api_get', return_value={"results": []}):
             result = await get_rss_items_list(display_language="en", limit=10)
             assert result == {"results": []}
 
     async def test_get_rss_item_by_id(self):
-        with patch('telegram_bot.services.api_service.api_get', return_value={"news_id": "123"}):
+        with patch('apps.telegram_bot.services.api_service.api_get', return_value={"news_id": "123"}):
             result = await get_rss_item_by_id("123", "en")
             assert result == {"news_id": "123"}
 
@@ -130,27 +130,27 @@ class TestBotFunctions:
         assert len(keyboard.keyboard[0]) == 2  # 2 buttons per row
 
     async def test_set_current_user_language(self):
-        with patch('telegram_bot.services.user_state_service.user_manager') as mock_um:
+        with patch('apps.telegram_bot.services.user_state_service.telegram_user_service') as mock_um:
             mock_um.set_user_language = AsyncMock()
-            with patch('telegram_bot.services.user_state_service.USER_LANGUAGES', {}):
+            with patch('apps.telegram_bot.services.user_state_service.USER_LANGUAGES', {}):
                 await set_current_user_language(123, "ru")
                 assert mock_um.set_user_language.called
 
     async def test_get_current_user_language_from_memory(self):
-        with patch('telegram_bot.services.user_state_service.USER_LANGUAGES', {123: "ru"}):
+        with patch('apps.telegram_bot.services.user_state_service.USER_LANGUAGES', {123: "ru"}):
             result = await get_current_user_language(123)
             assert result == "ru"
 
     async def test_get_current_user_language_from_db(self):
-        with patch('telegram_bot.services.user_state_service.USER_LANGUAGES', {}):
-            with patch('telegram_bot.services.user_state_service.user_manager') as mock_um:
+        with patch('apps.telegram_bot.services.user_state_service.USER_LANGUAGES', {}):
+            with patch('apps.telegram_bot.services.user_state_service.telegram_user_service') as mock_um:
                 mock_um.get_user_language = AsyncMock(return_value="de")
                 result = await get_current_user_language(123)
                 assert result == "de"
 
     async def test_get_current_user_language_default(self):
-        with patch('telegram_bot.services.user_state_service.USER_LANGUAGES', {}):
-            with patch('telegram_bot.services.user_state_service.user_manager') as mock_um:
+        with patch('apps.telegram_bot.services.user_state_service.USER_LANGUAGES', {}):
+            with patch('apps.telegram_bot.services.user_state_service.telegram_user_service') as mock_um:
                 mock_um.get_user_language = AsyncMock(return_value=None)
                 result = await get_current_user_language(123)
                 assert result == "en"
@@ -162,9 +162,9 @@ class TestBotFunctions:
             image_filename="test.jpg"
         )
 
-        with patch('telegram_bot.services.telegram_service.post_to_channel') as mock_post:
-            with patch('telegram_bot.services.telegram_service.send_personal_rss_items') as mock_send:
-                with patch('telegram_bot.config.CHANNEL_CATEGORIES', ["Tech"]):
+        with patch('apps.telegram_bot.services.telegram_service.post_to_channel') as mock_post:
+            with patch('apps.telegram_bot.services.telegram_service.send_personal_rss_items') as mock_send:
+                with patch('apps.telegram_bot.config.CHANNEL_CATEGORIES', ["Tech"]):
                     context = MagicMock()
                     rss_item_from_api = {
                         "news_id": "news123",
@@ -184,7 +184,7 @@ class TestBotFunctions:
                     assert mock_send.called
 
     async def test_monitor_rss_items_task_success(self):
-        with patch('telegram_bot.services.api_service.get_rss_items_list', return_value={"results": []}):
+        with patch('apps.telegram_bot.services.api_service.get_rss_items_list', return_value={"results": []}):
             context = MagicMock()
             await monitor_rss_items_task(context)
 
@@ -193,20 +193,20 @@ class TestBotFunctions:
             {"news_id": "1", "original_title": "Test 1"},
             {"news_id": "2", "original_title": "Test 2"}
         ]
-        with patch('telegram_bot.services.api_service.get_rss_items_list', return_value={"results": rss_items}):
-            with patch('telegram_bot.services.rss_service.process_rss_item', return_value=True) as mock_process:
+        with patch('apps.telegram_bot.services.api_service.get_rss_items_list', return_value={"results": rss_items}):
+            with patch('apps.telegram_bot.services.rss_service.process_rss_item', return_value=True) as mock_process:
                 context = MagicMock()
                 await monitor_rss_items_task(context)
                 assert mock_process.call_count == 2
 
     async def test_initialize_http_session(self):
-        with patch('telegram_bot.services.api_service.http_session', None):
+        with patch('apps.telegram_bot.services.api_service.http_session', None):
             with patch('aiohttp.ClientSession') as mock_session:
                 await initialize_http_session()
                 assert mock_session.called
 
     async def test_cleanup_http_session(self):
         mock_session = AsyncMock()
-        with patch('telegram_bot.services.api_service.http_session', mock_session):
+        with patch('apps.telegram_bot.services.api_service.http_session', mock_session):
             await cleanup_http_session()
             assert mock_session.close.called

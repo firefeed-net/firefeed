@@ -7,7 +7,7 @@ from interfaces import (
     ICategoryRepository, ISourceRepository, IApiKeyRepository, ITelegramRepository,
     IRSSFetcher, IRSSValidator, IRSSStorage, IMediaExtractor,
     ITranslationService, IDuplicateDetector, ITranslatorQueue, IMaintenanceService,
-    ITelegramUserService, IWebUserService, IUserManager
+    ITelegramUserService, IWebUserService
 )
 
 
@@ -104,10 +104,6 @@ class TestDIIntegration:
         web_user_service = get_service(IWebUserService)
         assert web_user_service is not None
         assert hasattr(web_user_service, 'generate_telegram_link_code')
-
-        user_manager = get_service(IUserManager)
-        assert user_manager is not None
-        assert hasattr(user_manager, 'get_user_settings')
 
     async def test_repository_dependencies_injection(self):
         """Test that repositories receive proper dependencies"""

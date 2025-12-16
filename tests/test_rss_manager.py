@@ -27,12 +27,12 @@ class TestRSSManager:
         return cur
 
     async def test_get_pool(self, rss_manager, mock_pool):
-        with patch('rss_manager.get_shared_db_pool', return_value=mock_pool):
-            result = await rss_manager.get_pool()
+        with patch('apps.rss_parser.services.rss_manager.get_shared_db_pool', return_value=mock_pool):
+            result = await apps.rss_parser.services.rss_manager.get_pool()
             assert result == mock_pool
 
     async def test_close_pool(self, rss_manager):
-        await rss_manager.close_pool()
+        await apps.rss_parser.services.rss_manager.close_pool()
 
     async def test_get_all_active_feeds_success(self, rss_manager, mock_pool, mock_conn, mock_cur):
         mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
@@ -43,7 +43,7 @@ class TestRSSManager:
         ])
         mock_cur.description = [('id',), ('url',), ('name',), ('language',), ('source_id',), ('category_id',), ('source_name',), ('category_name',)]
 
-        result = await rss_manager.get_all_active_feeds()
+        result = await apps.rss_parser.services.rss_manager.get_all_active_feeds()
         assert len(result) == 1
         assert result[0]['name'] == 'Test Feed'
 
@@ -52,7 +52,7 @@ class TestRSSManager:
         mock_conn.cursor.return_value.__aenter__.return_value = mock_cur
         mock_cur.execute.side_effect = Exception("DB error")
 
-        result = await rss_manager.get_all_active_feeds()
+        result = await apps.rss_parser.services.rss_manager.get_all_active_feeds()
         assert result == []
 
     async def test_get_feeds_by_category_success(self, rss_manager, mock_pool, mock_conn, mock_cur):
@@ -64,7 +64,7 @@ class TestRSSManager:
         ])
         mock_cur.description = [('id',), ('url',), ('name',), ('language',), ('source_id',), ('category_id',), ('source_name',), ('category_name',)]
 
-        result = await rss_manager.get_feeds_by_category('Tech')
+        result = await apps.rss_parser.services.rss_manager.get_feeds_by_category('Tech')
         assert len(result) == 1
         assert result[0]['category'] == 'Tech'
 
@@ -77,7 +77,7 @@ class TestRSSManager:
         ])
         mock_cur.description = [('id',), ('url',), ('name',), ('language',), ('source_id',), ('category_id',), ('source_name',), ('category_name',)]
 
-        result = await rss_manager.get_feeds_by_language('en')
+        result = await apps.rss_parser.services.rss_manager.get_feeds_by_language('en')
         assert len(result) == 1
         assert result[0]['lang'] == 'en'
 
@@ -90,7 +90,7 @@ class TestRSSManager:
         ])
         mock_cur.description = [('id',), ('url',), ('name',), ('language',), ('source_id',), ('category_id',), ('source_name',), ('category_name',)]
 
-        result = await rss_manager.get_feeds_by_source('BBC')
+        result = await apps.rss_parser.services.rss_manager.get_feeds_by_source('BBC')
         assert len(result) == 1
         assert result[0]['source'] == 'BBC'
 
@@ -99,7 +99,7 @@ class TestRSSManager:
         mock_conn.cursor.return_value.__aenter__.return_value = mock_cur
         mock_cur.fetchone = AsyncMock(side_effect=[(1,), (1,)])
 
-        result = await rss_manager.add_feed('http://example.com/rss', 'Tech', 'BBC', 'en')
+        result = await apps.rss_parser.services.rss_manager.add_feed('http://example.com/rss', 'Tech', 'BBC', 'en')
         assert result is True
 
     async def test_add_feed_category_not_found(self, rss_manager, mock_pool, mock_conn, mock_cur):
@@ -107,7 +107,7 @@ class TestRSSManager:
         mock_conn.cursor.return_value.__aenter__.return_value = mock_cur
         mock_cur.fetchone.return_value = None
 
-        result = await rss_manager.add_feed('http://example.com/rss', 'NonExistent', 'BBC', 'en')
+        result = await apps.rss_parser.services.rss_manager.add_feed('http://example.com/rss', 'NonExistent', 'BBC', 'en')
         assert result is False
 
     async def test_update_feed_success(self, rss_manager, mock_pool, mock_conn, mock_cur):
@@ -116,7 +116,7 @@ class TestRSSManager:
         mock_cur.fetchone = AsyncMock(side_effect=[(1,), (1,)])
         mock_cur.rowcount = 1
 
-        result = await rss_manager.update_feed(1, name='Updated Feed')
+        result = await apps.rss_parser.services.rss_manager.update_feed(1, name='Updated Feed')
         assert result is True
 
     async def test_delete_feed_success(self, rss_manager, mock_pool, mock_conn, mock_cur):
@@ -124,7 +124,7 @@ class TestRSSManager:
         mock_conn.cursor.return_value.__aenter__.return_value = mock_cur
         mock_cur.rowcount = 1
 
-        result = await rss_manager.delete_feed(1)
+        result = await apps.rss_parser.services.rss_manager.delete_feed(1)
         assert result is True
 
     async def test_get_feed_cooldown_minutes_success(self, rss_manager, mock_pool, mock_conn, mock_cur):
@@ -132,7 +132,7 @@ class TestRSSManager:
         mock_conn.cursor.return_value.__aenter__.return_value = mock_cur
         mock_cur.fetchone.return_value = (30,)
 
-        result = await rss_manager.get_feed_cooldown_minutes(1)
+        result = await apps.rss_parser.services.rss_manager.get_feed_cooldown_minutes(1)
         assert result == 30
 
     async def test_get_feed_cooldown_minutes_default(self, rss_manager, mock_pool, mock_conn, mock_cur):
@@ -140,7 +140,7 @@ class TestRSSManager:
         mock_conn.cursor.return_value.__aenter__.return_value = mock_cur
         mock_cur.fetchone.return_value = None
 
-        result = await rss_manager.get_feed_cooldown_minutes(1)
+        result = await apps.rss_parser.services.rss_manager.get_feed_cooldown_minutes(1)
         assert result == 60
 
     async def test_get_max_news_per_hour_for_feed_success(self, rss_manager, mock_pool, mock_conn, mock_cur):
@@ -148,7 +148,7 @@ class TestRSSManager:
         mock_conn.cursor.return_value.__aenter__.return_value = mock_cur
         mock_cur.fetchone.return_value = (5,)
 
-        result = await rss_manager.get_max_news_per_hour_for_feed(1)
+        result = await apps.rss_parser.services.rss_manager.get_max_news_per_hour_for_feed(1)
         assert result == 5
 
     async def test_get_last_published_time_for_feed_success(self, rss_manager, mock_pool, mock_conn, mock_cur):
@@ -156,7 +156,7 @@ class TestRSSManager:
         mock_conn.cursor.return_value.__aenter__.return_value = mock_cur
         mock_cur.fetchone.return_value = (datetime.utcnow(),)
 
-        result = await rss_manager.get_last_published_time_for_feed(1)
+        result = await apps.rss_parser.services.rss_manager.get_last_published_time_for_feed(1)
         assert isinstance(result, datetime)
 
     async def test_get_recent_rss_items_count_for_feed_success(self, rss_manager, mock_pool, mock_conn, mock_cur):
@@ -164,7 +164,7 @@ class TestRSSManager:
         mock_conn.cursor.return_value.__aenter__.return_value = mock_cur
         mock_cur.fetchone.return_value = (5,)
 
-        result = await rss_manager.get_recent_rss_items_count_for_feed(1, 60)
+        result = await apps.rss_parser.services.rss_manager.get_recent_rss_items_count_for_feed(1, 60)
         assert result == 5
 
     def test_generate_news_id(self, rss_manager):
@@ -173,26 +173,26 @@ class TestRSSManager:
         link = "http://example.com"
         feed_id = 1
 
-        news_id = rss_manager.generate_news_id(title, content, link, feed_id)
+        news_id = apps.rss_parser.services.rss_manager.generate_news_id(title, content, link, feed_id)
         assert isinstance(news_id, str)
         assert len(news_id) == 64  # SHA256 hex length
 
     async def test_check_for_duplicates_false(self, rss_manager):
-        with patch('rss_manager.FireFeedDuplicateDetector') as mock_detector_class:
+        with patch('apps.rss_parser.services.rss_manager.FireFeedDuplicateDetector') as mock_detector_class:
             mock_detector = AsyncMock()
             mock_detector.is_duplicate_strict.return_value = (False, {})
             mock_detector_class.return_value = mock_detector
 
-            result = await rss_manager.check_for_duplicates("title", "content", "link", "en")
+            result = await apps.rss_parser.services.rss_manager.check_for_duplicates("title", "content", "link", "en")
             assert result is False
 
     async def test_check_for_duplicates_true(self, rss_manager):
-        with patch('rss_manager.FireFeedDuplicateDetector') as mock_detector_class:
+        with patch('apps.rss_parser.services.rss_manager.FireFeedDuplicateDetector') as mock_detector_class:
             mock_detector = AsyncMock()
             mock_detector.is_duplicate_strict.return_value = (True, {"news_id": "duplicate_id"})
             mock_detector_class.return_value = mock_detector
 
-            result = await rss_manager.check_for_duplicates("title", "content", "link", "en")
+            result = await apps.rss_parser.services.rss_manager.check_for_duplicates("title", "content", "link", "en")
             assert result is True
 
     async def test_validate_rss_feed_success(self, rss_manager):
@@ -203,7 +203,7 @@ class TestRSSManager:
             mock_parse.return_value = mock_feed
 
             headers = {"User-Agent": "Test"}
-            result = await rss_manager.validate_rss_feed("http://example.com/rss", headers)
+            result = await apps.rss_parser.services.rss_manager.validate_rss_feed("http://example.com/rss", headers)
             assert result is True
 
     async def test_validate_rss_feed_no_entries(self, rss_manager):
@@ -214,7 +214,7 @@ class TestRSSManager:
             mock_parse.return_value = mock_feed
 
             headers = {"User-Agent": "Test"}
-            result = await rss_manager.validate_rss_feed("http://example.com/rss", headers)
+            result = await apps.rss_parser.services.rss_manager.validate_rss_feed("http://example.com/rss", headers)
             assert result is False
 
     async def test_save_rss_item_to_db_success(self, rss_manager, mock_pool, mock_conn, mock_cur):
@@ -233,7 +233,7 @@ class TestRSSManager:
             "image_filename": "test.jpg"
         }
 
-        result = await rss_manager.save_rss_item_to_db(rss_item, 1)
+        result = await apps.rss_parser.services.rss_manager.save_rss_item_to_db(rss_item, 1)
         assert result == "test_news_id"
 
     async def test_save_rss_item_to_db_category_not_found(self, rss_manager, mock_pool, mock_conn, mock_cur):
@@ -252,7 +252,7 @@ class TestRSSManager:
             "image_filename": "test.jpg"
         }
 
-        result = await rss_manager.save_rss_item_to_db(rss_item, 1)
+        result = await apps.rss_parser.services.rss_manager.save_rss_item_to_db(rss_item, 1)
         assert result is None
 
     async def test_save_translations_to_db_success(self, rss_manager, mock_pool, mock_conn, mock_cur):
@@ -265,15 +265,15 @@ class TestRSSManager:
             "de": {"title": "Deutscher Titel", "content": "Deutscher Inhalt"}
         }
 
-        result = await rss_manager.save_translations_to_db("test_news_id", translations)
+        result = await apps.rss_parser.services.rss_manager.save_translations_to_db("test_news_id", translations)
         assert result is True
 
     async def test_save_translations_to_db_empty_translations(self, rss_manager):
-        result = await rss_manager.save_translations_to_db("test_news_id", {})
+        result = await apps.rss_parser.services.rss_manager.save_translations_to_db("test_news_id", {})
         assert result is True
 
     async def test_save_translations_to_db_invalid_translations(self, rss_manager):
-        result = await rss_manager.save_translations_to_db("test_news_id", "invalid")
+        result = await apps.rss_parser.services.rss_manager.save_translations_to_db("test_news_id", "invalid")
         assert result is False
 
     async def test_extract_image_from_rss_item_media_thumbnail(self):
@@ -316,7 +316,7 @@ class TestRSSManager:
         ])
         mock_cur.description = [('news_id',), ('original_title',), ('original_content',), ('original_language',), ('image_filename',), ('category_id',), ('rss_feed_id',), ('telegram_published_at',), ('created_at',), ('updated_at',), ('category_name',), ('source_name',), ('source_url',)]
 
-        result = await rss_manager.fetch_unprocessed_rss_items()
+        result = await apps.rss_parser.services.rss_manager.fetch_unprocessed_rss_items()
         assert len(result) == 1
         assert result[0]['news_id'] == 'news_id'
 
@@ -325,7 +325,7 @@ class TestRSSManager:
         mock_conn.cursor.return_value.__aenter__.return_value = mock_cur
         mock_cur.rowcount = 5
 
-        result = await rss_manager.cleanup_duplicates()
+        result = await apps.rss_parser.services.rss_manager.cleanup_duplicates()
         assert result == []
 
     # New tests for orchestration behaviors in RSSManager.process_rss_feed and process_all_feeds
@@ -429,7 +429,7 @@ class TestRSSManager:
         class Cfg:
             class translation:
                 translation_enabled = True
-        monkeypatch.setattr("apps.rss_parser.services.rss_manager.get_service_config", lambda: Cfg)
+        monkeypatch.setattr("apps.rss_parser.services.apps.rss_parser.services.rss_manager.get_service_config", lambda: Cfg)
 
         # Act
         items = await manager.process_rss_feed({"id": 3, "name": "Feed", "lang": "en", "url": "u"}, {"User-Agent": "X"})
@@ -491,7 +491,7 @@ class TestRSSManager:
         )
 
         # Provide DEFAULT_USER_AGENT
-        monkeypatch.setattr("apps.rss_parser.services.rss_manager.get_service", lambda t: {"DEFAULT_USER_AGENT": "UA"})
+        monkeypatch.setattr("apps.rss_parser.services.apps.rss_parser.services.rss_manager.get_service", lambda t: {"DEFAULT_USER_AGENT": "UA"})
 
         # Act
         batches = await manager.fetch_rss_items()
@@ -528,7 +528,7 @@ class TestRSSManager:
         manager.get_all_active_feeds = fake_get_all_active_feeds
 
         # Provide DEFAULT_USER_AGENT
-        monkeypatch.setattr("apps.rss_parser.services.rss_manager.get_service", lambda t: {"DEFAULT_USER_AGENT": "UA"})
+        monkeypatch.setattr("apps.rss_parser.services.apps.rss_parser.services.rss_manager.get_service", lambda t: {"DEFAULT_USER_AGENT": "UA"})
 
         # Stub process_rss_feed to return varying results, and one raises
         async def prf(feed, headers):

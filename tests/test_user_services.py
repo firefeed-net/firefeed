@@ -3,8 +3,7 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from services.user.telegram_user_service import TelegramUserService
 from services.user.web_user_service import WebUserService
-from services.user.user_manager import UserManager
-from interfaces import ITelegramUserService, IWebUserService, IUserManager
+from interfaces import ITelegramUserService, IWebUserService
 
 
 class TestTelegramUserService:
@@ -200,44 +199,6 @@ class TestWebUserService:
         assert isinstance(service, IWebUserService)
 
 
-class TestUserManager:
-    """Test UserManager backward compatibility wrapper"""
-
-    @pytest.fixture
-    def service(self):
-        return UserManager()
-
-    def test_implements_interface(self, service):
-        """Test that service implements the interface"""
-        assert isinstance(service, IUserManager)
-
-    def test_has_services(self, service):
-        """Test that UserManager has the required services"""
-        assert hasattr(service, 'telegram_service')
-        assert hasattr(service, 'web_service')
-        assert isinstance(service.telegram_service, ITelegramUserService)
-        assert isinstance(service.web_service, IWebUserService)
-
-    async def test_delegates_telegram_methods(self, service):
-        """Test that UserManager delegates Telegram methods correctly"""
-        # Mock the services
-        service.telegram_service = AsyncMock()
-        service.web_service = AsyncMock()
-
-        # Test delegation
-        await service.get_user_settings(123)
-        service.telegram_service.get_user_settings.assert_called_once_with(123)
-
-        await service.save_user_settings(123, ["tech"], "en")
-        service.telegram_service.save_user_settings.assert_called_once_with(123, ["tech"], "en")
-
-        await service.generate_telegram_link_code(123)
-        service.web_service.generate_telegram_link_code.assert_called_once_with(123)
-
-        await service.confirm_telegram_link(456, "code")
-        service.web_service.confirm_telegram_link.assert_called_once_with(456, "code")
-
-
 class TestDIIntegration:
     """Test DI container integration"""
 
@@ -251,8 +212,6 @@ class TestDIIntegration:
         # Test that we can resolve user services
         telegram_service = di_container.resolve(ITelegramUserService)
         web_service = di_container.resolve(IWebUserService)
-        user_manager = di_container.resolve(IUserManager)
 
         assert isinstance(telegram_service, ITelegramUserService)
         assert isinstance(web_service, IWebUserService)
-        assert isinstance(user_manager, IUserManager)

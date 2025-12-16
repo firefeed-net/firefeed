@@ -11,7 +11,7 @@ from interfaces import IRSSFetcher, IMediaExtractor, IDuplicateDetector
 from utils.image import ImageProcessor
 from utils.video import VideoProcessor
 from exceptions import RSSFetchError, RSSParseError, RSSValidationError
-from api.deps import validate_rss_url
+from apps.api.deps import validate_rss_url
 from di_container import get_service
 from config.services_config import get_service_config
 

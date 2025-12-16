@@ -7,7 +7,7 @@ import traceback
 # Add project root to module search path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from api.email_service.sender import send_registration_success_email
+from apps.api.email_service.sender import send_registration_success_email
 
 # Set up logging
 logging.basicConfig(

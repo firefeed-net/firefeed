@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 from datetime import datetime
-from api.models import (
+from apps.api.models import (
     LanguageTranslation,
     RSSItem,
     CategoryItem,

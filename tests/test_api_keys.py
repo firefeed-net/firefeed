@@ -1,6 +1,6 @@
 import pytest
 from datetime import datetime
-from api.models import (
+from apps.api.models import (
     UserApiKeyBase,
     UserApiKeyCreate,
     UserApiKeyUpdate,
