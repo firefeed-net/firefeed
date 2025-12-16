@@ -43,7 +43,7 @@ from apps.api.database import (
 class TestDatabaseFunctions:
     @pytest.fixture
     def mock_pool(self):
-        pool = AsyncMock()
+        pool = MagicMock()
         return pool
 
     @pytest.fixture
@@ -62,7 +62,7 @@ class TestDatabaseFunctions:
             assert result == mock_pool
 
     async def test_get_db_pool_failure(self):
-        with patch('config.get_shared_db_pool', side_effect=Exception("DB error")):
+        with patch('apps.api.database.get_service', return_value={'get_shared_db_pool': lambda: (_ for _ in ()).throw(Exception("DB error"))}):
             result = await get_db_pool()
             assert result is None
 
@@ -71,7 +71,7 @@ class TestDatabaseFunctions:
             await close_db_pool()
 
     async def test_close_db_pool_failure(self):
-        with patch('config.close_shared_db_pool', side_effect=Exception("DB error")):
+        with patch('apps.api.database.get_service', return_value={'close_shared_db_pool': lambda: exec('raise Exception("DB error")')}):
             await close_db_pool()
 
     async def test_create_user_success(self, mock_pool, mock_conn, mock_cur):

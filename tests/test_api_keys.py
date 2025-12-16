@@ -44,14 +44,12 @@ class TestUserApiKeyResponse:
         key = UserApiKeyResponse(
             id=1,
             user_id=123,
-            key="test_key_123",
             is_active=True,
             created_at=created_at,
             limits={"requests_per_day": 1000}
         )
         assert key.id == 1
         assert key.user_id == 123
-        assert key.key == "test_key_123"
         assert key.is_active is True
         assert key.created_at == created_at
         assert key.expires_at is None
