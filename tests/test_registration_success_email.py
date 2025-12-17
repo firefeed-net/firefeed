@@ -7,8 +7,8 @@ from apps.api.email_service.sender import send_registration_success_email
 class TestRegistrationSuccessEmail:
     async def test_send_registration_success_email_success(self):
         """Test successful sending of registration success email"""
-        with patch('apps.api.email_service.sender.send_email_async', new_callable=AsyncMock) as mock_send:
-            mock_send.return_value = True
+        with patch('aiosmtplib.send', new_callable=AsyncMock) as mock_send:
+            mock_send.return_value = None
 
             result = await send_registration_success_email("test@example.com", "en")
             assert result is True
@@ -16,8 +16,8 @@ class TestRegistrationSuccessEmail:
 
     async def test_send_registration_success_email_failure(self):
         """Test failure in sending registration success email"""
-        with patch('apps.api.email_service.sender.send_email_async', new_callable=AsyncMock) as mock_send:
-            mock_send.return_value = False
+        with patch('aiosmtplib.send', new_callable=AsyncMock) as mock_send:
+            mock_send.side_effect = Exception("SMTP error")
 
             result = await send_registration_success_email("test@example.com", "en")
             assert result is False
@@ -25,7 +25,7 @@ class TestRegistrationSuccessEmail:
 
     async def test_send_registration_success_email_exception(self):
         """Test exception in sending registration success email"""
-        with patch('apps.api.email_service.sender.send_email_async', new_callable=AsyncMock) as mock_send:
+        with patch('aiosmtplib.send', new_callable=AsyncMock) as mock_send:
             mock_send.side_effect = Exception("SMTP error")
 
             result = await send_registration_success_email("test@example.com", "en")

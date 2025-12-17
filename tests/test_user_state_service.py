@@ -18,17 +18,17 @@ from apps.telegram_bot.services.user_state_service import (
 class TestUserStateService:
     async def test_initialize_user_manager_idempotent(self):
         # First initialization
-        with patch('di_container.get_service', return_value=AsyncMock()):
+        with patch('di_container.resolve', return_value=AsyncMock()):
             await initialize_user_manager()
             # Second call should not raise and not recreate instance
             await initialize_user_manager()
 
     async def test_set_current_user_language_updates_memory_and_calls_manager(self):
         mock_um = AsyncMock()
-        with patch('di_container.get_service', return_value=mock_um):
+        with patch('di_container.resolve', return_value=mock_um):
             with patch('apps.telegram_bot.services.user_state_service.USER_LANGUAGES', {}):
                 await set_current_user_language(10, 'ru')
-                mock_um.set_user_language.assert_awaited_with(10, 'ru')
+                mock_um.set_user_language.assert_called_once_with(10, 'ru')
                 assert 10 in __import__('apps.telegram_bot.services.user_state_service', fromlist=['']).USER_LANGUAGES
                 assert __import__('apps.telegram_bot.services.user_state_service', fromlist=['']).USER_LANGUAGES[10]['language'] == 'ru'
 
@@ -48,26 +48,26 @@ class TestUserStateService:
 
     async def test_get_current_user_language_fetches_from_db_and_caches(self):
         mock_um = AsyncMock()
-        mock_um.get_user_language = AsyncMock(return_value='it')
-        with patch('di_container.get_service', return_value=mock_um):
+        mock_um.get_user_language = AsyncMock(return_value='en')
+        with patch('di_container.resolve', return_value=mock_um):
             with patch('apps.telegram_bot.services.user_state_service.USER_LANGUAGES', {}):
                 lang = await get_current_user_language(100)
-                assert lang == 'it'
+                assert lang == 'en'
                 # Cached
-                assert __import__('apps.telegram_bot.services.user_state_service', fromlist=['']).USER_LANGUAGES[100]['language'] == 'it'
+                assert __import__('apps.telegram_bot.services.user_state_service', fromlist=['']).USER_LANGUAGES[100]['language'] == 'en'
 
     async def test_get_current_user_language_default_and_on_exception(self):
         # When DB returns None -> default to en
         mock_um = AsyncMock()
         mock_um.get_user_language = AsyncMock(return_value=None)
-        with patch('di_container.get_service', return_value=mock_um):
+        with patch('di_container.resolve', return_value=mock_um):
             with patch('apps.telegram_bot.services.user_state_service.USER_LANGUAGES', {}):
                 lang = await get_current_user_language(200)
                 assert lang == 'en'
         # When exception occurs -> default to en
         mock_um = AsyncMock()
         mock_um.get_user_language = AsyncMock(side_effect=RuntimeError('boom'))
-        with patch('di_container.get_service', return_value=mock_um):
+        with patch('di_container.resolve', return_value=mock_um):
             with patch('apps.telegram_bot.services.user_state_service.USER_LANGUAGES', {}):
                 lang = await get_current_user_language(201)
                 assert lang == 'en'

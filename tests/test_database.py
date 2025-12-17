@@ -48,16 +48,16 @@ class TestDatabaseFunctions:
 
     @pytest.fixture
     def mock_conn(self):
-        conn = AsyncMock()
+        conn = MagicMock()
         return conn
 
     @pytest.fixture
     def mock_cur(self):
-        cur = AsyncMock()
+        cur = MagicMock()
         return cur
 
     async def test_get_db_pool_success(self, mock_pool):
-        with patch('apps.api.database.get_service', return_value={'get_shared_db_pool': lambda: mock_pool}):
+        with patch('di_container.resolve', return_value={'get_shared_db_pool': lambda: mock_pool}):
             result = await get_db_pool()
             assert result == mock_pool
 
@@ -67,7 +67,7 @@ class TestDatabaseFunctions:
             assert result is None
 
     async def test_close_db_pool_success(self):
-        with patch('config.close_shared_db_pool', return_value=None):
+        with patch('apps.api.database.close_shared_db_pool', return_value=None):
             await close_db_pool()
 
     async def test_close_db_pool_failure(self):
@@ -77,7 +77,7 @@ class TestDatabaseFunctions:
     async def test_create_user_success(self, mock_pool, mock_conn, mock_cur):
         mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
         mock_conn.cursor.return_value.__aenter__.return_value = mock_cur
-        mock_cur.fetchone.return_value = (1, 'test@example.com', 'en', True, False, False, datetime.utcnow(), datetime.utcnow())
+        mock_cur.fetchone.return_value = (1, 'test@example.com', 'en', True, False, False, datetime.now(datetime.UTC), datetime.now(datetime.UTC))
         mock_cur.description = [('id',), ('email',), ('language',), ('is_active',), ('is_verified',), ('is_deleted',), ('created_at',), ('updated_at',)]
 
         result = await create_user(mock_pool, 'test@example.com', 'hashed_pass', 'en')
@@ -253,13 +253,14 @@ class TestDatabaseFunctions:
         assert result == {1, 2, 3}
 
     async def test_get_user_categories_success(self, mock_pool, mock_conn, mock_cur):
-        mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
-        mock_conn.cursor.return_value.__aenter__.return_value = mock_cur
-        mock_cur.fetchone = AsyncMock(side_effect=[(1, 'Tech'), (2, 'Sports'), None])
+        with patch('di_container.resolve', return_value={'some': 'config'}):
+            mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
+            mock_conn.cursor.return_value.__aenter__.return_value = mock_cur
+            mock_cur.fetchone = AsyncMock(side_effect=[(1, 'Tech'), (2, 'Sports'), None])
 
-        result = await get_user_categories(mock_pool, 1)
-        assert len(result) == 2
-        assert result[0]['name'] == 'Tech'
+            result = await get_user_categories(mock_pool, 1)
+            assert len(result) == 2
+            assert result[0]['name'] == 'Tech'
 
     async def test_create_user_rss_feed_success(self, mock_pool, mock_conn, mock_cur):
         mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
@@ -323,14 +324,15 @@ class TestDatabaseFunctions:
         assert result is True
 
     async def test_get_all_categories_list_success(self, mock_pool, mock_conn, mock_cur):
-        mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
-        mock_conn.cursor.return_value.__aenter__.return_value = mock_cur
-        mock_cur.fetchone = AsyncMock(side_effect=[(2,), (1, 'Tech'), (2, 'Sports'), None])
+        with patch('di_container.resolve', return_value={'some': 'config'}):
+            mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
+            mock_conn.cursor.return_value.__aenter__.return_value = mock_cur
+            mock_cur.fetchone = AsyncMock(side_effect=[(2,), (1, 'Tech'), (2, 'Sports'), None])
 
-        total_count, results = await get_all_categories_list(mock_pool, 10, 0)
-        assert total_count == 2
-        assert len(results) == 2
-        assert results[0]['name'] == 'Tech'
+            total_count, results = await get_all_categories_list(mock_pool, 10, 0)
+            assert total_count == 2
+            assert len(results) == 2
+            assert results[0]['name'] == 'Tech'
 
     async def test_get_all_sources_list_success(self, mock_pool, mock_conn, mock_cur):
         mock_pool.acquire.return_value.__aenter__.return_value = mock_conn

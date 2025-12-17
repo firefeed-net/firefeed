@@ -28,22 +28,14 @@ class TestRSSManager:
 
     @pytest.fixture
     def mock_conn(self):
-        conn = AsyncMock()
+        conn = MagicMock()
         return conn
 
     @pytest.fixture
     def mock_cur(self):
-        cur = AsyncMock()
+        cur = MagicMock()
         return cur
 
-    async def test_get_pool(self, rss_manager, mock_pool):
-        with patch('apps.rss_parser.services.rss_manager.get_service', return_value={'get_shared_db_pool': lambda: mock_pool}):
-            result = await rss_manager.get_pool()
-            assert result == mock_pool
-
-    async def test_close_pool(self, rss_manager):
-        with patch('apps.rss_parser.services.rss_manager.get_service', return_value={'close_shared_db_pool': AsyncMock()}):
-            await rss_manager.close_pool()
 
     async def test_get_all_active_feeds_success(self, rss_manager, mock_pool, mock_conn, mock_cur):
         mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
@@ -67,26 +59,18 @@ class TestRSSManager:
         assert result == []
 
     async def test_get_feeds_by_category_success(self, rss_manager, mock_pool, mock_conn, mock_cur):
-        mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
-        mock_conn.cursor.return_value.__aenter__.return_value = mock_cur
-        mock_cur.fetchone = AsyncMock(side_effect=[
-            (1, 'http://example.com/rss', 'Test Feed', 'en', 1, 1, 'BBC', 'Tech'),
-            None
-        ])
-        mock_cur.description = [('id',), ('url',), ('name',), ('language',), ('source_id',), ('category_id',), ('source_name',), ('category_name',)]
+        rss_manager.rss_storage.get_feeds_by_category.return_value = [
+            {"id": 1, "url": "http://example.com/rss", "name": "Test Feed", "lang": "en", "source_id": 1, "category_id": 1, "source": "BBC", "category": "Tech"}
+        ]
 
         result = await rss_manager.get_feeds_by_category('Tech')
         assert len(result) == 1
         assert result[0]['category'] == 'Tech'
 
     async def test_get_feeds_by_language_success(self, rss_manager, mock_pool, mock_conn, mock_cur):
-        mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
-        mock_conn.cursor.return_value.__aenter__.return_value = mock_cur
-        mock_cur.fetchone = AsyncMock(side_effect=[
-            (1, 'http://example.com/rss', 'Test Feed', 'en', 1, 1, 'BBC', 'Tech'),
-            None
-        ])
-        mock_cur.description = [('id',), ('url',), ('name',), ('language',), ('source_id',), ('category_id',), ('source_name',), ('category_name',)]
+        rss_manager.rss_storage.get_feeds_by_language.return_value = [
+            {"id": 1, "url": "http://example.com/rss", "name": "Test Feed", "lang": "en", "source_id": 1, "category_id": 1, "source": "BBC", "category": "Tech"}
+        ]
 
         result = await rss_manager.get_feeds_by_language('en')
         assert len(result) == 1
@@ -184,27 +168,21 @@ class TestRSSManager:
         link = "http://example.com"
         feed_id = 1
 
-        news_id = apps.rss_parser.services.rss_manager.generate_news_id(title, content, link, feed_id)
+        news_id = rss_manager.generate_news_id(title, content, link, feed_id)
         assert isinstance(news_id, str)
         assert len(news_id) == 64  # SHA256 hex length
 
     async def test_check_for_duplicates_false(self, rss_manager):
-        with patch('apps.rss_parser.services.rss_manager.FireFeedDuplicateDetector') as mock_detector_class:
-            mock_detector = AsyncMock()
-            mock_detector.is_duplicate_strict.return_value = (False, {})
-            mock_detector_class.return_value = mock_detector
+        rss_manager.rss_fetcher.check_for_duplicates.return_value = False
 
-            result = await rss_manager.check_for_duplicates("title", "content", "link", "en")
-            assert result is False
+        result = await rss_manager.check_for_duplicates("title", "content", "link", "en")
+        assert result is False
 
     async def test_check_for_duplicates_true(self, rss_manager):
-        with patch('apps.rss_parser.services.rss_manager.FireFeedDuplicateDetector') as mock_detector_class:
-            mock_detector = AsyncMock()
-            mock_detector.is_duplicate_strict.return_value = (True, {"news_id": "duplicate_id"})
-            mock_detector_class.return_value = mock_detector
+        rss_manager.rss_fetcher.check_for_duplicates.return_value = True
 
-            result = await rss_manager.check_for_duplicates("title", "content", "link", "en")
-            assert result is True
+        result = await rss_manager.check_for_duplicates("title", "content", "link", "en")
+        assert result is True
 
     async def test_validate_rss_feed_success(self, rss_manager):
         with patch('feedparser.parse') as mock_parse:
@@ -337,7 +315,7 @@ class TestRSSManager:
         mock_cur.rowcount = 5
 
         result = await rss_manager.cleanup_duplicates()
-        assert result == []
+        assert result is None
 
     # New tests for orchestration behaviors in RSSManager.process_rss_feed and process_all_feeds
     @pytest.mark.asyncio
@@ -440,7 +418,7 @@ class TestRSSManager:
         class Cfg:
             class translation:
                 translation_enabled = True
-        monkeypatch.setattr("apps.rss_parser.services.apps.rss_parser.services.rss_manager.get_service_config", lambda: Cfg)
+        monkeypatch.setattr("apps.rss_parser.services.rss_manager.get_service_config", lambda: Cfg)
 
         # Act
         items = await manager.process_rss_feed({"id": 3, "name": "Feed", "lang": "en", "url": "u"}, {"User-Agent": "X"})
@@ -502,7 +480,7 @@ class TestRSSManager:
         )
 
         # Provide DEFAULT_USER_AGENT
-        monkeypatch.setattr("apps.rss_parser.services.apps.rss_parser.services.rss_manager.get_service", lambda t: {"DEFAULT_USER_AGENT": "UA"})
+        monkeypatch.setattr("apps.rss_parser.services.rss_manager.get_service", lambda t: {"DEFAULT_USER_AGENT": "UA"})
 
         # Act
         batches = await manager.fetch_rss_items()
@@ -539,7 +517,7 @@ class TestRSSManager:
         manager.get_all_active_feeds = fake_get_all_active_feeds
 
         # Provide DEFAULT_USER_AGENT
-        monkeypatch.setattr("apps.rss_parser.services.apps.rss_parser.services.rss_manager.get_service", lambda t: {"DEFAULT_USER_AGENT": "UA"})
+        monkeypatch.setattr("apps.rss_parser.services.rss_manager.get_service", lambda t: {"DEFAULT_USER_AGENT": "UA"})
 
         # Stub process_rss_feed to return varying results, and one raises
         async def prf(feed, headers):

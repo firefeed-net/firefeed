@@ -26,18 +26,8 @@ class TestDIIntegration:
         """Test that all repository interfaces are properly registered"""
         from unittest.mock import patch
 
-        mock_services = {
-            IUserRepository: AsyncMock(),
-            IRSSFeedRepository: AsyncMock(),
-            IRSSItemRepository: AsyncMock(),
-            ICategoryRepository: AsyncMock(),
-            ISourceRepository: AsyncMock(),
-            IApiKeyRepository: AsyncMock(),
-            ITelegramRepository: AsyncMock(),
-        }
-
-        with patch('di_container.get_service') as mock_get:
-            mock_get.side_effect = lambda interface: mock_services.get(interface)
+        with patch('di_container.resolve') as mock_resolve:
+            mock_resolve.return_value = AsyncMock()
 
             # Test repository interfaces
             user_repo = get_service(IUserRepository)
@@ -74,19 +64,8 @@ class TestDIIntegration:
         """Test that all service interfaces are properly registered"""
         from unittest.mock import patch
 
-        mock_services = {
-            IRSSFetcher: AsyncMock(),
-            IRSSValidator: AsyncMock(),
-            IRSSStorage: AsyncMock(),
-            IMediaExtractor: AsyncMock(),
-            ITranslationService: AsyncMock(),
-            IDuplicateDetector: AsyncMock(),
-            ITranslatorQueue: AsyncMock(),
-            IMaintenanceService: AsyncMock(),
-        }
-
-        with patch('di_container.get_service') as mock_get:
-            mock_get.side_effect = lambda interface: mock_services.get(interface)
+        with patch('di_container.resolve') as mock_resolve:
+            mock_resolve.return_value = AsyncMock()
 
             # Test service interfaces
             rss_fetcher = get_service(IRSSFetcher)
@@ -140,22 +119,22 @@ class TestDIIntegration:
             assert web_user_service is not None
             assert hasattr(web_user_service, 'generate_telegram_link_code')
 
-    async def test_repository_dependencies_injection(self):
+    @patch('di_container.resolve')
+    async def test_repository_dependencies_injection(self, mock_resolve):
         """Test that repositories receive proper dependencies"""
-        from unittest.mock import patch
 
         mock_repo = AsyncMock()
         mock_repo.db_pool = AsyncMock()
 
-        with patch('di_container.get_service', return_value=mock_repo):
-            # Get a repository and check it has database pool
-            user_repo = get_service(IUserRepository)
-            assert hasattr(user_repo, 'db_pool')
-            assert user_repo.db_pool is not None
+        mock_resolve.return_value = mock_repo
+        # Get a repository and check it has database pool
+        user_repo = get_service(IUserRepository)
+        assert hasattr(user_repo, 'db_pool')
+        assert user_repo.db_pool is not None
 
-    async def test_service_dependencies_injection(self):
+    @patch('di_container.resolve')
+    async def test_service_dependencies_injection(self, mock_resolve):
         """Test that services receive proper dependencies"""
-        from unittest.mock import patch
 
         mock_services = {
             IRSSFetcher: AsyncMock(),
@@ -168,47 +147,46 @@ class TestDIIntegration:
             IMaintenanceService: AsyncMock(),
         }
 
-        with patch('di_container.get_service') as mock_get:
-            mock_get.side_effect = lambda interface: mock_services.get(interface)
+        mock_resolve.side_effect = lambda interface: mock_services.get(interface)
 
-            # Test RSS Manager dependencies
-            from apps.rss_parser.services import RSSManager
-            rss_manager = RSSManager(
-                rss_fetcher=get_service(IRSSFetcher),
-                rss_validator=get_service(IRSSValidator),
-                rss_storage=get_service(IRSSStorage),
-                media_extractor=get_service(IMediaExtractor),
-                translation_service=get_service(ITranslationService),
-                duplicate_detector=get_service(IDuplicateDetector),
-                translator_queue=get_service(ITranslatorQueue),
-                maintenance_service=get_service(IMaintenanceService)
-            )
+        # Test RSS Manager dependencies
+        from apps.rss_parser.services import RSSManager
+        rss_manager = RSSManager(
+            rss_fetcher=get_service(IRSSFetcher),
+            rss_validator=get_service(IRSSValidator),
+            rss_storage=get_service(IRSSStorage),
+            media_extractor=get_service(IMediaExtractor),
+            translation_service=get_service(ITranslationService),
+            duplicate_detector=get_service(IDuplicateDetector),
+            translator_queue=get_service(ITranslatorQueue),
+            maintenance_service=get_service(IMaintenanceService)
+        )
 
-            assert rss_manager.rss_fetcher is not None
-            assert rss_manager.rss_validator is not None
-            assert rss_manager.rss_storage is not None
-            assert rss_manager.media_extractor is not None
-            assert rss_manager.translation_service is not None
-            assert rss_manager.duplicate_detector is not None
-            assert rss_manager.translator_queue is not None
-            assert rss_manager.maintenance_service is not None
+        assert rss_manager.rss_fetcher is not None
+        assert rss_manager.rss_validator is not None
+        assert rss_manager.rss_storage is not None
+        assert rss_manager.media_extractor is not None
+        assert rss_manager.translation_service is not None
+        assert rss_manager.duplicate_detector is not None
+        assert rss_manager.translator_queue is not None
+        assert rss_manager.maintenance_service is not None
 
-    async def test_config_injection(self):
+    @patch('di_container.resolve')
+    async def test_config_injection(self, mock_resolve):
         """Test that config is properly injected"""
-        from unittest.mock import patch
 
         mock_config = {'some': 'config'}
 
-        with patch('di_container.get_service', return_value=mock_config):
-            # Config should be available as dict service
-            config = get_service(dict)
-            assert config is not None
-            assert isinstance(config, dict)
-            assert len(config) > 0  # Should have some configuration
+        mock_resolve.return_value = mock_config
+        # Config should be available as dict service
+        config = get_service(dict)
+        assert config is not None
+        assert isinstance(config, dict)
+        assert len(config) > 0  # Should have some configuration
 
-    async def test_service_singleton_behavior(self):
+    @patch('di_container.resolve')
+    async def test_service_singleton_behavior(self, mock_resolve):
         """Test that services behave as singletons within the same context"""
-        from unittest.mock import patch
 
         mock_repo1 = AsyncMock()
         mock_repo2 = AsyncMock()
@@ -216,47 +194,47 @@ class TestDIIntegration:
         mock_repo2.db_pool = 'same_pool'
 
         call_count = 0
-        def mock_get(interface):
+        def mock_resolve_func(interface):
             nonlocal call_count
             call_count += 1
             return mock_repo1 if call_count == 1 else mock_repo2
 
-        with patch('di_container.get_service', side_effect=mock_get):
-            # Get the same service twice
-            user_repo1 = get_service(IUserRepository)
-            user_repo2 = get_service(IUserRepository)
+        mock_resolve.side_effect = mock_resolve_func
+        # Get the same service twice
+        user_repo1 = get_service(IUserRepository)
+        user_repo2 = get_service(IUserRepository)
 
-            # They should be different instances (factory pattern)
-            # but with same configuration
-            assert user_repo1 is not user_repo2
-            assert user_repo1.db_pool is user_repo2.db_pool  # Same db pool
+        # They should be different instances (factory pattern)
+        # but with same configuration
+        assert user_repo1 is not user_repo2
+        assert user_repo1.db_pool is user_repo2.db_pool  # Same db pool
 
-    async def test_interface_compliance(self):
+    @patch('di_container.resolve')
+    async def test_interface_compliance(self, mock_resolve):
         """Test that all services implement their interfaces correctly"""
-        from unittest.mock import patch
 
         mock_repo = AsyncMock()
 
-        with patch('di_container.get_service', return_value=mock_repo):
-            # Test a few key methods exist and are callable
-            user_repo = get_service(IUserRepository)
+        mock_resolve.return_value = mock_repo
+        # Test a few key methods exist and are callable
+        user_repo = get_service(IUserRepository)
 
-            # Should have all required methods
-            required_methods = [
-                'get_user_by_email', 'get_user_by_id', 'create_user',
-                'update_user', 'delete_user', 'save_verification_code',
-                'activate_user_and_use_verification_code', 'save_password_reset_token',
-                'confirm_password_reset_transaction', 'delete_password_reset_token'
-            ]
+        # Should have all required methods
+        required_methods = [
+            'get_user_by_email', 'get_user_by_id', 'create_user',
+            'update_user', 'delete_user', 'save_verification_code',
+            'activate_user_and_use_verification_code', 'save_password_reset_token',
+            'confirm_password_reset_transaction', 'delete_password_reset_token'
+        ]
 
-            for method_name in required_methods:
-                assert hasattr(user_repo, method_name)
-                method = getattr(user_repo, method_name)
-                assert callable(method)
+        for method_name in required_methods:
+            assert hasattr(user_repo, method_name)
+            method = getattr(user_repo, method_name)
+            assert callable(method)
 
-    async def test_database_pool_injection(self):
+    @patch('di_container.resolve')
+    async def test_database_pool_injection(self, mock_resolve):
         """Test that database pool is properly injected into repositories"""
-        from unittest.mock import patch
 
         mock_repos = {
             IUserRepository: AsyncMock(),
@@ -271,41 +249,40 @@ class TestDIIntegration:
         for mock_repo in mock_repos.values():
             mock_repo.db_pool = AsyncMock()
 
-        with patch('di_container.get_service') as mock_get:
-            mock_get.side_effect = lambda interface: mock_repos.get(interface)
+        mock_resolve.side_effect = lambda interface: mock_repos.get(interface)
 
-            # All repositories should have db_pool attribute
-            repositories = [
-                IUserRepository, IRSSFeedRepository, IRSSItemRepository,
-                ICategoryRepository, ISourceRepository, IApiKeyRepository, ITelegramRepository
-            ]
+        # All repositories should have db_pool attribute
+        repositories = [
+            IUserRepository, IRSSFeedRepository, IRSSItemRepository,
+            ICategoryRepository, ISourceRepository, IApiKeyRepository, ITelegramRepository
+        ]
 
-            for repo_interface in repositories:
-                repo = get_service(repo_interface)
-                assert hasattr(repo, 'db_pool')
-                # db_pool should be injected during initialization
-                assert repo.db_pool is not None
+        for repo_interface in repositories:
+            repo = get_service(repo_interface)
+            assert hasattr(repo, 'db_pool')
+            # db_pool should be injected during initialization
+            assert repo.db_pool is not None
 
-    async def test_error_handling_in_di(self):
+    @patch('di_container.resolve')
+    async def test_error_handling_in_di(self, mock_resolve):
         """Test error handling when services are not available"""
-        from unittest.mock import patch
 
         call_count = 0
-        def mock_get(interface):
+        def mock_resolve_func(interface):
             nonlocal call_count
             call_count += 1
             if call_count == 1:
                 raise KeyError(interface)
             return AsyncMock()
 
-        with patch('di_container.get_service', side_effect=mock_get):
-            # Try to get service without setup
-            with pytest.raises(KeyError):
-                get_service(IUserRepository)
+        mock_resolve.side_effect = mock_resolve_func
+        # Try to get service without setup
+        with pytest.raises(KeyError):
+            get_service(IUserRepository)
 
-            # Setup and try again
-            user_repo = get_service(IUserRepository)
-            assert user_repo is not None
+        # Setup and try again
+        user_repo = get_service(IUserRepository)
+        assert user_repo is not None
 
 
 if __name__ == "__main__":
@@ -322,9 +299,9 @@ if __name__ == "__main__":
             dict: {'some': 'config'},
         }
 
-        with patch('di_container.get_service') as mock_get, \
+        with patch('di_container.resolve') as mock_resolve, \
              patch('di_container.setup_di_container'):
-            mock_get.side_effect = lambda interface: mock_services.get(interface, AsyncMock())
+            mock_resolve.side_effect = lambda interface: mock_services.get(interface, AsyncMock())
 
             setup_di_container()
 

@@ -7,8 +7,8 @@ from apps.api.email_service.sender import send_verification_email
 class TestEmailService:
     async def test_send_verification_email_success(self):
         """Test successful sending of verification email"""
-        with patch('apps.api.email_service.sender.send_email_async', new_callable=AsyncMock) as mock_send:
-            mock_send.return_value = True
+        with patch('aiosmtplib.send', new_callable=AsyncMock) as mock_send:
+            mock_send.return_value = None
 
             result = await send_verification_email("test@example.com", "123456", "en")
             assert result is True
@@ -16,8 +16,8 @@ class TestEmailService:
 
     async def test_send_verification_email_failure(self):
         """Test failure in sending verification email"""
-        with patch('apps.api.email_service.sender.send_email_async', new_callable=AsyncMock) as mock_send:
-            mock_send.return_value = False
+        with patch('aiosmtplib.send', new_callable=AsyncMock) as mock_send:
+            mock_send.side_effect = Exception("SMTP error")
 
             result = await send_verification_email("test@example.com", "123456", "en")
             assert result is False
@@ -25,7 +25,7 @@ class TestEmailService:
 
     async def test_send_verification_email_exception(self):
         """Test exception in sending verification email"""
-        with patch('apps.api.email_service.sender.send_email_async', new_callable=AsyncMock) as mock_send:
+        with patch('aiosmtplib.send', new_callable=AsyncMock) as mock_send:
             mock_send.side_effect = Exception("SMTP error")
 
             result = await send_verification_email("test@example.com", "123456", "en")
