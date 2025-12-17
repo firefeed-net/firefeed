@@ -5,12 +5,13 @@ from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException, status, Request, BackgroundTasks
 from fastapi.security import OAuth2PasswordRequestForm
 
-from api.middleware import limiter
-from api import models
+from apps.api.middleware import limiter
+from apps.api import models
 from di_container import get_service
 from interfaces import IUserRepository
-from api.deps import create_access_token, verify_password, get_password_hash, ACCESS_TOKEN_EXPIRE_MINUTES
-from api.email_service.sender import send_verification_email, send_registration_success_email, send_password_reset_email
+from apps.api.deps import create_access_token, verify_password, get_password_hash, ACCESS_TOKEN_EXPIRE_MINUTES
+from exceptions import DatabaseException
+from apps.api.email_service.sender import send_verification_email, send_registration_success_email, send_password_reset_email
 
 logger = logging.getLogger(__name__)
 
@@ -62,27 +63,31 @@ router = APIRouter(
 async def register_user(request: Request, user: models.UserCreate, background_tasks: BackgroundTasks):
     user_repo = get_service(IUserRepository)
 
-    existing_user = await user_repo.get_user_by_email(user.email)
-    if existing_user:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered")
+    try:
+        existing_user = await user_repo.get_user_by_email(user.email)
+        if existing_user:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered")
 
-    password_hash = get_password_hash(user.password)
-    new_user = await user_repo.create_user(user.email, password_hash, user.language)
-    if not new_user:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to create user")
+        password_hash = get_password_hash(user.password)
+        new_user = await user_repo.create_user(user.email, password_hash, user.language)
+        if not new_user:
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to create user")
 
-    verification_code = "".join(random.choices("0123456789", k=6))
-    expires_at = datetime.now(timezone.utc) + timedelta(hours=24)
-    ok = await user_repo.save_verification_code(new_user["id"], verification_code, expires_at)
-    if not ok:
-        await user_repo.delete_user(new_user["id"])
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to create verification code")
+        verification_code = "".join(random.choices("0123456789", k=6))
+        expires_at = datetime.now(timezone.utc) + timedelta(hours=24)
+        ok = await user_repo.save_verification_code(new_user["id"], verification_code, expires_at)
+        if not ok:
+            await user_repo.delete_user(new_user["id"])
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to create verification code")
+    except DatabaseException as e:
+        logger.error(f"Database error in register_user: {e}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Database error")
 
     async def _send_verification(email: str, code: str, lang: str):
-        start_ts = datetime.utcnow()
+        start_ts = datetime.now(timezone.utc)
         try:
             ok = await send_verification_email(email, code, lang)
-            duration = (datetime.utcnow() - start_ts).total_seconds()
+            duration = (datetime.now(timezone.utc) - start_ts).total_seconds()
             if duration > 10:
                 logger.warning(f"[VerificationEmail] Slow send: {duration:.3f}s for {email}")
             else:
@@ -90,7 +95,7 @@ async def register_user(request: Request, user: models.UserCreate, background_ta
             if not ok:
                 logger.error(f"[VerificationEmail] Failed to send to {email}")
         except Exception as e:
-            duration = (datetime.utcnow() - start_ts).total_seconds()
+            duration = (datetime.now(timezone.utc) - start_ts).total_seconds()
             logger.error(f"[VerificationEmail] Exception after {duration:.3f}s for {email}: {e}")
 
     background_tasks.add_task(_send_verification, user.email, verification_code, user.language)
@@ -132,21 +137,25 @@ async def register_user(request: Request, user: models.UserCreate, background_ta
 async def verify_user(request: Request, verification_request: models.EmailVerificationRequest, background_tasks: BackgroundTasks):
     user_repo = get_service(IUserRepository)
 
-    user = await user_repo.get_user_by_email(verification_request.email)
-    if not user:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid verification code or email")
-    if user.get("is_verified"):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User already verified")
+    try:
+        user = await user_repo.get_user_by_email(verification_request.email)
+        if not user:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid verification code or email")
+        if user.get("is_verified"):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User already verified")
 
-    ok = await user_repo.activate_user_and_use_verification_code(user["id"], verification_request.code)
-    if not ok:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid verification code or email")
+        ok = await user_repo.activate_user_and_use_verification_code(user["id"], verification_request.code)
+        if not ok:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid verification code or email")
+    except DatabaseException as e:
+        logger.error(f"Database error in verify_user: {e}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Database error")
 
     async def _send_registration_success(email: str, lang: str):
-        start_ts = datetime.utcnow()
+        start_ts = datetime.now(timezone.utc)
         try:
             ok = await send_registration_success_email(email, lang)
-            duration = (datetime.utcnow() - start_ts).total_seconds()
+            duration = (datetime.now(timezone.utc) - start_ts).total_seconds()
             if duration > 10:
                 logger.warning(f"[RegistrationSuccessEmail] Slow send: {duration:.3f}s for {email}")
             else:
@@ -154,7 +163,7 @@ async def verify_user(request: Request, verification_request: models.EmailVerifi
             if not ok:
                 logger.error(f"[RegistrationSuccessEmail] Failed to send to {email}")
         except Exception as e:
-            duration = (datetime.utcnow() - start_ts).total_seconds()
+            duration = (datetime.now(timezone.utc) - start_ts).total_seconds()
             logger.error(f"[RegistrationSuccessEmail] Exception after {duration:.3f}s for {email}: {e}")
 
     background_tasks.add_task(_send_registration_success, verification_request.email, user.get("language", "en"))
@@ -193,23 +202,27 @@ async def verify_user(request: Request, verification_request: models.EmailVerifi
 async def resend_verification(request: Request, resend_request: models.ResendVerificationRequest, background_tasks: BackgroundTasks):
     user_repo = get_service(IUserRepository)
 
-    user = await user_repo.get_user_by_email(resend_request.email)
-    if not user:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email not found")
-    if user.get("is_verified"):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User already verified")
+    try:
+        user = await user_repo.get_user_by_email(resend_request.email)
+        if not user:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email not found")
+        if user.get("is_verified"):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User already verified")
 
-    verification_code = "".join(random.choices("0123456789", k=6))
-    expires_at = datetime.now(timezone.utc) + timedelta(hours=24)
-    ok = await user_repo.save_verification_code( user["id"], verification_code, expires_at)
-    if not ok:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to create verification code")
+        verification_code = "".join(random.choices("0123456789", k=6))
+        expires_at = datetime.now(timezone.utc) + timedelta(hours=24)
+        ok = await user_repo.save_verification_code( user["id"], verification_code, expires_at)
+        if not ok:
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to create verification code")
+    except DatabaseException as e:
+        logger.error(f"Database error in resend_verification: {e}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Database error")
 
     async def _send_verification(email: str, code: str, lang: str):
-        start_ts = datetime.utcnow()
+        start_ts = datetime.now(timezone.utc)
         try:
             ok = await send_verification_email(email, code, lang)
-            duration = (datetime.utcnow() - start_ts).total_seconds()
+            duration = (datetime.now(timezone.utc) - start_ts).total_seconds()
             if duration > 10:
                 logger.warning(f"[VerificationEmail] Slow send: {duration:.3f}s for {email}")
             else:
@@ -217,7 +230,7 @@ async def resend_verification(request: Request, resend_request: models.ResendVer
             if not ok:
                 logger.error(f"[VerificationEmail] Failed to send to {email}")
         except Exception as e:
-            duration = (datetime.utcnow() - start_ts).total_seconds()
+            duration = (datetime.now(timezone.utc) - start_ts).total_seconds()
             logger.error(f"[VerificationEmail] Exception after {duration:.3f}s for {email}: {e}")
 
     background_tasks.add_task(_send_verification, resend_request.email, verification_code, user.get("language", "en"))
@@ -262,9 +275,13 @@ async def resend_verification(request: Request, resend_request: models.ResendVer
 async def login_user(request: Request, form_data: OAuth2PasswordRequestForm = Depends()):
     user_repo = get_service(IUserRepository)
 
-    user = await user_repo.get_user_by_email(form_data.username)
-    if not user:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect email or password")
+    try:
+        user = await user_repo.get_user_by_email(form_data.username)
+        if not user:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect email or password")
+    except DatabaseException as e:
+        logger.error(f"Database error in login_user: {e}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Database error")
 
     if not verify_password(form_data.password, user["password_hash"]):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect email or password")
@@ -323,21 +340,25 @@ async def login_user(request: Request, form_data: OAuth2PasswordRequestForm = De
 async def request_password_reset(request: Request, password_reset_request: models.PasswordResetRequest, background_tasks: BackgroundTasks):
     user_repo = get_service(IUserRepository)
 
-    user = await user_repo.get_user_by_email(password_reset_request.email)
-    if not user:
-        return {"message": "If email exists, reset instructions have been sent"}
+    try:
+        user = await user_repo.get_user_by_email(password_reset_request.email)
+        if not user:
+            return {"message": "If email exists, reset instructions have been sent"}
 
-    token = secrets.token_urlsafe(32)
-    expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
-    success = await user_repo.save_password_reset_token(user["id"], token, expires_at)
-    if not success:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to create reset token")
+        token = secrets.token_urlsafe(32)
+        expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
+        success = await user_repo.save_password_reset_token(user["id"], token, expires_at)
+        if not success:
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to create reset token")
+    except DatabaseException as e:
+        logger.error(f"Database error in request_password_reset: {e}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Database error")
 
     async def _send_and_cleanup(email: str, token: str, lang: str):
-        start_ts = datetime.utcnow()
+        start_ts = datetime.now(timezone.utc)
         try:
             ok = await send_password_reset_email(email, token, lang)
-            duration = (datetime.utcnow() - start_ts).total_seconds()
+            duration = (datetime.now(timezone.utc) - start_ts).total_seconds()
             if duration > 10:
                 logger.warning(f"[PasswordResetEmail] Slow send: {duration:.3f}s for {email}")
             else:
@@ -346,7 +367,7 @@ async def request_password_reset(request: Request, password_reset_request: model
                 logger.error(f"[PasswordResetEmail] Failed to send to {email}, deleting token")
                 await user_repo.delete_password_reset_token(token)
         except Exception as e:
-            duration = (datetime.utcnow() - start_ts).total_seconds()
+            duration = (datetime.now(timezone.utc) - start_ts).total_seconds()
             logger.error(f"[PasswordResetEmail] Exception after {duration:.3f}s for {email}: {e}")
             try:
                 await user_repo.delete_password_reset_token(token)
@@ -398,8 +419,12 @@ async def request_password_reset(request: Request, password_reset_request: model
 async def confirm_password_reset(request: Request, password_reset_confirm: models.PasswordResetConfirm):
     user_repo = get_service(IUserRepository)
 
-    new_password_hash = get_password_hash(password_reset_confirm.new_password)
-    ok = await user_repo.confirm_password_reset_transaction(password_reset_confirm.token, new_password_hash)
-    if not ok:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired token")
-    return {"message": "Password successfully reset"}
+    try:
+        new_password_hash = get_password_hash(password_reset_confirm.new_password)
+        ok = await user_repo.confirm_password_reset_transaction(password_reset_confirm.token, new_password_hash)
+        if not ok:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired token")
+        return {"message": "Password successfully reset"}
+    except DatabaseException as e:
+        logger.error(f"Database error in confirm_password_reset: {e}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Database error")

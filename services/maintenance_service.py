@@ -2,6 +2,7 @@
 import logging
 from typing import Dict, Any
 from interfaces import IMaintenanceService
+from exceptions import DatabaseException, ServiceUnavailableException
 
 logger = logging.getLogger(__name__)
 
@@ -41,8 +42,7 @@ class MaintenanceService(IMaintenanceService):
                     logger.info(f"[CLEANUP] Deleted {deleted_count} duplicate entries")
 
         except Exception as e:
-            logger.error(f"[CLEANUP] Error during duplicate cleanup: {e}")
-            raise
+            raise DatabaseException(f"Error during duplicate cleanup: {str(e)}")
 
     async def cleanup_old_data_by_age(self, hours_old: int) -> Dict[str, Any]:
         """Atomic full cleanup of old data by age: news, translations, publications, files"""
@@ -57,7 +57,7 @@ class MaintenanceService(IMaintenanceService):
             deleted_count, files_to_delete, db_cleanup_success = await rss_repo.cleanup_old_rss_items(hours_old)
 
             if not db_cleanup_success:
-                raise Exception("Failed to perform database cleanup")
+                raise DatabaseException("Failed to perform database cleanup")
 
             # After successful transaction commit - clean up files
             images_deleted = 0
@@ -104,5 +104,4 @@ class MaintenanceService(IMaintenanceService):
             return result
 
         except Exception as e:
-            logger.error(f"[CLEANUP] Critical error during atomic cleanup: {e}")
-            raise
+            raise ServiceUnavailableException("maintenance", f"Critical error during atomic cleanup: {str(e)}")

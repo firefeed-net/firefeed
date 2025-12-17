@@ -2,11 +2,11 @@ import logging
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
-from api.middleware import limiter
-from api import models
+from apps.api.middleware import limiter
+from apps.api import models
 from di_container import get_service
 from interfaces import IRSSItemRepository, ICategoryRepository, ISourceRepository, IUserRepository
-from api.deps import format_datetime, get_full_image_url, build_translations_dict, validate_rss_items_query_params, sanitize_search_phrase, get_current_user_by_api_key
+from apps.api.deps import format_datetime, get_full_image_url, build_translations_dict, validate_rss_items_query_params, sanitize_search_phrase, get_current_user_by_api_key
 # Config will be accessed via DI
 
 logger = logging.getLogger(__name__)

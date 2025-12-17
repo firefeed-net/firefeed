@@ -2,11 +2,12 @@ import logging
 import secrets
 from fastapi import APIRouter, Depends, HTTPException, Request
 
-from api.middleware import limiter
-from api import models
+from apps.api.middleware import limiter
+from apps.api import models
 from di_container import get_service
 from interfaces import IApiKeyRepository
-from api.deps import get_current_user
+from apps.api.deps import get_current_user
+from exceptions import DatabaseException
 
 logger = logging.getLogger(__name__)
 
@@ -50,9 +51,13 @@ async def generate_own_api_key(request: Request, current_user: dict = Depends(ge
     key = secrets.token_urlsafe(32)
     limits = {"requests_per_day": 1000, "requests_per_hour": 100}
 
-    api_key = await api_key_repo.create_user_api_key(current_user["id"], key, limits)
-    if not api_key:
-        raise HTTPException(status_code=500, detail="Failed to create API key")
+    try:
+        api_key = await api_key_repo.create_user_api_key(current_user["id"], key, limits)
+        if not api_key:
+            raise HTTPException(status_code=500, detail="Failed to create API key")
+    except DatabaseException as e:
+        logger.error(f"Database error in generate_own_api_key: {e}")
+        raise HTTPException(status_code=500, detail="Database error")
 
     return models.UserApiKeyGenerateResponse(
         id=api_key["id"],
@@ -86,8 +91,12 @@ async def generate_own_api_key(request: Request, current_user: dict = Depends(ge
 @limiter.limit("60/minute")
 async def list_user_api_keys(request: Request, current_user: dict = Depends(get_current_user)):
     api_key_repo = get_service(IApiKeyRepository)
-    api_keys = await api_key_repo.get_user_api_keys(current_user["id"])
-    return [models.UserApiKeyResponse(**key) for key in api_keys]
+    try:
+        api_keys = await api_key_repo.get_user_api_keys(current_user["id"])
+        return [models.UserApiKeyResponse(**key) for key in api_keys]
+    except DatabaseException as e:
+        logger.error(f"Database error in list_user_api_keys: {e}")
+        raise HTTPException(status_code=500, detail="Database error")
 
 
 @router.patch(
@@ -121,20 +130,24 @@ async def update_api_key(
 ):
     api_key_repo = get_service(IApiKeyRepository)
 
-    # Check if key exists and belongs to user
-    existing_key = await api_key_repo.get_user_api_key_by_id(current_user["id"], key_id)
-    if not existing_key:
-        raise HTTPException(status_code=404, detail="API key not found")
+    try:
+        # Check if key exists and belongs to user
+        existing_key = await api_key_repo.get_user_api_key_by_id(current_user["id"], key_id)
+        if not existing_key:
+            raise HTTPException(status_code=404, detail="API key not found")
 
-    update_data = {}
-    if key_update.is_active is not None:
-        update_data["is_active"] = key_update.is_active
-    if key_update.limits is not None:
-        update_data["limits"] = key_update.limits
+        update_data = {}
+        if key_update.is_active is not None:
+            update_data["is_active"] = key_update.is_active
+        if key_update.limits is not None:
+            update_data["limits"] = key_update.limits
 
-    updated_key = await api_key_repo.update_user_api_key(current_user["id"], key_id, update_data)
-    if not updated_key:
-        raise HTTPException(status_code=500, detail="Failed to update API key")
+        updated_key = await api_key_repo.update_user_api_key(current_user["id"], key_id, update_data)
+        if not updated_key:
+            raise HTTPException(status_code=500, detail="Failed to update API key")
+    except DatabaseException as e:
+        logger.error(f"Database error in update_api_key: {e}")
+        raise HTTPException(status_code=500, detail="Database error")
 
     return models.UserApiKeyResponse(**updated_key)
 
@@ -160,13 +173,17 @@ async def update_api_key(
 async def delete_api_key(request: Request, key_id: int, current_user: dict = Depends(get_current_user)):
     api_key_repo = get_service(IApiKeyRepository)
 
-    # Check if key exists and belongs to user
-    existing_key = await api_key_repo.get_user_api_key_by_id(current_user["id"], key_id)
-    if not existing_key:
-        raise HTTPException(status_code=404, detail="API key not found")
+    try:
+        # Check if key exists and belongs to user
+        existing_key = await api_key_repo.get_user_api_key_by_id(current_user["id"], key_id)
+        if not existing_key:
+            raise HTTPException(status_code=404, detail="API key not found")
 
-    success = await api_key_repo.delete_user_api_key(current_user["id"], key_id)
-    if not success:
-        raise HTTPException(status_code=500, detail="Failed to delete API key")
+        success = await api_key_repo.delete_user_api_key(current_user["id"], key_id)
+        if not success:
+            raise HTTPException(status_code=500, detail="Failed to delete API key")
+    except DatabaseException as e:
+        logger.error(f"Database error in delete_api_key: {e}")
+        raise HTTPException(status_code=500, detail="Database error")
 
     return

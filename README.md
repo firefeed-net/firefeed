@@ -1,13 +1,11 @@
-# FireFeed - AI-powered RSS aggregator and parser
+# FireFeed - AI-powered RSS-parser and agregator
 
-[![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)](https://www.python.org/)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.116.1-green.svg)](https://fastapi.tiangolo.com/)
-[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-12+-blue.svg)](https://www.postgresql.org/)
+[![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://www.python.org/)
 [![Docker](https://img.shields.io/badge/Docker-Supported-blue.svg)](https://www.docker.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Tests](https://img.shields.io/badge/Tests-Passing-green.svg)](https://github.com/yuremweiland/firefeed/actions)
 
-A modern news aggregator with AI support for automatic collection, processing, and distribution of news in multiple languages.
+A modern RSS-parser with AI support for automatic collection, processing, and distribution of news in multiple languages.
 
 **Official website**: https://firefeed.net
 
@@ -26,7 +24,7 @@ A modern news aggregator with AI support for automatic collection, processing, a
 
 ## Project Overview
 
-FireFeed is a high-performance system for automatic collection, processing, and distribution of news content. The project uses modern machine learning technologies for intelligent text processing and provides multilingual support for international audiences.
+FireFeed is a high-performance parsing system for automatic collection, processing, and distribution of news content. The project uses modern machine learning technologies for intelligent text processing and provides multilingual support for international audiences.
 
 ## Key Features
 
@@ -66,7 +64,7 @@ FireFeed is a high-performance system for automatic collection, processing, and 
 ## Technology Stack
 
 ### Backend
-- Python 3.8+ with asyncio
+- Python 3.11+ with asyncio
 - FastAPI for REST API
 - PostgreSQL with pgvector for semantic search
 - Redis for storing API key usage data
@@ -92,12 +90,12 @@ FireFeed is a high-performance system for automatic collection, processing, and 
 
 The project consists of several key components:
 
-1. **Telegram Bot** (`apps/telegram_bot.py`) - main user interaction interface
-2. **RSS Parser Service** (`apps/rss_parser.py`) - background service for RSS feed parsing
-3. **REST API** (`apps/api.py`) - web API for external integrations
+1. **Telegram Bot** (`apps/telegram_bot/`) - main user interaction interface
+2. **RSS Parser Service** (`apps/rss_parser/`) - background service for RSS feed parsing
+3. **REST API** (`apps/api/`) - web API for external integrations
 4. **Translation Services** (`services/translation/`) - translation system with caching
-5. **Duplicate Detector** (`services/text_analysis/duplicate_detector.py`) - ML-based duplicate detection
-6. **User Management** (`services/user/user_manager.py`) - user and subscription management
+5. **Test analysis** (`services/text_analysis/`) - ML-based duplicate detection and text analysis
+6. **User Management** (`services/user/`) - user and subscription management service
 
 ### Telegram Bot
 
@@ -164,7 +162,7 @@ The project uses modern service-oriented architecture with dependency injection 
 
 ### RSS Services
 
-#### RSSFetcher (`services/rss/rss_fetcher.py`)
+#### RSSFetcher (`apps/rss_parser/services/rss_fetcher.py`)
 Service for fetching and parsing RSS feeds.
 
 **Key Features:**
@@ -181,7 +179,7 @@ RSS_PARSER_MIN_ITEM_TITLE_WORDS_LENGTH=0
 RSS_PARSER_MIN_ITEM_CONTENT_WORDS_LENGTH=0
 ```
 
-#### RSSValidator (`services/rss/rss_validator.py`)
+#### RSSValidator (`apps/rss_parser/services/rss_validator.py`)
 Service for RSS feed validation.
 
 **Key Features:**
@@ -195,7 +193,7 @@ RSS_VALIDATION_CACHE_TTL=300
 RSS_REQUEST_TIMEOUT=15
 ```
 
-#### RSSStorage (`services/rss/rss_storage.py`)
+#### RSSStorage (`apps/rss_parser/services/rss_storage.py`)
 Service for RSS data database operations.
 
 **Key Features:**
@@ -203,7 +201,7 @@ Service for RSS data database operations.
 - News translation management
 - RSS feed settings retrieval (cooldowns, limits)
 
-#### MediaExtractor (`services/rss/media_extractor.py`)
+#### MediaExtractor (`apps/rss_parser/services/media_extractor.py`)
 Service for extracting media content from RSS items.
 
 **Key Features:**
@@ -299,60 +297,27 @@ Dependency injection container for service management.
 - Automatic dependency resolution
 - Service lifecycle management
 
-#### Service Configuration (`config_services.py`)
+#### Service Configuration (`config/services_config.py`)
 Centralized configuration of all services through environment variables.
 
-**Configuration Example:**
-```env
-# RSS services
-RSS_MAX_CONCURRENT_FEEDS=10
-RSS_MAX_ENTRIES_PER_FEED=50
-RSS_VALIDATION_CACHE_TTL=300
-RSS_REQUEST_TIMEOUT=15
-
-# Translation services
-TRANSLATION_MAX_CONCURRENT=3
-TRANSLATION_MAX_CACHED_MODELS=15
-TRANSLATION_MODEL_CLEANUP_INTERVAL=1800
-TRANSLATION_DEVICE=cpu
-
-# Caching
-CACHE_DEFAULT_TTL=3600
-CACHE_MAX_SIZE=10000
-CACHE_CLEANUP_INTERVAL=300
-
-# Task queues
-QUEUE_MAX_SIZE=30
-QUEUE_DEFAULT_WORKERS=1
-QUEUE_TASK_TIMEOUT=300
-```
-
-### Interfaces (`interfaces.py`)
+### Interfaces (`interfaces/`)
 Abstract interfaces for all services, providing:
 - **Dependency Inversion Principle**
 - **Easy testing** through mock objects
 - **Implementation replacement flexibility**
 
-### Error Handling (`exceptions.py`)
+### Error Handling (`exceptions/`)
 Hierarchy of custom exceptions for different error types:
 - `RSSException` - RSS processing errors
 - `TranslationException` - translation errors
 - `DatabaseException` - database errors
 - `CacheException` - caching errors
 
-### Benefits of New Architecture
-
-1. **High testability** - each service is tested in isolation
-2. **Configuration flexibility** - all parameters configurable via environment variables
-3. **Easy maintenance** - clear separation of responsibilities
-4. **Scalability** - services can be easily replaced or extended
-5. **Reliability** - specific error handling and graceful degradation
-
 ## Installation and Setup
 
 ### Prerequisites
 
-- Python 3.8 or higher
+- Python 3.11 or higher
 - PostgreSQL 12+ with pgvector extension
 - Telegram Bot API token
 
@@ -364,7 +329,7 @@ pip install -r requirements.txt
 
 ### Basic Setup
 
-1. Copy .env.example to .env
+1. Copy [.env.example](.env.example) to .env
 2. Configure real values for variables in .env file
 
 ```bash
@@ -575,21 +540,15 @@ After starting the API server, documentation is available at:
 - **Swagger UI**: http://localhost:8000/docs
 - **ReDoc**: http://localhost:8000/redoc
 
-Main endpoints:
-
-- `GET /api/v1/news` - get news list
-- `POST /api/v1/users/register` - user registration
-- `GET /api/v1/subscriptions` - subscription management
-
 ## Development
 
 ### Development Setup
 
 ```bash
 # Clone repository from GitHub
-git clone https://github.com/yuremweiland/firefeed.git
+git clone https://github.com/firefeed-net/firefeed.git
 # or GitVerse
-git clone https://gitverse.ru/yuryweiland/firefeed.git
+git clone https://gitverse.ru/firefeed-net/firefeed.git
 cd firefeed
 
 # Install dependencies

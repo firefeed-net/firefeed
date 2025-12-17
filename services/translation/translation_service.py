@@ -6,6 +6,7 @@ import time
 from typing import List, Dict, Any, Optional
 from interfaces import ITranslationService, IModelManager, ITranslatorQueue
 from services.translation.terminology_dict import TERMINOLOGY_DICT
+from exceptions import TranslationException, TranslationModelError, TranslationServiceError
 
 logger = logging.getLogger(__name__)
 
@@ -54,8 +55,14 @@ class TranslationService(ITranslationService):
 
                 # Translate uncached texts
                 if texts_to_translate:
-                    # Get the multilingual m2m100 model (same for all directions)
-                    model, tokenizer = await self.model_manager.get_model(source_lang, target_lang)
+                    try:
+                        # Get the multilingual m2m100 model (same for all directions)
+                        model, tokenizer = await self.model_manager.get_model(source_lang, target_lang)
+                    except Exception as e:
+                        raise TranslationModelError(
+                            model_name="m2m100",
+                            error=f"Failed to load model for {source_lang} -> {target_lang}: {str(e)}"
+                        )
 
                     # Prepare texts for translation
                     sentences = self._prepare_sentences_for_batch(texts_to_translate, source_lang)
@@ -98,10 +105,18 @@ class TranslationService(ITranslationService):
                 logger.debug(f"[TRANSLATE] Translation completed: {len(result_texts)} texts")
                 return result_texts
 
+            except TranslationModelError:
+                # Re-raise model errors
+                raise
             except Exception as e:
-                logger.error(f"[TRANSLATE] Error translating {source_lang} -> {target_lang}: {e}")
-                # Return original texts on error
-                return texts
+                # Check if it's already a TranslationServiceError to avoid nesting
+                if isinstance(e, TranslationServiceError):
+                    raise
+                raise TranslationServiceError(
+                    source_lang=source_lang,
+                    target_lang=target_lang,
+                    error=f"Translation service error: {str(e)}"
+                )
 
     async def prepare_translations(self, title: str, content: str, original_lang: str,
                                   target_langs: List[str]) -> Dict[str, Dict[str, str]]:
@@ -222,9 +237,11 @@ class TranslationService(ITranslationService):
                 else:
                     logger.warning(f"[TRANSLATE] Translation for '{target_lang}' incomplete, language skipped")
 
-            except Exception as e:
-                logger.error(f"[TRANSLATE] Error processing {target_lang}: {e}")
+            except (TranslationModelError, TranslationServiceError) as e:
+                logger.error(f"[TRANSLATE] Translation error for {target_lang}: {e}")
                 continue
+            except Exception as e:
+                raise TranslationException(f"Unexpected error processing {target_lang}: {str(e)}")
 
         # Remove duplicate translations between languages
         seen_titles = set()
@@ -315,9 +332,10 @@ class TranslationService(ITranslationService):
                 translated_sentences.extend(batch_translations)
 
             except Exception as e:
-                logger.error(f"[TRANSLATE] Error in batch translation: {e}")
-                # Add original sentences on error
-                translated_sentences.extend(batch)
+                raise TranslationModelError(
+                    model_name="m2m100",
+                    error=f"Batch translation failed for {source_lang} -> {target_lang}: {str(e)}"
+                )
 
         return translated_sentences
 

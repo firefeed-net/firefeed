@@ -2,6 +2,7 @@
 import logging
 from typing import List, Dict, Any, Optional
 from interfaces import IRSSFeedRepository
+from exceptions import DatabaseException
 
 logger = logging.getLogger(__name__)
 
@@ -45,43 +46,49 @@ class RSSFeedRepository(IRSSFeedRepository):
 
                 except Exception as e:
                     await cur.execute("ROLLBACK")
-                    logger.error(f"Error creating user RSS feed: {e}")
+                    raise DatabaseException(f"Failed to create user RSS feed: {str(e)}")
 
         return None
 
     async def get_user_rss_feeds(self, user_id: int, limit: int, offset: int) -> List[Dict[str, Any]]:
         async with self.db_pool.acquire() as conn:
             async with conn.cursor() as cur:
-                await cur.execute(
-                    "SELECT id, url, name, category_id, language, is_active, created_at FROM user_rss_feeds WHERE user_id = %s ORDER BY created_at DESC LIMIT %s OFFSET %s",
-                    (user_id, limit, offset)
-                )
+                try:
+                    await cur.execute(
+                        "SELECT id, url, name, category_id, language, is_active, created_at FROM user_rss_feeds WHERE user_id = %s ORDER BY created_at DESC LIMIT %s OFFSET %s",
+                        (user_id, limit, offset)
+                    )
 
-                feeds = []
-                async for row in cur:
-                    feeds.append({
-                        "id": str(row[0]), "url": row[1], "name": row[2],
-                        "category_id": row[3], "language": row[4],
-                        "is_active": row[5], "created_at": row[6]
-                    })
+                    feeds = []
+                    async for row in cur:
+                        feeds.append({
+                            "id": str(row[0]), "url": row[1], "name": row[2],
+                            "category_id": row[3], "language": row[4],
+                            "is_active": row[5], "created_at": row[6]
+                        })
 
-                return feeds
+                    return feeds
+                except Exception as e:
+                    raise DatabaseException(f"Failed to get user RSS feeds: {str(e)}")
 
     async def get_user_rss_feed_by_id(self, user_id: int, feed_id: str) -> Optional[Dict[str, Any]]:
         async with self.db_pool.acquire() as conn:
             async with conn.cursor() as cur:
-                await cur.execute(
-                    "SELECT id, url, name, category_id, language, is_active, created_at FROM user_rss_feeds WHERE user_id = %s AND id = %s",
-                    (user_id, feed_id)
-                )
-                row = await cur.fetchone()
-                if row:
-                    return {
-                        "id": str(row[0]), "url": row[1], "name": row[2],
-                        "category_id": row[3], "language": row[4],
-                        "is_active": row[5], "created_at": row[6]
-                    }
-        return None
+                try:
+                    await cur.execute(
+                        "SELECT id, url, name, category_id, language, is_active, created_at FROM user_rss_feeds WHERE user_id = %s AND id = %s",
+                        (user_id, feed_id)
+                    )
+                    row = await cur.fetchone()
+                    if row:
+                        return {
+                            "id": str(row[0]), "url": row[1], "name": row[2],
+                            "category_id": row[3], "language": row[4],
+                            "is_active": row[5], "created_at": row[6]
+                        }
+                    return None
+                except Exception as e:
+                    raise DatabaseException(f"Failed to get user RSS feed by id: {str(e)}")
 
     async def update_user_rss_feed(self, user_id: int, feed_id: str, update_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         set_parts = []
@@ -95,18 +102,24 @@ class RSSFeedRepository(IRSSFeedRepository):
 
         async with self.db_pool.acquire() as conn:
             async with conn.cursor() as cur:
-                await cur.execute(query, values)
-                row = await cur.fetchone()
-                if row:
-                    return {
-                        "id": str(row[0]), "url": row[1], "name": row[2],
-                        "category_id": row[3], "language": row[4],
-                        "is_active": row[5], "updated_at": row[6]
-                    }
-        return None
+                try:
+                    await cur.execute(query, values)
+                    row = await cur.fetchone()
+                    if row:
+                        return {
+                            "id": str(row[0]), "url": row[1], "name": row[2],
+                            "category_id": row[3], "language": row[4],
+                            "is_active": row[5], "updated_at": row[6]
+                        }
+                    return None
+                except Exception as e:
+                    raise DatabaseException(f"Failed to update user RSS feed: {str(e)}")
 
     async def delete_user_rss_feed(self, user_id: int, feed_id: str) -> bool:
         async with self.db_pool.acquire() as conn:
             async with conn.cursor() as cur:
-                await cur.execute("DELETE FROM user_rss_feeds WHERE user_id = %s AND id = %s", (user_id, feed_id))
-                return cur.rowcount > 0
+                try:
+                    await cur.execute("DELETE FROM user_rss_feeds WHERE user_id = %s AND id = %s", (user_id, feed_id))
+                    return cur.rowcount > 0
+                except Exception as e:
+                    raise DatabaseException(f"Failed to delete user RSS feed: {str(e)}")

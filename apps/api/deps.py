@@ -1,7 +1,7 @@
 import logging
 import os
 import re
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, Any
 from urllib.parse import urlparse
 
@@ -13,6 +13,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 from di_container import get_service
 from interfaces import IUserRepository, IApiKeyRepository
+from exceptions import DatabaseException
 
 logger = logging.getLogger(__name__)
 
@@ -46,9 +47,9 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
 
     to_encode = data.copy()
     if expires_delta:
-        expire = datetime.utcnow() + expires_delta
+        expire = datetime.now(timezone.utc) + expires_delta
     else:
-        expire = datetime.utcnow() + timedelta(minutes=15)
+        expire = datetime.now(timezone.utc) + timedelta(minutes=15)
     to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(to_encode, secret_key, algorithm=algorithm)
     return encoded_jwt
@@ -71,14 +72,21 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
             )
         # Get full user data from database
         user_repo = get_service(IUserRepository)
-        user_data = await user_repo.get_user_by_id(int(user_id))
-        if not user_data:
+        try:
+            user_data = await user_repo.get_user_by_id(int(user_id))
+            if not user_data:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="User not found",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+            return user_data
+        except DatabaseException as e:
+            logger.error(f"Database error getting user {user_id}: {e}")
             raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="User not found",
-                headers={"WWW-Authenticate": "Bearer"},
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Database error",
             )
-        return user_data
     except jwt.ExpiredSignatureError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -218,7 +226,7 @@ async def check_rate_limit(api_key_data: Dict[str, Any]) -> None:
     key_id = api_key_data["id"]
     limits = api_key_data["limits"]
 
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     day_key = f"user_api_key:{key_id}:day:{now.strftime('%Y-%m-%d')}"
     hour_key = f"user_api_key:{key_id}:hour:{now.strftime('%Y-%m-%d-%H')}"
 
@@ -317,12 +325,19 @@ async def get_current_user_by_api_key(request: Request):
         await check_rate_limit(api_key_data)
 
         # Get user data
-        user_data = await user_repo.get_user_by_id(api_key_data["user_id"])
-        if not user_data:
+        try:
+            user_data = await user_repo.get_user_by_id(api_key_data["user_id"])
+            if not user_data:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="User not found",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+        except DatabaseException as e:
+            logger.error(f"Database error getting user {api_key_data['user_id']}: {e}")
             raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="User not found",
-                headers={"WWW-Authenticate": "Bearer"},
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Database error",
             )
 
         # Check if user is verified and not deleted

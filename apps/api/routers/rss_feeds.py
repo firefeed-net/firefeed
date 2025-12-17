@@ -2,11 +2,12 @@ import logging
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
-from api.middleware import limiter
-from api import models
+from apps.api.middleware import limiter
+from apps.api import models
 from di_container import get_service
 from interfaces import IRSSFeedRepository
-from api.deps import get_current_user, validate_rss_url
+from apps.api.deps import get_current_user, validate_rss_url
+from exceptions import DatabaseException
 
 logger = logging.getLogger(__name__)
 
@@ -65,14 +66,18 @@ async def create_user_rss_feed(request: Request, feed: models.UserRSSFeedCreate,
         raise HTTPException(status_code=400, detail="Feed name too long (max 255 characters)")
 
     rss_feed_repo = get_service(IRSSFeedRepository)
-    new_feed = await rss_feed_repo.create_user_rss_feed(
-        current_user["id"], feed.url, feed.name, feed.category_id, feed.language
-    )
-    if isinstance(new_feed, dict) and new_feed.get("error") == "duplicate":
-        raise HTTPException(status_code=400, detail="RSS feed with this URL already exists for this user")
-    if not new_feed:
-        raise HTTPException(status_code=500, detail="Failed to create RSS feed")
-    return models.UserRSSFeedResponse(**new_feed)
+    try:
+        new_feed = await rss_feed_repo.create_user_rss_feed(
+            current_user["id"], feed.url, feed.name, feed.category_id, feed.language
+        )
+        if isinstance(new_feed, dict) and new_feed.get("error") == "duplicate":
+            raise HTTPException(status_code=400, detail="RSS feed with this URL already exists for this user")
+        if not new_feed:
+            raise HTTPException(status_code=500, detail="Failed to create RSS feed")
+        return models.UserRSSFeedResponse(**new_feed)
+    except DatabaseException as e:
+        logger.error(f"Database error in create_user_rss_feed: {e}")
+        raise HTTPException(status_code=500, detail="Database error")
 
 
 @router.get(
@@ -108,9 +113,13 @@ async def get_user_rss_feeds(
     current_user: dict = Depends(get_current_user),
 ):
     rss_feed_repo = get_service(IRSSFeedRepository)
-    feeds = await rss_feed_repo.get_user_rss_feeds(current_user["id"], limit, offset)
-    feed_models = [models.UserRSSFeedResponse(**feed) for feed in feeds]
-    return models.PaginatedResponse[models.UserRSSFeedResponse](count=len(feed_models), results=feed_models)
+    try:
+        feeds = await rss_feed_repo.get_user_rss_feeds(current_user["id"], limit, offset)
+        feed_models = [models.UserRSSFeedResponse(**feed) for feed in feeds]
+        return models.PaginatedResponse[models.UserRSSFeedResponse](count=len(feed_models), results=feed_models)
+    except DatabaseException as e:
+        logger.error(f"Database error in get_user_rss_feeds: {e}")
+        raise HTTPException(status_code=500, detail="Database error")
 
 
 @router.get(
@@ -144,10 +153,14 @@ async def get_user_rss_feeds(
 @limiter.limit("300/minute")
 async def get_user_rss_feed(request: Request, feed_id: str, current_user: dict = Depends(get_current_user)):
     rss_feed_repo = get_service(IRSSFeedRepository)
-    feed = await rss_feed_repo.get_user_rss_feed_by_id(current_user["id"], feed_id)
-    if not feed:
-        raise HTTPException(status_code=404, detail="RSS feed not found")
-    return models.UserRSSFeedResponse(**feed)
+    try:
+        feed = await rss_feed_repo.get_user_rss_feed_by_id(current_user["id"], feed_id)
+        if not feed:
+            raise HTTPException(status_code=404, detail="RSS feed not found")
+        return models.UserRSSFeedResponse(**feed)
+    except DatabaseException as e:
+        logger.error(f"Database error in get_user_rss_feed: {e}")
+        raise HTTPException(status_code=500, detail="Database error")
 
 
 @router.put(
@@ -194,17 +207,21 @@ async def update_user_rss_feed(request: Request, feed_id: str, feed_update: mode
         raise HTTPException(status_code=400, detail="Feed name too long (max 255 characters)")
 
     rss_feed_repo = get_service(IRSSFeedRepository)
-    update_data = {}
-    if feed_update.name is not None:
-        update_data["name"] = feed_update.name
-    if feed_update.category_id is not None:
-        update_data["category_id"] = feed_update.category_id
-    if feed_update.is_active is not None:
-        update_data["is_active"] = feed_update.is_active
-    updated_feed = await rss_feed_repo.update_user_rss_feed(current_user["id"], feed_id, update_data)
-    if not updated_feed:
-        raise HTTPException(status_code=404, detail="RSS feed not found or failed to update")
-    return models.UserRSSFeedResponse(**updated_feed)
+    try:
+        update_data = {}
+        if feed_update.name is not None:
+            update_data["name"] = feed_update.name
+        if feed_update.category_id is not None:
+            update_data["category_id"] = feed_update.category_id
+        if feed_update.is_active is not None:
+            update_data["is_active"] = feed_update.is_active
+        updated_feed = await rss_feed_repo.update_user_rss_feed(current_user["id"], feed_id, update_data)
+        if not updated_feed:
+            raise HTTPException(status_code=404, detail="RSS feed not found or failed to update")
+        return models.UserRSSFeedResponse(**updated_feed)
+    except DatabaseException as e:
+        logger.error(f"Database error in update_user_rss_feed: {e}")
+        raise HTTPException(status_code=500, detail="Database error")
 
 
 @router.delete(
@@ -236,7 +253,11 @@ async def update_user_rss_feed(request: Request, feed_id: str, feed_update: mode
 @limiter.limit("300/minute")
 async def delete_user_rss_feed(request: Request, feed_id: str, current_user: dict = Depends(get_current_user)):
     rss_feed_repo = get_service(IRSSFeedRepository)
-    success = await rss_feed_repo.delete_user_rss_feed(current_user["id"], feed_id)
-    if not success:
-        raise HTTPException(status_code=404, detail="RSS feed not found")
-    return
+    try:
+        success = await rss_feed_repo.delete_user_rss_feed(current_user["id"], feed_id)
+        if not success:
+            raise HTTPException(status_code=404, detail="RSS feed not found")
+        return
+    except DatabaseException as e:
+        logger.error(f"Database error in delete_user_rss_feed: {e}")
+        raise HTTPException(status_code=500, detail="Database error")

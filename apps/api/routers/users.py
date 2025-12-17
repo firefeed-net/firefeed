@@ -2,12 +2,13 @@ import logging
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
-from api.middleware import limiter
-from api import models
+from apps.api.middleware import limiter
+from apps.api import models
 from di_container import get_service
 from interfaces import IUserRepository, IRSSItemRepository
-from api.deps import get_current_user, validate_rss_items_query_params, sanitize_search_phrase
-from api.routers.rss_items import process_rss_items_results
+from apps.api.deps import get_current_user, validate_rss_items_query_params, sanitize_search_phrase
+from exceptions import DatabaseException
+from apps.api.routers.rss_items import process_rss_items_results
 
 logger = logging.getLogger(__name__)
 
@@ -85,21 +86,25 @@ async def update_current_user(request: Request, user_update: models.UserUpdate, 
 
     user_repo = get_service(IUserRepository)
 
-    if user_update.email and user_update.email != current_user["email"]:
-        existing_user = await user_repo.get_user_by_email(user_update.email)
-        if existing_user:
-            raise HTTPException(status_code=400, detail="Email already registered")
+    try:
+        if user_update.email and user_update.email != current_user["email"]:
+            existing_user = await user_repo.get_user_by_email(user_update.email)
+            if existing_user:
+                raise HTTPException(status_code=400, detail="Email already registered")
 
-    update_data = {}
-    if user_update.email is not None:
-        update_data["email"] = user_update.email
-    if user_update.language is not None:
-        update_data["language"] = user_update.language
+        update_data = {}
+        if user_update.email is not None:
+            update_data["email"] = user_update.email
+        if user_update.language is not None:
+            update_data["language"] = user_update.language
 
-    updated_user = await user_repo.update_user(current_user["id"], update_data)
-    if not updated_user:
-        raise HTTPException(status_code=500, detail="Failed to update user")
-    return models.UserResponse(**updated_user)
+        updated_user = await user_repo.update_user(current_user["id"], update_data)
+        if not updated_user:
+            raise HTTPException(status_code=500, detail="Failed to update user")
+        return models.UserResponse(**updated_user)
+    except DatabaseException as e:
+        logger.error(f"Database error in update_current_user: {e}")
+        raise HTTPException(status_code=500, detail="Database error")
 
 
 @router.delete(
@@ -126,10 +131,14 @@ async def update_current_user(request: Request, user_update: models.UserUpdate, 
 @limiter.limit("300/minute")
 async def delete_current_user(request: Request, current_user: dict = Depends(get_current_user)):
     user_repo = get_service(IUserRepository)
-    success = await user_repo.delete_user(current_user["id"])
-    if not success:
-        raise HTTPException(status_code=500, detail="Failed to delete user")
-    return
+    try:
+        success = await user_repo.delete_user(current_user["id"])
+        if not success:
+            raise HTTPException(status_code=500, detail="Failed to delete user")
+        return
+    except DatabaseException as e:
+        logger.error(f"Database error in delete_current_user: {e}")
+        raise HTTPException(status_code=500, detail="Database error")
 
 
 @router.get(
