@@ -65,6 +65,7 @@ class TestRSSServices:
         assert isinstance(news_id, str)
         assert len(news_id) == 64  # SHA256 hex length
 
+    @pytest.mark.asyncio
     async def test_check_for_duplicates(self, mock_media_extractor, mock_duplicate_detector):
         """Test duplicate checking"""
         fetcher = RSSFetcher(mock_media_extractor, mock_duplicate_detector)
@@ -95,12 +96,14 @@ class TestTranslationServices:
         assert service.model_manager == mock_model_manager
         assert service.translator_queue == mock_translator_queue
 
-    def test_translation_cache_creation(self):
+    @pytest.mark.asyncio
+    async def test_translation_cache_creation(self):
         """Test translation cache can be created"""
         cache = TranslationCache()
         assert cache.cache_ttl == 3600  # default TTL
         assert cache.max_cache_size == 10000
 
+    @pytest.mark.asyncio
     async def test_short_text_translation(self):
         """Test translation of short texts"""
         from unittest.mock import patch
@@ -132,6 +135,7 @@ class TestTranslationServices:
             assert isinstance(result[0], str)
             assert len(result[0]) > 0
 
+    @pytest.mark.asyncio
     async def test_long_text_translation(self):
         """Test translation of long texts"""
         from unittest.mock import patch
@@ -171,6 +175,7 @@ class TestTranslationServices:
 class TestMediaExtractor:
     """Test media extractor"""
 
+    @pytest.mark.asyncio
     async def test_extract_image_from_rss_item(self):
         """Test image extraction from RSS item"""
         extractor = MediaExtractor()
@@ -190,6 +195,7 @@ class TestMediaExtractor:
         result = await extractor.extract_image(item)
         assert result is None
 
+    @pytest.mark.asyncio
     async def test_extract_video_from_rss_item(self):
         """Test video extraction from RSS item"""
         extractor = MediaExtractor()
@@ -208,6 +214,7 @@ class TestMediaExtractor:
 class TestIntegration:
     """Integration tests for service interactions"""
 
+    @pytest.mark.asyncio
     async def test_service_dependencies(self):
         """Test that services can be instantiated with their dependencies"""
         # This test verifies that the service constructors work

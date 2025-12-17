@@ -1,7 +1,7 @@
 # tests/test_di_integration.py
 import pytest
-from unittest.mock import AsyncMock, MagicMock
-from di_container import setup_di_container, get_service
+from unittest.mock import AsyncMock, MagicMock, patch
+from di_container import setup_di_container, get_service, di_container
 from interfaces import (
     IUserRepository, IRSSFeedRepository, IRSSItemRepository,
     ICategoryRepository, ISourceRepository, IApiKeyRepository, ITelegramRepository,
@@ -26,7 +26,7 @@ class TestDIIntegration:
         """Test that all repository interfaces are properly registered"""
         from unittest.mock import patch
 
-        with patch('di_container.resolve') as mock_resolve:
+        with patch.object(di_container, 'resolve') as mock_resolve:
             mock_resolve.return_value = AsyncMock()
 
             # Test repository interfaces
@@ -64,7 +64,7 @@ class TestDIIntegration:
         """Test that all service interfaces are properly registered"""
         from unittest.mock import patch
 
-        with patch('di_container.resolve') as mock_resolve:
+        with patch.object(di_container, 'resolve') as mock_resolve:
             mock_resolve.return_value = AsyncMock()
 
             # Test service interfaces
@@ -107,8 +107,8 @@ class TestDIIntegration:
         mock_telegram = AsyncMock()
         mock_web = AsyncMock()
 
-        with patch('di_container.get_service') as mock_get:
-            mock_get.side_effect = lambda interface: mock_telegram if interface == ITelegramUserService else mock_web if interface == IWebUserService else None
+        with patch.object(di_container, 'resolve') as mock_resolve:
+            mock_resolve.side_effect = lambda interface: mock_telegram if interface == ITelegramUserService else mock_web if interface == IWebUserService else AsyncMock()
 
             # Test user service interfaces
             telegram_user_service = get_service(ITelegramUserService)
@@ -119,7 +119,7 @@ class TestDIIntegration:
             assert web_user_service is not None
             assert hasattr(web_user_service, 'generate_telegram_link_code')
 
-    @patch('di_container.resolve')
+    @patch.object(di_container, 'resolve')
     async def test_repository_dependencies_injection(self, mock_resolve):
         """Test that repositories receive proper dependencies"""
 
@@ -132,7 +132,7 @@ class TestDIIntegration:
         assert hasattr(user_repo, 'db_pool')
         assert user_repo.db_pool is not None
 
-    @patch('di_container.resolve')
+    @patch.object(di_container, 'resolve')
     async def test_service_dependencies_injection(self, mock_resolve):
         """Test that services receive proper dependencies"""
 
@@ -171,7 +171,7 @@ class TestDIIntegration:
         assert rss_manager.translator_queue is not None
         assert rss_manager.maintenance_service is not None
 
-    @patch('di_container.resolve')
+    @patch.object(di_container, 'resolve')
     async def test_config_injection(self, mock_resolve):
         """Test that config is properly injected"""
 
@@ -184,7 +184,7 @@ class TestDIIntegration:
         assert isinstance(config, dict)
         assert len(config) > 0  # Should have some configuration
 
-    @patch('di_container.resolve')
+    @patch.object(di_container, 'resolve')
     async def test_service_singleton_behavior(self, mock_resolve):
         """Test that services behave as singletons within the same context"""
 
@@ -209,7 +209,7 @@ class TestDIIntegration:
         assert user_repo1 is not user_repo2
         assert user_repo1.db_pool is user_repo2.db_pool  # Same db pool
 
-    @patch('di_container.resolve')
+    @patch.object(di_container, 'resolve')
     async def test_interface_compliance(self, mock_resolve):
         """Test that all services implement their interfaces correctly"""
 
@@ -232,7 +232,7 @@ class TestDIIntegration:
             method = getattr(user_repo, method_name)
             assert callable(method)
 
-    @patch('di_container.resolve')
+    @patch.object(di_container, 'resolve')
     async def test_database_pool_injection(self, mock_resolve):
         """Test that database pool is properly injected into repositories"""
 
@@ -263,7 +263,7 @@ class TestDIIntegration:
             # db_pool should be injected during initialization
             assert repo.db_pool is not None
 
-    @patch('di_container.resolve')
+    @patch.object(di_container, 'resolve')
     async def test_error_handling_in_di(self, mock_resolve):
         """Test error handling when services are not available"""
 
@@ -299,7 +299,7 @@ if __name__ == "__main__":
             dict: {'some': 'config'},
         }
 
-        with patch('di_container.resolve') as mock_resolve, \
+        with patch.object(di_container, 'resolve') as mock_resolve, \
              patch('di_container.setup_di_container'):
             mock_resolve.side_effect = lambda interface: mock_services.get(interface, AsyncMock())
 

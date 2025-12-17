@@ -281,6 +281,11 @@ def get_service(interface: Type[T]) -> T:
     return di_container.resolve(interface)
 
 
+def resolve(interface: Type[T]) -> T:
+    """Resolve a service instance from the global DI container"""
+    return di_container.resolve(interface)
+
+
 async def get_db_pool():
     """Get database pool instance from DI container"""
     db_pool_adapter = get_service(IDatabasePool)

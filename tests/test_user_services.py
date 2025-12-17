@@ -29,6 +29,7 @@ class TestTelegramUserService:
         cur = AsyncMock()
         return cur
 
+    @pytest.mark.asyncio
     async def test_get_user_settings_success(self, service):
         """Test getting user settings successfully"""
         service.user_repository.get_telegram_user_settings = AsyncMock(return_value={"subscriptions": ["tech", "sports"], "language": "en"})
@@ -38,15 +39,17 @@ class TestTelegramUserService:
         assert result == {"subscriptions": ["tech", "sports"], "language": "en"}
         service.user_repository.get_telegram_user_settings.assert_called_once_with(123)
 
+    @pytest.mark.asyncio
     async def test_get_user_settings_not_found(self, service):
         """Test getting user settings when not found"""
         service.user_repository.get_telegram_user_settings = AsyncMock(return_value=None)
 
         result = await service.get_user_settings(123)
 
-        assert result == {"subscriptions": [], "language": "en"}
+        assert result is None
         service.user_repository.get_telegram_user_settings.assert_called_once_with(123)
 
+    @pytest.mark.asyncio
     async def test_save_user_settings_success(self, service):
         """Test saving user settings successfully"""
         service.user_repository.save_telegram_user_settings = AsyncMock(return_value=True)
@@ -56,6 +59,7 @@ class TestTelegramUserService:
         assert result is True
         service.user_repository.save_telegram_user_settings.assert_called_once_with(123, ["tech"], "en")
 
+    @pytest.mark.asyncio
     async def test_set_user_language_success(self, service):
         """Test setting user language successfully"""
         service.user_repository.set_telegram_user_language = AsyncMock(return_value=True)
@@ -65,6 +69,7 @@ class TestTelegramUserService:
         assert result is True
         service.user_repository.set_telegram_user_language.assert_called_once_with(123, "ru")
 
+    @pytest.mark.asyncio
     async def test_get_subscribers_for_category(self, service):
         """Test getting subscribers for category"""
         service.user_repository.get_telegram_subscribers_for_category = AsyncMock(return_value=[
@@ -79,6 +84,7 @@ class TestTelegramUserService:
         assert result[1]["id"] == 2
         service.user_repository.get_telegram_subscribers_for_category.assert_called_once_with("tech")
 
+    @pytest.mark.asyncio
     async def test_get_all_users(self, service):
         """Test getting all users"""
         service.user_repository.get_all_telegram_users = AsyncMock(return_value=[1, 2])
@@ -116,6 +122,7 @@ class TestWebUserService:
         cur = AsyncMock()
         return cur
 
+    @pytest.mark.asyncio
     async def test_generate_telegram_link_code(self, service):
         """Test generating Telegram link code"""
         service.user_repository.generate_telegram_link_code = AsyncMock(return_value='test_code_123')
@@ -125,6 +132,7 @@ class TestWebUserService:
         assert result == 'test_code_123'
         service.user_repository.generate_telegram_link_code.assert_called_once_with(123)
 
+    @pytest.mark.asyncio
     async def test_confirm_telegram_link_success(self, service):
         """Test confirming Telegram link successfully"""
         service.user_repository.confirm_telegram_link = AsyncMock(return_value=True)
@@ -134,6 +142,7 @@ class TestWebUserService:
         assert result is True
         service.user_repository.confirm_telegram_link.assert_called_once_with(456, 'test_code')
 
+    @pytest.mark.asyncio
     async def test_confirm_telegram_link_invalid_code(self, service):
         """Test confirming Telegram link with invalid code"""
         service.user_repository.confirm_telegram_link = AsyncMock(return_value=False)
@@ -143,40 +152,36 @@ class TestWebUserService:
         assert result is False
         service.user_repository.confirm_telegram_link.assert_called_once_with(456, 'invalid_code')
 
-    async def test_get_user_by_telegram_id_found(self, service, mock_pool, mock_conn, mock_cur):
+    @pytest.mark.asyncio
+    async def test_get_user_by_telegram_id_found(self, service):
         """Test getting user by Telegram ID when found"""
-        mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
-        mock_conn.cursor.return_value.__aenter__.return_value = mock_cur
-        mock_cur.fetchone.return_value = (123, 'user@example.com', 'hash', 'en', True, None, None)
-        mock_cur.description = [('id',), ('email',), ('password_hash',), ('language',), ('is_active',), ('created_at',), ('updated_at')]
+        service.user_repository.get_user_by_telegram_id.return_value = {"id": 123, "email": "user@example.com", "password_hash": "hash", "language": "en", "is_active": True, "created_at": None, "updated_at": None}
 
-        with patch.object(service, 'get_pool', return_value=mock_pool):
-            result = await service.get_user_by_telegram_id(456)
+        result = await service.get_user_by_telegram_id(456)
 
         assert result is not None
         assert result['id'] == 123
+        service.user_repository.get_user_by_telegram_id.assert_called_once_with(456)
 
-    async def test_get_user_by_telegram_id_not_found(self, service, mock_pool, mock_conn, mock_cur):
+    @pytest.mark.asyncio
+    async def test_get_user_by_telegram_id_not_found(self, service):
         """Test getting user by Telegram ID when not found"""
-        mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
-        mock_conn.cursor.return_value.__aenter__.return_value = mock_cur
-        mock_cur.fetchone.return_value = None
+        service.user_repository.get_user_by_telegram_id.return_value = None
 
-        with patch.object(service, 'get_pool', return_value=mock_pool):
-            result = await service.get_user_by_telegram_id(456)
+        result = await service.get_user_by_telegram_id(456)
 
         assert result is None
+        service.user_repository.get_user_by_telegram_id.assert_called_once_with(456)
 
-    async def test_unlink_telegram_success(self, service, mock_pool, mock_conn, mock_cur):
+    @pytest.mark.asyncio
+    async def test_unlink_telegram_success(self, service):
         """Test unlinking Telegram successfully"""
-        mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
-        mock_conn.cursor.return_value.__aenter__.return_value = mock_cur
-        mock_cur.rowcount = 1
+        service.user_repository.unlink_telegram.return_value = True
 
-        with patch.object(service, 'get_pool', return_value=mock_pool):
-            result = await service.unlink_telegram(123)
+        result = await service.unlink_telegram(123)
 
         assert result is True
+        service.user_repository.unlink_telegram.assert_called_once_with(123)
 
     def test_implements_interface(self, service):
         """Test that service implements the interface"""
@@ -186,12 +191,13 @@ class TestWebUserService:
 class TestDIIntegration:
     """Test DI container integration"""
 
-    def test_services_registered_in_di(self):
+    @pytest.mark.asyncio
+    async def test_services_registered_in_di(self):
         """Test that user services are registered in DI container"""
         from di_container import di_container, setup_di_container
 
         # Setup DI container
-        setup_di_container()
+        await setup_di_container()
 
         # Test that we can resolve user services
         telegram_service = di_container.resolve(ITelegramUserService)

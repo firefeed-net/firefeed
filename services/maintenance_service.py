@@ -1,5 +1,6 @@
 # services/maintenance_service.py
 import logging
+from typing import Dict, Any
 from interfaces import IMaintenanceService
 
 logger = logging.getLogger(__name__)

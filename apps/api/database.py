@@ -47,7 +47,7 @@ async def create_user(pool, email: str, password_hash: str, language: str) -> Op
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING id, email, language, is_active, is_verified, is_deleted, created_at, updated_at
                 """
-                now = datetime.utcnow()
+                now = datetime.now(timezone.utc)
                 await cur.execute(query, (email, password_hash, language, False, False, False, now, now))
                 result = await cur.fetchone()
                 if result:
@@ -120,7 +120,7 @@ async def update_user(pool, user_id: int, update_data: Dict[str, Any]) -> Option
                 WHERE id = %s
                 RETURNING id, email, password_hash, language, is_active, is_verified, is_deleted, created_at, updated_at
                 """
-                params.append(datetime.utcnow())  # updated_at
+                params.append(datetime.now(timezone.utc))  # updated_at
                 await cur.execute(query, params)
                 result = await cur.fetchone()
                 if result:
@@ -139,7 +139,7 @@ async def delete_user(pool, user_id: int) -> bool:
             try:
                 # Instead of physical deletion, deactivate
                 query = "UPDATE users SET is_deleted = TRUE, updated_at = %s WHERE id = %s"
-                await cur.execute(query, (datetime.utcnow(), user_id))
+                await cur.execute(query, (datetime.now(timezone.utc), user_id))
                 # Check if a row was affected
                 if cur.rowcount > 0:
                     return True
@@ -155,7 +155,7 @@ async def activate_user(pool, user_id: int) -> bool:
         async with conn.cursor() as cur:
             try:
                 query = "UPDATE users SET is_active = TRUE, updated_at = %s WHERE id = %s"
-                await cur.execute(query, (datetime.utcnow(), user_id))
+                await cur.execute(query, (datetime.now(timezone.utc), user_id))
                 if cur.rowcount > 0:
                     return True
                 return False
@@ -170,7 +170,7 @@ async def update_user_password(pool, user_id: int, new_hashed_password: str) -> 
         async with conn.cursor() as cur:
             try:
                 query = "UPDATE users SET password_hash = %s, updated_at = %s WHERE id = %s"
-                await cur.execute(query, (new_hashed_password, datetime.utcnow(), user_id))
+                await cur.execute(query, (new_hashed_password, datetime.now(timezone.utc), user_id))
                 return cur.rowcount > 0
             except Exception as e:
                 logger.error(f"[DB] Error updating user password: {e}")
@@ -215,7 +215,7 @@ async def verify_user_email(pool, email: str, verification_code: str) -> Optiona
                   AND uvc.used_at IS NULL
                   AND uvc.expires_at > %s
                 """
-                await cur.execute(query, (email, verification_code, datetime.utcnow()))
+                await cur.execute(query, (email, verification_code, datetime.now(timezone.utc)))
                 result = await cur.fetchone()
                 if result:
                     return result[0]
@@ -291,7 +291,7 @@ async def get_password_reset_token(pool, token: str) -> Optional[Dict[str, Any]]
                 SELECT user_id, expires_at FROM password_reset_tokens
                 WHERE token = %s AND expires_at > %s
                 """
-                await cur.execute(query, (token, datetime.utcnow()))
+                await cur.execute(query, (token, datetime.now(timezone.utc)))
                 result = await cur.fetchone()
                 if result:
                     return {"user_id": result[0], "expires_at": result[1]}
@@ -430,7 +430,7 @@ async def create_user_rss_feed(
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING id, user_id, url, name, category_id, language, is_active, created_at, updated_at
                 """
-                now = datetime.utcnow()
+                now = datetime.now(timezone.utc)
                 await cur.execute(query, (user_id, url, name, category_id, language, True, now, now))
                 result = await cur.fetchone()
                 if result:
@@ -510,7 +510,7 @@ async def update_user_rss_feed(
                 WHERE user_id = %s AND id = %s
                 RETURNING id, user_id, url, name, category_id, language, is_active, created_at, updated_at
                 """
-                params.append(datetime.utcnow())  # updated_at
+                params.append(datetime.now(timezone.utc))  # updated_at
                 await cur.execute(query, params)
                 result = await cur.fetchone()
                 if result:
@@ -1330,7 +1330,7 @@ async def create_user_api_key(pool, user_id: int, plain_key: str, limits: Dict[s
                 VALUES (%s, %s, %s::jsonb, %s, %s, %s)
                 RETURNING id, user_id, key_hash, limits, is_active, created_at, expires_at
                 """
-                now = datetime.utcnow()
+                now = datetime.now(timezone.utc)
                 await cur.execute(query, (user_id, key_hash, json.dumps(limits), True, now, expires_at))
                 result = await cur.fetchone()
                 if result:
@@ -1377,7 +1377,7 @@ async def get_user_api_key_by_key(pool, plain_key: str) -> Optional[Dict[str, An
                 FROM user_api_keys
                 WHERE key_hash = %s AND is_active = TRUE AND (expires_at IS NULL OR expires_at > %s)
                 """
-                await cur.execute(query, (key_hash, datetime.utcnow()))
+                await cur.execute(query, (key_hash, datetime.now(timezone.utc)))
                 result = await cur.fetchone()
                 if result:
                     columns = [desc[0] for desc in cur.description]
