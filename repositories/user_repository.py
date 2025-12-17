@@ -3,6 +3,7 @@ import logging
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 from interfaces import IUserRepository
+from exceptions import DatabaseException
 
 logger = logging.getLogger(__name__)
 
@@ -16,49 +17,58 @@ class UserRepository(IUserRepository):
     async def get_user_by_email(self, email: str) -> Optional[Dict[str, Any]]:
         async with self.db_pool.acquire() as conn:
             async with conn.cursor() as cur:
-                await cur.execute(
-                    "SELECT id, email, password_hash, language, is_active, is_verified, is_deleted, created_at, updated_at FROM users WHERE email = %s",
-                    (email,)
-                )
-                row = await cur.fetchone()
-                if row:
-                    return {
-                        "id": row[0], "email": row[1], "password_hash": row[2],
-                        "language": row[3], "is_active": row[4], "is_verified": row[5], "is_deleted": row[6],
-                        "created_at": row[7], "updated_at": row[8]
-                    }
-        return None
+                try:
+                    await cur.execute(
+                        "SELECT id, email, password_hash, language, is_active, is_verified, is_deleted, created_at, updated_at FROM users WHERE email = %s",
+                        (email,)
+                    )
+                    row = await cur.fetchone()
+                    if row:
+                        return {
+                            "id": row[0], "email": row[1], "password_hash": row[2],
+                            "language": row[3], "is_active": row[4], "is_verified": row[5], "is_deleted": row[6],
+                            "created_at": row[7], "updated_at": row[8]
+                        }
+                    return None
+                except Exception as e:
+                    raise DatabaseException(f"Failed to get user by email {email}: {str(e)}")
 
     async def get_user_by_id(self, user_id: int) -> Optional[Dict[str, Any]]:
         async with self.db_pool.acquire() as conn:
             async with conn.cursor() as cur:
-                await cur.execute(
-                    "SELECT id, email, password_hash, language, is_active, is_verified, is_deleted, created_at, updated_at FROM users WHERE id = %s",
-                    (user_id,)
-                )
-                row = await cur.fetchone()
-                if row:
-                    return {
-                        "id": row[0], "email": row[1], "password_hash": row[2],
-                        "language": row[3], "is_active": row[4], "is_verified": row[5], "is_deleted": row[6],
-                        "created_at": row[7], "updated_at": row[8]
-                    }
-        return None
+                try:
+                    await cur.execute(
+                        "SELECT id, email, password_hash, language, is_active, is_verified, is_deleted, created_at, updated_at FROM users WHERE id = %s",
+                        (user_id,)
+                    )
+                    row = await cur.fetchone()
+                    if row:
+                        return {
+                            "id": row[0], "email": row[1], "password_hash": row[2],
+                            "language": row[3], "is_active": row[4], "is_verified": row[5], "is_deleted": row[6],
+                            "created_at": row[7], "updated_at": row[8]
+                        }
+                    return None
+                except Exception as e:
+                    raise DatabaseException(f"Failed to get user by id {user_id}: {str(e)}")
 
     async def create_user(self, email: str, password_hash: str, language: str) -> Optional[Dict[str, Any]]:
         async with self.db_pool.acquire() as conn:
             async with conn.cursor() as cur:
-                await cur.execute(
-                    "INSERT INTO users (email, password_hash, language) VALUES (%s, %s, %s) RETURNING id, email, language, is_active, is_verified, created_at",
-                    (email, password_hash, language)
-                )
-                row = await cur.fetchone()
-                if row:
-                    return {
-                        "id": row[0], "email": row[1], "language": row[2],
-                        "is_active": row[3], "is_verified": row[4], "created_at": row[5]
-                    }
-        return None
+                try:
+                    await cur.execute(
+                        "INSERT INTO users (email, password_hash, language) VALUES (%s, %s, %s) RETURNING id, email, language, is_active, is_verified, created_at",
+                        (email, password_hash, language)
+                    )
+                    row = await cur.fetchone()
+                    if row:
+                        return {
+                            "id": row[0], "email": row[1], "language": row[2],
+                            "is_active": row[3], "is_verified": row[4], "created_at": row[5]
+                        }
+                    return None
+                except Exception as e:
+                    raise DatabaseException(f"Failed to create user {email}: {str(e)}")
 
     async def update_user(self, user_id: int, update_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         set_parts = []
@@ -72,20 +82,26 @@ class UserRepository(IUserRepository):
 
         async with self.db_pool.acquire() as conn:
             async with conn.cursor() as cur:
-                await cur.execute(query, values)
-                row = await cur.fetchone()
-                if row:
-                    return {
-                        "id": row[0], "email": row[1], "language": row[2],
-                        "is_active": row[3], "is_verified": row[4], "updated_at": row[5]
-                    }
-        return None
+                try:
+                    await cur.execute(query, values)
+                    row = await cur.fetchone()
+                    if row:
+                        return {
+                            "id": row[0], "email": row[1], "language": row[2],
+                            "is_active": row[3], "is_verified": row[4], "updated_at": row[5]
+                        }
+                    return None
+                except Exception as e:
+                    raise DatabaseException(f"Failed to update user {user_id}: {str(e)}")
 
     async def delete_user(self, user_id: int) -> bool:
         async with self.db_pool.acquire() as conn:
             async with conn.cursor() as cur:
-                await cur.execute("UPDATE users SET is_deleted = TRUE, updated_at = NOW() WHERE id = %s", (user_id,))
-                return cur.rowcount > 0
+                try:
+                    await cur.execute("UPDATE users SET is_deleted = TRUE, updated_at = NOW() WHERE id = %s", (user_id,))
+                    return cur.rowcount > 0
+                except Exception as e:
+                    raise DatabaseException(f"Failed to delete user {user_id}: {str(e)}")
 
     async def save_verification_code(self, user_id: int, code: str, expires_at: datetime) -> bool:
         async with self.db_pool.acquire() as conn:
@@ -237,7 +253,7 @@ class UserRepository(IUserRepository):
                             "dummy_hash",
                             language,
                             True,
-                            datetime.utcnow(),
+                            datetime.now(timezone.utc),
                             datetime.utcnow(),
                         ),
                     )
@@ -346,7 +362,7 @@ class UserRepository(IUserRepository):
                     INSERT INTO user_telegram_links (user_id, link_code, created_at)
                     VALUES (%s, %s, %s)
                     """,
-                    (user_id, link_code, datetime.utcnow()),
+                    (user_id, link_code, datetime.now(timezone.utc)),
                 )
         return link_code
 
@@ -363,7 +379,7 @@ class UserRepository(IUserRepository):
                     WHERE link_code = %s AND linked_at IS NULL
                     AND created_at > %s
                     """,
-                    (link_code, datetime.utcnow() - timedelta(hours=24)),
+                    (link_code, datetime.now(timezone.utc) - timedelta(hours=24)),
                 )
 
                 result = await cur.fetchone()
@@ -387,7 +403,7 @@ class UserRepository(IUserRepository):
                     SET telegram_id = %s, linked_at = %s
                     WHERE link_code = %s
                     """,
-                    (telegram_id, datetime.utcnow(), link_code),
+                    (telegram_id, datetime.now(timezone.utc), link_code),
                 )
 
                 return True

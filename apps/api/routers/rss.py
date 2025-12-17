@@ -6,6 +6,7 @@ from email.utils import formatdate
 
 from di_container import get_service
 from interfaces import ICategoryRepository, ISourceRepository, IRSSItemRepository
+from exceptions import RSSException, CacheException
 # Config will be accessed via DI
 import json
 from datetime import datetime, timedelta
@@ -115,7 +116,7 @@ async def get_rss_feed_by_category(language: str, category_name: str):
             raise HTTPException(status_code=404, detail=f"Category '{category_name}' not found")
 
         # Get RSS items for the category (last hour, max 10 items)
-        from_date = datetime.utcnow() - timedelta(hours=1)
+        from_date = datetime.now(timezone.utc) - timedelta(hours=1)
         total_count, results, columns = await rss_item_repo.get_all_rss_items_list(
             limit=10,  # Max 10 items per hour
             offset=0,
@@ -134,6 +135,12 @@ async def get_rss_feed_by_category(language: str, category_name: str):
 
     except HTTPException:
         raise
+    except RSSException as e:
+        logger.error(f"[API] RSS error generating feed for category: {e}")
+        raise HTTPException(status_code=400, detail=f"RSS processing error: {str(e)}")
+    except CacheException as e:
+        logger.error(f"[API] Cache error generating feed for category: {e}")
+        raise HTTPException(status_code=500, detail="Cache error")
     except Exception as e:
         logger.error(f"[API] Error generating RSS feed for category: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
@@ -184,7 +191,7 @@ async def get_rss_feed_by_source(language: str, source_alias: str):
             raise HTTPException(status_code=404, detail=f"Source '{source_alias}' not found")
 
         # Get RSS items for the source (last hour, max 10 items)
-        from_date = datetime.utcnow() - timedelta(hours=1)
+        from_date = datetime.now(timezone.utc) - timedelta(hours=1)
         total_count, results, columns = await rss_item_repo.get_all_rss_items_list(
             limit=10,  # Max 10 items per hour
             offset=0,
@@ -203,6 +210,12 @@ async def get_rss_feed_by_source(language: str, source_alias: str):
 
     except HTTPException:
         raise
+    except RSSException as e:
+        logger.error(f"[API] RSS error generating feed for source: {e}")
+        raise HTTPException(status_code=400, detail=f"RSS processing error: {str(e)}")
+    except CacheException as e:
+        logger.error(f"[API] Cache error generating feed for source: {e}")
+        raise HTTPException(status_code=500, detail="Cache error")
     except Exception as e:
         logger.error(f"[API] Error generating RSS feed for source: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")

@@ -5,6 +5,7 @@ import json
 import logging
 from typing import Dict, Any, Optional
 from interfaces import ITranslationCache
+from exceptions import CacheException, CacheConnectionError
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +35,7 @@ class TranslationCache(ITranslationCache):
                 await self._remove_expired()
             except Exception as e:
                 logger.error(f"[CACHE] Error in cleanup task: {e}")
+                raise CacheException(f"Cache cleanup task failed: {str(e)}")
 
     async def _remove_expired(self) -> None:
         """Remove expired cache entries"""
@@ -123,7 +125,7 @@ class TranslationCache(ITranslationCache):
                 return loop.run_until_complete(self.get(key))
         except Exception as e:
             logger.error(f"[CACHE] Error in sync get: {e}")
-            return None
+            raise CacheException(f"Synchronous cache get failed: {str(e)}")
 
     def set_sync(self, key: str, value: Dict[str, Any], ttl: int = None) -> None:
         """Synchronous version of set"""
@@ -136,6 +138,7 @@ class TranslationCache(ITranslationCache):
                 loop.run_until_complete(self.set(key, value, ttl))
         except Exception as e:
             logger.error(f"[CACHE] Error in sync set: {e}")
+            raise CacheException(f"Synchronous cache set failed: {str(e)}")
 
     def clear_sync(self) -> None:
         """Synchronous version of clear"""
@@ -147,6 +150,7 @@ class TranslationCache(ITranslationCache):
                 loop.run_until_complete(self.clear())
         except Exception as e:
             logger.error(f"[CACHE] Error in sync clear: {e}")
+            raise CacheException(f"Synchronous cache clear failed: {str(e)}")
 
     def get_stats(self) -> Dict[str, Any]:
         """Get cache statistics"""

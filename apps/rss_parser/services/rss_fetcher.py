@@ -77,8 +77,7 @@ class RSSFetcher(IRSSFetcher):
             async with aiohttp.ClientSession() as session:
                 async with session.get(url, headers=headers) as response:
                     if response.status != 200:
-                        logger.error(f"[RSS] HTTP error for {feed_name}: {response.status}")
-                        return []
+                        raise RSSFetchError(url, response.status)
                     content = await response.text(encoding='utf-8')
 
             # Parse RSS feed from content
@@ -86,8 +85,7 @@ class RSSFetcher(IRSSFetcher):
             feed = await loop.run_in_executor(None, feedparser.parse, content)
 
             if feed.bozo:
-                logger.error(f"[RSS] Parse error for {feed_name}: {feed.bozo_exception}")
-                return []
+                raise RSSParseError(url, str(feed.bozo_exception))
 
             if not hasattr(feed, "entries") or len(feed.entries) == 0:
                 logger.warning(f"[RSS] No entries found in {feed_name}")
@@ -259,8 +257,7 @@ class RSSFetcher(IRSSFetcher):
 
         # Validate the final URL to prevent URL poisoning
         if link and not validate_rss_url(link):
-            logger.warning(f"[RSS] Invalid URL after processing: {link}")
-            return ''
+            raise RSSValidationError(feed_url, f"Invalid processed URL: {link}")
 
         return str(link).strip() if link else ''
 

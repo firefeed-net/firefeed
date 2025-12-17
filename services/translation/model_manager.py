@@ -5,6 +5,7 @@ import time
 from typing import Dict, Any, Tuple, Optional
 from interfaces import IModelManager
 from config.services_config import get_service_config
+from exceptions import TranslationModelError
 
 logger = logging.getLogger(__name__)
 
@@ -75,8 +76,10 @@ class ModelManager(IModelManager):
                 return model, tokenizer
 
             except Exception as e:
-                logger.error(f"[MODEL] Error loading model for {direction}: {e}")
-                raise
+                raise TranslationModelError(
+                    model_name=model_name,
+                    error=f"Failed to load model for {direction}: {str(e)}"
+                )
 
     async def preload_popular_models(self) -> None:
         """Preload commonly used models"""
@@ -97,6 +100,10 @@ class ModelManager(IModelManager):
             logger.info("[MODEL] Popular models preloaded")
         except Exception as e:
             logger.error(f"[MODEL] Error preloading models: {e}")
+            raise TranslationModelError(
+                model_name="multiple",
+                error=f"Failed to preload popular models: {str(e)}"
+            )
 
     def clear_cache(self) -> None:
         """Clear all cached models"""
@@ -157,6 +164,10 @@ class ModelManager(IModelManager):
                 await self._cleanup_old_models()
             except Exception as e:
                 logger.error(f"[MODEL] Error in cleanup task: {e}")
+                raise TranslationModelError(
+                    model_name="system",
+                    error=f"Model cleanup task failed: {str(e)}"
+                )
 
     async def _cleanup_old_models(self) -> None:
         """Remove models that haven't been used for too long"""

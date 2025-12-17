@@ -172,11 +172,11 @@ class TestRSSManager:
 
     @pytest.mark.asyncio
     async def test_get_last_published_time_for_feed_success(self, rss_manager, mock_pool, mock_conn, mock_cur):
-        rss_manager.rss_storage.get_last_published_time.return_value = datetime.utcnow()
+        rss_manager.rss_storage.get_last_published_time.return_value = datetime.now(timezone.utc)
         rss_manager.rss_storage.db_pool = mock_pool
         mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
         mock_conn.cursor.return_value.__aenter__.return_value = mock_cur
-        mock_cur.fetchone.return_value = (datetime.utcnow(),)
+        mock_cur.fetchone.return_value = (datetime.now(timezone.utc),)
 
         result = await rss_manager.get_last_published_time_for_feed(1)
         assert isinstance(result, datetime)
@@ -342,7 +342,7 @@ class TestRSSManager:
     @pytest.mark.asyncio
     async def test_fetch_unprocessed_rss_items_success(self, rss_manager, mock_pool, mock_conn, mock_cur):
         rss_manager.rss_storage.fetch_unprocessed_rss_items.return_value = [
-            {"news_id": "news_id", "original_title": "Title", "original_content": "Content", "original_language": "en", "image_filename": "image.jpg", "category_id": 1, "rss_feed_id": 1, "telegram_published_at": None, "created_at": datetime.utcnow(), "updated_at": datetime.utcnow(), "category_name": "Tech", "source_name": "BBC", "source_url": "http://example.com"}
+            {"news_id": "news_id", "original_title": "Title", "original_content": "Content", "original_language": "en", "image_filename": "image.jpg", "category_id": 1, "rss_feed_id": 1, "telegram_published_at": None, "created_at": datetime.now(timezone.utc), "updated_at": datetime.now(timezone.utc), "category_name": "Tech", "source_name": "BBC", "source_url": "http://example.com"}
         ]
 
         result = await rss_manager.fetch_unprocessed_rss_items()

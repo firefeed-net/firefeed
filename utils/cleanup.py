@@ -32,7 +32,7 @@ async def cleanup_users():
                 logger.info(f"Deleted {deleted_count} deleted users")
 
                 # Delete unverified users registered more than 24 hours ago
-                cutoff_time = datetime.utcnow() - timedelta(hours=24)
+                cutoff_time = datetime.now(timezone.utc) - timedelta(hours=24)
                 await cur.execute(
                     "DELETE FROM users WHERE is_verified = FALSE AND created_at < %s",
                     (cutoff_time,)

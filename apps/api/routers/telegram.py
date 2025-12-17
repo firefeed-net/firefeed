@@ -1,11 +1,11 @@
 import logging
 from fastapi import APIRouter, Depends, HTTPException, Request
 
-from api.middleware import limiter
-from api import models
+from apps.api.middleware import limiter
+from apps.api import models
 from di_container import get_service
 from interfaces import ITelegramRepository
-from api.deps import get_current_user
+from apps.api.deps import get_current_user
 
 logger = logging.getLogger(__name__)
 

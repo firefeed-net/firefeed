@@ -6,6 +6,7 @@ import logging
 from interfaces import IDuplicateDetector, IRSSItemRepository
 from services.text_analysis.embeddings_processor import FireFeedEmbeddingsProcessor
 from di_container import get_service
+from exceptions import DuplicateDetectionException
 
 logger = logging.getLogger(__name__)
 
@@ -86,8 +87,7 @@ class FireFeedDuplicateDetector(IDuplicateDetector):
             return False, None
 
         except Exception as e:
-            logger.error(f"[DUPLICATE_DETECTOR] Error checking duplicate with embedding: {e}")
-            raise
+            raise DuplicateDetectionException(f"Error checking duplicate with embedding: {str(e)}")
 
     async def generate_embedding(self, title: str, content: str, lang_code: str = "en") -> List[float]:
         """
@@ -133,8 +133,7 @@ class FireFeedDuplicateDetector(IDuplicateDetector):
         try:
             return await self.rss_item_repository.get_similar_rss_items_by_embedding(embedding, exclude_news_id=current_rss_item_id, limit=limit)
         except Exception as e:
-            logger.error(f"[DUPLICATE_DETECTOR] Error searching for similar RSS items: {e}")
-            raise
+            raise DuplicateDetectionException(f"Error searching for similar RSS items: {str(e)}")
 
     async def is_duplicate(
         self, title: str, content: str, link: str, lang_code: str = "en"
@@ -205,8 +204,7 @@ class FireFeedDuplicateDetector(IDuplicateDetector):
             return False, None
 
         except Exception as e:
-            logger.error(f"[DUPLICATE_DETECTOR] Error checking duplicate: {e}")
-            raise
+            raise DuplicateDetectionException(f"Error checking duplicate: {str(e)}")
 
 
     async def process_rss_item(self, rss_item_id: str, title: str, content: str, lang_code: str = "en") -> bool:
@@ -259,8 +257,7 @@ class FireFeedDuplicateDetector(IDuplicateDetector):
             return True
 
         except Exception as e:
-            logger.error(f"[DUPLICATE_DETECTOR] Error processing RSS item {rss_item_id}: {e}")
-            raise
+            raise DuplicateDetectionException(f"Error processing RSS item {rss_item_id}: {str(e)}")
 
     # --- Methods for batch processing ---
 
@@ -412,5 +409,4 @@ class FireFeedDuplicateDetector(IDuplicateDetector):
             logger.info(f"[BATCH_EMBEDDING] One-time processing completed. Successful: {success}, Errors: {errors}")
             return success, errors
         except Exception as e:
-            logger.error(f"[BATCH_EMBEDDING] Error in one-time processing: {e}", exc_info=True)
-            raise  # Re-raise exception so caller can handle it
+            raise DuplicateDetectionException(f"Error in batch processing: {str(e)}")
