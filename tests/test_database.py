@@ -1,7 +1,8 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
-from datetime import datetime, timedelta
-from api.database import (
+from di_container import di_container
+from datetime import datetime, timedelta, timezone
+from apps.api.database import (
     get_db_pool,
     close_db_pool,
     create_user,
@@ -39,16 +40,16 @@ from api.database import (
 )
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 class TestDatabaseFunctions:
     @pytest.fixture
     def mock_pool(self):
-        pool = AsyncMock()
+        pool = MagicMock()
         return pool
 
     @pytest.fixture
     def mock_conn(self):
-        conn = AsyncMock()
+        conn = MagicMock()
         return conn
 
     @pytest.fixture
@@ -57,28 +58,34 @@ class TestDatabaseFunctions:
         return cur
 
     async def test_get_db_pool_success(self, mock_pool):
-        with patch('config.get_shared_db_pool', return_value=mock_pool):
+        mock_config = MagicMock()
+        mock_config.get = MagicMock(return_value=AsyncMock(return_value=mock_pool))
+        with patch.object(di_container, 'resolve', return_value=mock_config):
             result = await get_db_pool()
             assert result == mock_pool
 
     async def test_get_db_pool_failure(self):
-        with patch('config.get_shared_db_pool', side_effect=Exception("DB error")):
+        with patch('apps.api.database.get_service', return_value={'get_shared_db_pool': lambda: (_ for _ in ()).throw(Exception("DB error"))}):
             result = await get_db_pool()
             assert result is None
 
     async def test_close_db_pool_success(self):
-        with patch('config.close_shared_db_pool', return_value=None):
+        mock_config = MagicMock()
+        mock_config.get = MagicMock(return_value=AsyncMock())
+        with patch.object(di_container, 'resolve', return_value=mock_config):
             await close_db_pool()
 
     async def test_close_db_pool_failure(self):
-        with patch('config.close_shared_db_pool', side_effect=Exception("DB error")):
+        mock_config = MagicMock()
+        mock_config.get = AsyncMock(side_effect=Exception("DB error"))
+        with patch.object(di_container, 'resolve', return_value=mock_config):
             await close_db_pool()
 
     async def test_create_user_success(self, mock_pool, mock_conn, mock_cur):
         mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
         mock_conn.cursor.return_value.__aenter__.return_value = mock_cur
-        mock_cur.fetchone.return_value = (1, 'test@example.com', 'en', True, datetime.utcnow(), datetime.utcnow())
-        mock_cur.description = [('id',), ('email',), ('language',), ('is_active',), ('created_at',), ('updated_at',)]
+        mock_cur.fetchone = AsyncMock(return_value = (1, 'test@example.com', 'en', True, False, False, datetime.now(timezone.utc), datetime.now(timezone.utc)))
+        mock_cur.description = [('id',), ('email',), ('language',), ('is_active',), ('is_verified',), ('is_deleted',), ('created_at',), ('updated_at',)]
 
         result = await create_user(mock_pool, 'test@example.com', 'hashed_pass', 'en')
         assert result['email'] == 'test@example.com'
@@ -94,8 +101,8 @@ class TestDatabaseFunctions:
     async def test_get_user_by_email_success(self, mock_pool, mock_conn, mock_cur):
         mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
         mock_conn.cursor.return_value.__aenter__.return_value = mock_cur
-        mock_cur.fetchone.return_value = (1, 'test@example.com', 'hashed_pass', 'en', True, datetime.utcnow(), datetime.utcnow())
-        mock_cur.description = [('id',), ('email',), ('password_hash',), ('language',), ('is_active',), ('created_at',), ('updated_at',)]
+        mock_cur.fetchone = AsyncMock(return_value = (1, 'test@example.com', 'hashed_pass', 'en', True, False, False, datetime.now(timezone.utc), datetime.now(timezone.utc)))
+        mock_cur.description = [('id',), ('email',), ('password_hash',), ('language',), ('is_active',), ('is_verified',), ('is_deleted',), ('created_at',), ('updated_at',)]
 
         result = await get_user_by_email(mock_pool, 'test@example.com')
         assert result['email'] == 'test@example.com'
@@ -111,8 +118,8 @@ class TestDatabaseFunctions:
     async def test_get_user_by_id_success(self, mock_pool, mock_conn, mock_cur):
         mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
         mock_conn.cursor.return_value.__aenter__.return_value = mock_cur
-        mock_cur.fetchone.return_value = (1, 'test@example.com', 'hashed_pass', 'en', True, datetime.utcnow(), datetime.utcnow())
-        mock_cur.description = [('id',), ('email',), ('password_hash',), ('language',), ('is_active',), ('created_at',), ('updated_at',)]
+        mock_cur.fetchone = AsyncMock(return_value = (1, 'test@example.com', 'hashed_pass', 'en', True, False, False, datetime.now(timezone.utc), datetime.now(timezone.utc)))
+        mock_cur.description = [('id',), ('email',), ('password_hash',), ('language',), ('is_active',), ('is_verified',), ('is_deleted',), ('created_at',), ('updated_at',)]
 
         result = await get_user_by_id(mock_pool, 1)
         assert result['id'] == 1
@@ -120,8 +127,8 @@ class TestDatabaseFunctions:
     async def test_update_user_success(self, mock_pool, mock_conn, mock_cur):
         mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
         mock_conn.cursor.return_value.__aenter__.return_value = mock_cur
-        mock_cur.fetchone.return_value = (1, 'new@example.com', 'hashed_pass', 'es', True, datetime.utcnow(), datetime.utcnow())
-        mock_cur.description = [('id',), ('email',), ('password_hash',), ('language',), ('is_active',), ('created_at',), ('updated_at',)]
+        mock_cur.fetchone = AsyncMock(return_value = (1, 'new@example.com', 'hashed_pass', 'es', True, False, False, datetime.now(timezone.utc), datetime.now(timezone.utc)))
+        mock_cur.description = [('id',), ('email',), ('password_hash',), ('language',), ('is_active',), ('is_verified',), ('is_deleted',), ('created_at',), ('updated_at',)]
 
         result = await update_user(mock_pool, 1, {'email': 'new@example.com', 'language': 'es'})
         assert result['email'] == 'new@example.com'
@@ -129,8 +136,8 @@ class TestDatabaseFunctions:
     async def test_update_user_no_changes(self, mock_pool, mock_conn, mock_cur):
         mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
         mock_conn.cursor.return_value.__aenter__.return_value = mock_cur
-        mock_cur.fetchone.return_value = (1, 'test@example.com', 'hashed_pass', 'en', True, datetime.utcnow(), datetime.utcnow())
-        mock_cur.description = [('id',), ('email',), ('password_hash',), ('language',), ('is_active',), ('created_at',), ('updated_at',)]
+        mock_cur.fetchone = AsyncMock(return_value = (1, 'test@example.com', 'hashed_pass', 'en', True, False, False, datetime.now(timezone.utc), datetime.now(timezone.utc)))
+        mock_cur.description = [('id',), ('email',), ('password_hash',), ('language',), ('is_active',), ('is_verified',), ('is_deleted',), ('created_at',), ('updated_at',)]
 
         result = await update_user(mock_pool, 1, {})
         assert result['email'] == 'test@example.com'
@@ -171,7 +178,7 @@ class TestDatabaseFunctions:
         mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
         mock_conn.cursor.return_value.__aenter__.return_value = mock_cur
 
-        result = await save_verification_code(mock_pool, 1, '123456', datetime.utcnow() + timedelta(hours=1))
+        result = await save_verification_code(mock_pool, 1, '123456', datetime.now(timezone.utc) + timedelta(hours=1))
         assert result is True
 
     async def test_verify_user_email_success(self, mock_pool, mock_conn, mock_cur):
@@ -193,7 +200,7 @@ class TestDatabaseFunctions:
     async def test_get_active_verification_code_success(self, mock_pool, mock_conn, mock_cur):
         mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
         mock_conn.cursor.return_value.__aenter__.return_value = mock_cur
-        mock_cur.fetchone.return_value = (1, 1, '123456', datetime.utcnow(), datetime.utcnow() + timedelta(hours=1), None)
+        mock_cur.fetchone = AsyncMock(return_value = (1, 1, '123456', datetime.now(timezone.utc), datetime.now(timezone.utc) + timedelta(hours=1), None))
         mock_cur.description = [('id',), ('user_id',), ('verification_code',), ('created_at',), ('expires_at',), ('used_at',)]
 
         result = await get_active_verification_code(mock_pool, 1, '123456')
@@ -211,13 +218,13 @@ class TestDatabaseFunctions:
         mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
         mock_conn.cursor.return_value.__aenter__.return_value = mock_cur
 
-        result = await save_password_reset_token(mock_pool, 1, 'token123', datetime.utcnow() + timedelta(hours=1))
+        result = await save_password_reset_token(mock_pool, 1, 'token123', datetime.now(timezone.utc) + timedelta(hours=1))
         assert result is True
 
     async def test_get_password_reset_token_success(self, mock_pool, mock_conn, mock_cur):
         mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
         mock_conn.cursor.return_value.__aenter__.return_value = mock_cur
-        mock_cur.fetchone.return_value = (1, datetime.utcnow() + timedelta(hours=1))
+        mock_cur.fetchone = AsyncMock(return_value = (1, datetime.now(timezone.utc) + timedelta(hours=1)))
 
         result = await get_password_reset_token(mock_pool, 'token123')
         assert result['user_id'] == 1
@@ -247,24 +254,27 @@ class TestDatabaseFunctions:
     async def test_get_all_category_ids_success(self, mock_pool, mock_conn, mock_cur):
         mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
         mock_conn.cursor.return_value.__aenter__.return_value = mock_cur
-        mock_cur.fetchall.return_value = [(1,), (2,), (3,)]
+        mock_cur.fetchall = AsyncMock(return_value = [(1,), (2,), (3,)])
 
         result = await get_all_category_ids(mock_pool)
         assert result == {1, 2, 3}
 
     async def test_get_user_categories_success(self, mock_pool, mock_conn, mock_cur):
-        mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
-        mock_conn.cursor.return_value.__aenter__.return_value = mock_cur
-        mock_cur.fetchone = AsyncMock(side_effect=[(1, 'Tech'), (2, 'Sports'), None])
+        with patch.object(di_container, 'resolve', return_value={'USER_DEFINED_RSS_CATEGORY_ID': 999}):
+            mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
+            mock_conn.cursor.return_value.__aenter__.return_value = mock_cur
+            mock_cur.__aiter__ = MagicMock(return_value=mock_cur)
+            mock_cur.__anext__ = AsyncMock(side_effect=[(1, 'Tech'), (2, 'Sports'), StopAsyncIteration])
+            mock_cur.description = [('id',), ('name',)]
 
-        result = await get_user_categories(mock_pool, 1)
-        assert len(result) == 2
-        assert result[0]['name'] == 'Tech'
+            result = await get_user_categories(mock_pool, 1)
+            assert len(result) == 2
+            assert result[0]['name'] == 'Tech'
 
     async def test_create_user_rss_feed_success(self, mock_pool, mock_conn, mock_cur):
         mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
         mock_conn.cursor.return_value.__aenter__.return_value = mock_cur
-        mock_cur.fetchone.return_value = ('1', 1, 'http://example.com/rss', 'Test Feed', 1, 'en', True, datetime.utcnow(), datetime.utcnow())
+        mock_cur.fetchone.side_effect = [None, ('1', 1, 'http://example.com/rss', 'Test Feed', 1, 'en', True, datetime.now(timezone.utc), datetime.now(timezone.utc))]
         mock_cur.description = [('id',), ('user_id',), ('url',), ('name',), ('category_id',), ('language',), ('is_active',), ('created_at',), ('updated_at',)]
 
         result = await create_user_rss_feed(mock_pool, 1, 'http://example.com/rss', 'Test Feed', 1, 'en')
@@ -273,7 +283,9 @@ class TestDatabaseFunctions:
     async def test_get_user_rss_feeds_success(self, mock_pool, mock_conn, mock_cur):
         mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
         mock_conn.cursor.return_value.__aenter__.return_value = mock_cur
-        mock_cur.fetchone = AsyncMock(side_effect=[('1', 1, 'http://example.com/rss', 'Test Feed', 1, 'en', True, datetime.utcnow(), datetime.utcnow()), None])
+        mock_cur.__aiter__ = MagicMock(return_value=mock_cur)
+        mock_cur.__anext__ = AsyncMock(side_effect=[('1', 1, 'http://example.com/rss', 'Test Feed', 1, 'en', True, datetime.now(timezone.utc), datetime.now(timezone.utc)), StopAsyncIteration])
+        mock_cur.description = [('id',), ('user_id',), ('url',), ('name',), ('category_id',), ('language',), ('is_active',), ('created_at',), ('updated_at',)]
 
         result = await get_user_rss_feeds(mock_pool, 1, 10, 0)
         assert len(result) == 1
@@ -282,7 +294,7 @@ class TestDatabaseFunctions:
     async def test_get_user_rss_feed_by_id_success(self, mock_pool, mock_conn, mock_cur):
         mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
         mock_conn.cursor.return_value.__aenter__.return_value = mock_cur
-        mock_cur.fetchone.return_value = ('1', 1, 'http://example.com/rss', 'Test Feed', 1, 'en', True, datetime.utcnow(), datetime.utcnow())
+        mock_cur.fetchone.return_value = ('1', 1, 'http://example.com/rss', 'Test Feed', 1, 'en', True, datetime.now(timezone.utc), datetime.now(timezone.utc))
         mock_cur.description = [('id',), ('user_id',), ('url',), ('name',), ('category_id',), ('language',), ('is_active',), ('created_at',), ('updated_at',)]
 
         result = await get_user_rss_feed_by_id(mock_pool, 1, '1')
@@ -291,7 +303,7 @@ class TestDatabaseFunctions:
     async def test_update_user_rss_feed_success(self, mock_pool, mock_conn, mock_cur):
         mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
         mock_conn.cursor.return_value.__aenter__.return_value = mock_cur
-        mock_cur.fetchone.return_value = ('1', 1, 'http://example.com/rss', 'Updated Feed', 1, 'en', True, datetime.utcnow(), datetime.utcnow())
+        mock_cur.fetchone.return_value = ('1', 1, 'http://example.com/rss', 'Updated Feed', 1, 'en', True, datetime.now(timezone.utc), datetime.now(timezone.utc))
         mock_cur.description = [('id',), ('user_id',), ('url',), ('name',), ('category_id',), ('language',), ('is_active',), ('created_at',), ('updated_at',)]
 
         result = await update_user_rss_feed(mock_pool, 1, '1', {'name': 'Updated Feed'})
@@ -316,38 +328,48 @@ class TestDatabaseFunctions:
     async def test_confirm_password_reset_transaction_success(self, mock_pool, mock_conn, mock_cur):
         mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
         mock_conn.cursor.return_value.__aenter__.return_value = mock_cur
-        mock_cur.fetchone.return_value = (1, datetime.utcnow() + timedelta(hours=1))
+        mock_cur.fetchone = AsyncMock(return_value = (1, datetime.now(timezone.utc) + timedelta(hours=1)))
         mock_cur.rowcount = 1
 
         result = await confirm_password_reset_transaction(mock_pool, 'token123', 'new_hashed_pass')
         assert result is True
 
     async def test_get_all_categories_list_success(self, mock_pool, mock_conn, mock_cur):
-        mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
-        mock_conn.cursor.return_value.__aenter__.return_value = mock_cur
-        mock_cur.fetchone = AsyncMock(side_effect=[(2,), (1, 'Tech'), (2, 'Sports'), None])
+        with patch.object(di_container, 'resolve', return_value={'USER_DEFINED_RSS_CATEGORY_ID': 999}):
+            mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
+            mock_conn.cursor.return_value.__aenter__.return_value = mock_cur
+            mock_cur.fetchone.return_value = (2,)
+            mock_cur.__aiter__ = MagicMock(return_value=mock_cur)
+            mock_cur.__anext__ = AsyncMock(side_effect=[(1, 'Tech'), (2, 'Sports'), StopAsyncIteration])
+            mock_cur.description = [('id',), ('name',)]
 
-        total_count, results = await get_all_categories_list(mock_pool, 10, 0)
-        assert total_count == 2
-        assert len(results) == 2
-        assert results[0]['name'] == 'Tech'
+            total_count, results = await get_all_categories_list(mock_pool, 10, 0)
+            assert total_count == 2
+            assert len(results) == 2
+            assert results[0]['name'] == 'Tech'
 
     async def test_get_all_sources_list_success(self, mock_pool, mock_conn, mock_cur):
-        mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
-        mock_conn.cursor.return_value.__aenter__.return_value = mock_cur
-        mock_cur.fetchone = AsyncMock(side_effect=[(2,), (1, 'BBC', 'Description', 'bbc', 'logo.png', 'http://bbc.com'), None])
+        with patch.object(di_container, 'resolve', return_value={'some': 'config'}):
+            mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
+            mock_conn.cursor.return_value.__aenter__.return_value = mock_cur
+            mock_cur.fetchone.return_value = (2,)
+            mock_cur.__aiter__ = MagicMock(return_value=mock_cur)
+            mock_cur.__anext__ = AsyncMock(side_effect=[(1, 'BBC', 'Description', 'bbc', 'logo.png', 'http://bbc.com'), StopAsyncIteration])
+            mock_cur.description = [('id',), ('name',), ('description',), ('alias',), ('logo',), ('site_url',)]
 
-        total_count, results = await get_all_sources_list(mock_pool, 10, 0)
-        assert total_count == 2
-        assert len(results) == 1
-        assert results[0]['name'] == 'BBC'
+            total_count, results = await get_all_sources_list(mock_pool, 10, 0)
+            assert total_count == 2
+            assert len(results) == 1
+            assert results[0]['name'] == 'BBC'
 
     async def test_get_recent_rss_items_for_broadcast_success(self, mock_pool, mock_conn, mock_cur):
-        mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
-        mock_conn.cursor.return_value.__aenter__.return_value = mock_cur
-        mock_cur.fetchone = AsyncMock(side_effect=[('news1', 'Title', 'en', 'Tech', datetime.utcnow(), 'Title RU', 'Content RU', None, None, None, None, None, None), None])
-        mock_cur.description = [('news_id',), ('original_title',), ('original_language',), ('category_name',), ('published_at',), ('title_ru',), ('content_ru',), ('title_en',), ('content_en',), ('title_de',), ('content_de',), ('title_fr',), ('content_fr',)]
+        with patch.object(di_container, 'resolve', return_value={'some': 'config'}):
+            mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
+            mock_conn.cursor.return_value.__aenter__.return_value = mock_cur
+            mock_cur.__aiter__ = MagicMock(return_value=mock_cur)
+            mock_cur.__anext__ = AsyncMock(side_effect=[('news1', 'Title', 'en', 'Tech', datetime.now(timezone.utc), 'Title RU', 'Content RU', None, None, None, None, None, None), StopAsyncIteration])
+            mock_cur.description = [('news_id',), ('original_title',), ('original_language',), ('category_name',), ('created_at',), ('title_ru',), ('content_ru',), ('title_en',), ('content_en',), ('title_de',), ('content_de',), ('title_fr',), ('content_fr',)]
 
-        result = await get_recent_rss_items_for_broadcast(mock_pool, datetime.utcnow() - timedelta(hours=1))
-        assert len(result) == 1
-        assert result[0]['news_id'] == 'news1'
+            result = await get_recent_rss_items_for_broadcast(mock_pool, datetime.now(timezone.utc) - timedelta(hours=1))
+            assert len(result) == 1
+            assert result[0]['news_id'] == 'news1'

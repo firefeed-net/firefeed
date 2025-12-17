@@ -1,43 +1,36 @@
-import asyncio
-import sys
-import os
-import logging
-import traceback
-
-# Add project root to module search path
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from api.email_service.sender import send_registration_success_email
-
-# Set up logging
-logging.basicConfig(
-    level=logging.DEBUG,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
+import pytest
+from unittest.mock import patch, AsyncMock
+from apps.api.email_service.sender import send_registration_success_email
 
 
-async def test_registration_success_email():
-    # Replace with your email for testing
-    test_email = "yurem@bk.ru"  # <-- test email
+@pytest.mark.asyncio
+class TestRegistrationSuccessEmail:
+    async def test_send_registration_success_email_success(self):
+        """Test successful sending of registration success email"""
+        with patch('apps.api.email_service.sender.get_service', return_value={'SMTP_SERVER': 'localhost', 'SMTP_PORT': 587, 'SMTP_USERNAME': '', 'SMTP_PASSWORD': '', 'FROM_EMAIL': 'test@example.com'}):
+            with patch('apps.api.email_service.sender.send', new_callable=AsyncMock) as mock_send:
+                mock_send.return_value = None
 
-    logger.info(f"Sending test registration success email to {test_email}")
+                result = await send_registration_success_email("test@example.com", "en")
+                assert result is True
+                mock_send.assert_called_once()
 
-    # Test sending in different languages
-    for language in ["en", "ru", "de"]:
-        logger.info(f"Testing sending in language: {language}")
-        try:
-            success = await send_registration_success_email(test_email, language)
-            if success:
-                logger.info(f"✅ Registration success email in {language} sent successfully!")
-            else:
-                logger.error(f"❌ Error sending registration success email in {language}")
-        except Exception as e:
-            logger.error(f"❌ Exception sending registration success email in {language}: {e}")
-            logger.error(f"Full traceback: {traceback.format_exc()}")
+    async def test_send_registration_success_email_failure(self):
+        """Test failure in sending registration success email"""
+        with patch('apps.api.email_service.sender.get_service', return_value={'SMTP_SERVER': 'localhost', 'SMTP_PORT': 587, 'SMTP_USERNAME': '', 'SMTP_PASSWORD': '', 'FROM_EMAIL': 'test@example.com'}):
+            with patch('apps.api.email_service.sender.send', new_callable=AsyncMock) as mock_send:
+                mock_send.side_effect = Exception("SMTP error")
 
-    logger.info("Test completed!")
+                result = await send_registration_success_email("test@example.com", "en")
+                assert result is False
+                mock_send.assert_called_once()
 
+    async def test_send_registration_success_email_exception(self):
+        """Test exception in sending registration success email"""
+        with patch('apps.api.email_service.sender.get_service', return_value={'SMTP_SERVER': 'localhost', 'SMTP_PORT': 587, 'SMTP_USERNAME': '', 'SMTP_PASSWORD': '', 'FROM_EMAIL': 'test@example.com'}):
+            with patch('apps.api.email_service.sender.send', new_callable=AsyncMock) as mock_send:
+                mock_send.side_effect = Exception("SMTP error")
 
-if __name__ == "__main__":
-    asyncio.run(test_registration_success_email())
+                result = await send_registration_success_email("test@example.com", "en")
+                assert result is False
+                mock_send.assert_called_once()

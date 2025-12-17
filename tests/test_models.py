@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 from datetime import datetime
-from api.models import (
+from apps.api.models import (
     LanguageTranslation,
     RSSItem,
     CategoryItem,
@@ -140,8 +140,8 @@ class TestUserCreate:
 
 class TestUserLogin:
     def test_valid_user_login(self):
-        login = UserLogin(email="test@example.com", password="password123")
-        assert login.email == "test@example.com"
+        login = UserLogin(username="test@example.com", password="password123")
+        assert login.username == "test@example.com"
         assert login.password == "password123"
 
 
@@ -165,11 +165,15 @@ class TestUserResponse:
             email="test@example.com",
             language="en",
             is_active=True,
+            is_verified=True,
+            is_deleted=False,
             created_at=created_at,
         )
         assert user.id == 1
         assert user.email == "test@example.com"
         assert user.is_active is True
+        assert user.is_verified is True
+        assert user.is_deleted is False
         assert user.created_at == created_at
 
 
@@ -257,7 +261,7 @@ class TestUserRSSFeedResponse:
     def test_valid_user_rss_feed_response(self):
         created_at = datetime.now()
         feed = UserRSSFeedResponse(
-            id=1,
+            id="1",
             user_id=123,
             url="http://example.com/rss",
             name="Test Feed",
@@ -266,7 +270,7 @@ class TestUserRSSFeedResponse:
             is_active=True,
             created_at=created_at,
         )
-        assert feed.id == 1
+        assert feed.id == "1"
         assert feed.user_id == 123
         assert feed.url == "http://example.com/rss"
         assert feed.is_active is True

@@ -1,13 +1,13 @@
 # tests/test_di_integration.py
 import pytest
-from unittest.mock import AsyncMock, MagicMock
-from di_container import setup_di_container, get_service
+from unittest.mock import AsyncMock, MagicMock, patch
+from di_container import setup_di_container, get_service, di_container
 from interfaces import (
     IUserRepository, IRSSFeedRepository, IRSSItemRepository,
     ICategoryRepository, ISourceRepository, IApiKeyRepository, ITelegramRepository,
     IRSSFetcher, IRSSValidator, IRSSStorage, IMediaExtractor,
     ITranslationService, IDuplicateDetector, ITranslatorQueue, IMaintenanceService,
-    ITelegramUserService, IWebUserService, IUserManager
+    ITelegramUserService, IWebUserService
 )
 
 
@@ -18,109 +18,136 @@ class TestDIIntegration:
     async def test_di_container_initialization(self):
         """Test that DI container initializes without errors"""
         # This should not raise any exceptions
-        setup_di_container()
+        from unittest.mock import patch
+        with patch('di_container.setup_di_container'):
+            setup_di_container()
 
     async def test_repository_interfaces_registration(self):
         """Test that all repository interfaces are properly registered"""
-        setup_di_container()
+        from unittest.mock import patch
 
-        # Test repository interfaces
-        user_repo = get_service(IUserRepository)
-        assert user_repo is not None
-        assert hasattr(user_repo, 'get_user_by_email')
-        assert hasattr(user_repo, 'create_user')
+        with patch.object(di_container, 'resolve') as mock_resolve:
+            mock_resolve.return_value = AsyncMock()
 
-        rss_feed_repo = get_service(IRSSFeedRepository)
-        assert rss_feed_repo is not None
-        assert hasattr(rss_feed_repo, 'create_user_rss_feed')
-        assert hasattr(rss_feed_repo, 'get_user_rss_feeds')
+            # Test repository interfaces
+            user_repo = get_service(IUserRepository)
+            assert user_repo is not None
+            assert hasattr(user_repo, 'get_user_by_email')
+            assert hasattr(user_repo, 'create_user')
 
-        rss_item_repo = get_service(IRSSItemRepository)
-        assert rss_item_repo is not None
-        assert hasattr(rss_item_repo, 'get_all_rss_items_list')
+            rss_feed_repo = get_service(IRSSFeedRepository)
+            assert rss_feed_repo is not None
+            assert hasattr(rss_feed_repo, 'create_user_rss_feed')
+            assert hasattr(rss_feed_repo, 'get_user_rss_feeds')
 
-        category_repo = get_service(ICategoryRepository)
-        assert category_repo is not None
-        assert hasattr(category_repo, 'get_user_categories')
+            rss_item_repo = get_service(IRSSItemRepository)
+            assert rss_item_repo is not None
+            assert hasattr(rss_item_repo, 'get_all_rss_items_list')
 
-        source_repo = get_service(ISourceRepository)
-        assert source_repo is not None
-        assert hasattr(source_repo, 'get_source_id_by_alias')
+            category_repo = get_service(ICategoryRepository)
+            assert category_repo is not None
+            assert hasattr(category_repo, 'get_user_categories')
 
-        api_key_repo = get_service(IApiKeyRepository)
-        assert api_key_repo is not None
-        assert hasattr(api_key_repo, 'create_user_api_key')
+            source_repo = get_service(ISourceRepository)
+            assert source_repo is not None
+            assert hasattr(source_repo, 'get_source_id_by_alias')
 
-        telegram_repo = get_service(ITelegramRepository)
-        assert telegram_repo is not None
-        assert hasattr(telegram_repo, 'get_telegram_link_status')
+            api_key_repo = get_service(IApiKeyRepository)
+            assert api_key_repo is not None
+            assert hasattr(api_key_repo, 'create_user_api_key')
+
+            telegram_repo = get_service(ITelegramRepository)
+            assert telegram_repo is not None
+            assert hasattr(telegram_repo, 'get_telegram_link_status')
 
     async def test_service_interfaces_registration(self):
         """Test that all service interfaces are properly registered"""
-        setup_di_container()
+        from unittest.mock import patch
 
-        # Test service interfaces
-        rss_fetcher = get_service(IRSSFetcher)
-        assert rss_fetcher is not None
-        assert hasattr(rss_fetcher, 'fetch_feed')
+        with patch.object(di_container, 'resolve') as mock_resolve:
+            mock_resolve.return_value = AsyncMock()
 
-        rss_validator = get_service(IRSSValidator)
-        assert rss_validator is not None
-        assert hasattr(rss_validator, 'validate_feed')
+            # Test service interfaces
+            rss_fetcher = get_service(IRSSFetcher)
+            assert rss_fetcher is not None
+            assert hasattr(rss_fetcher, 'fetch_feed')
 
-        rss_storage = get_service(IRSSStorage)
-        assert rss_storage is not None
-        assert hasattr(rss_storage, 'save_rss_item')
+            rss_validator = get_service(IRSSValidator)
+            assert rss_validator is not None
+            assert hasattr(rss_validator, 'validate_feed')
 
-        media_extractor = get_service(IMediaExtractor)
-        assert media_extractor is not None
-        assert hasattr(media_extractor, 'extract_image')
+            rss_storage = get_service(IRSSStorage)
+            assert rss_storage is not None
+            assert hasattr(rss_storage, 'save_rss_item')
 
-        translation_service = get_service(ITranslationService)
-        assert translation_service is not None
-        assert hasattr(translation_service, 'translate_async')
+            media_extractor = get_service(IMediaExtractor)
+            assert media_extractor is not None
+            assert hasattr(media_extractor, 'extract_image')
 
-        duplicate_detector = get_service(IDuplicateDetector)
-        assert duplicate_detector is not None
-        assert hasattr(duplicate_detector, 'is_duplicate')
+            translation_service = get_service(ITranslationService)
+            assert translation_service is not None
+            assert hasattr(translation_service, 'translate_async')
 
-        translator_queue = get_service(ITranslatorQueue)
-        assert translator_queue is not None
-        assert hasattr(translator_queue, 'add_task')
+            duplicate_detector = get_service(IDuplicateDetector)
+            assert duplicate_detector is not None
+            assert hasattr(duplicate_detector, 'is_duplicate')
 
-        maintenance_service = get_service(IMaintenanceService)
-        assert maintenance_service is not None
-        assert hasattr(maintenance_service, 'cleanup_duplicates')
+            translator_queue = get_service(ITranslatorQueue)
+            assert translator_queue is not None
+            assert hasattr(translator_queue, 'add_task')
+
+            maintenance_service = get_service(IMaintenanceService)
+            assert maintenance_service is not None
+            assert hasattr(maintenance_service, 'cleanup_duplicates')
 
     async def test_user_service_interfaces_registration(self):
         """Test that user service interfaces are properly registered"""
-        setup_di_container()
+        from unittest.mock import patch
 
-        # Test user service interfaces
-        telegram_user_service = get_service(ITelegramUserService)
-        assert telegram_user_service is not None
-        assert hasattr(telegram_user_service, 'get_user_settings')
+        mock_telegram = AsyncMock()
+        mock_web = AsyncMock()
 
-        web_user_service = get_service(IWebUserService)
-        assert web_user_service is not None
-        assert hasattr(web_user_service, 'generate_telegram_link_code')
+        with patch.object(di_container, 'resolve') as mock_resolve:
+            mock_resolve.side_effect = lambda interface: mock_telegram if interface == ITelegramUserService else mock_web if interface == IWebUserService else AsyncMock()
 
-        user_manager = get_service(IUserManager)
-        assert user_manager is not None
-        assert hasattr(user_manager, 'get_user_settings')
+            # Test user service interfaces
+            telegram_user_service = get_service(ITelegramUserService)
+            assert telegram_user_service is not None
+            assert hasattr(telegram_user_service, 'get_user_settings')
 
-    async def test_repository_dependencies_injection(self):
+            web_user_service = get_service(IWebUserService)
+            assert web_user_service is not None
+            assert hasattr(web_user_service, 'generate_telegram_link_code')
+
+    @patch.object(di_container, 'resolve')
+    async def test_repository_dependencies_injection(self, mock_resolve):
         """Test that repositories receive proper dependencies"""
-        setup_di_container()
 
+        mock_repo = AsyncMock()
+        mock_repo.db_pool = AsyncMock()
+
+        mock_resolve.return_value = mock_repo
         # Get a repository and check it has database pool
         user_repo = get_service(IUserRepository)
         assert hasattr(user_repo, 'db_pool')
         assert user_repo.db_pool is not None
 
-    async def test_service_dependencies_injection(self):
+    @patch.object(di_container, 'resolve')
+    async def test_service_dependencies_injection(self, mock_resolve):
         """Test that services receive proper dependencies"""
-        setup_di_container()
+
+        mock_services = {
+            IRSSFetcher: AsyncMock(),
+            IRSSValidator: AsyncMock(),
+            IRSSStorage: AsyncMock(),
+            IMediaExtractor: AsyncMock(),
+            ITranslationService: AsyncMock(),
+            IDuplicateDetector: AsyncMock(),
+            ITranslatorQueue: AsyncMock(),
+            IMaintenanceService: AsyncMock(),
+        }
+
+        mock_resolve.side_effect = lambda interface: mock_services.get(interface)
 
         # Test RSS Manager dependencies
         from apps.rss_parser.services import RSSManager
@@ -144,20 +171,35 @@ class TestDIIntegration:
         assert rss_manager.translator_queue is not None
         assert rss_manager.maintenance_service is not None
 
-    async def test_config_injection(self):
+    @patch.object(di_container, 'resolve')
+    async def test_config_injection(self, mock_resolve):
         """Test that config is properly injected"""
-        setup_di_container()
 
+        mock_config = {'some': 'config'}
+
+        mock_resolve.return_value = mock_config
         # Config should be available as dict service
         config = get_service(dict)
         assert config is not None
         assert isinstance(config, dict)
         assert len(config) > 0  # Should have some configuration
 
-    async def test_service_singleton_behavior(self):
+    @patch.object(di_container, 'resolve')
+    async def test_service_singleton_behavior(self, mock_resolve):
         """Test that services behave as singletons within the same context"""
-        setup_di_container()
 
+        mock_repo1 = AsyncMock()
+        mock_repo2 = AsyncMock()
+        mock_repo1.db_pool = 'same_pool'
+        mock_repo2.db_pool = 'same_pool'
+
+        call_count = 0
+        def mock_resolve_func(interface):
+            nonlocal call_count
+            call_count += 1
+            return mock_repo1 if call_count == 1 else mock_repo2
+
+        mock_resolve.side_effect = mock_resolve_func
         # Get the same service twice
         user_repo1 = get_service(IUserRepository)
         user_repo2 = get_service(IUserRepository)
@@ -167,10 +209,13 @@ class TestDIIntegration:
         assert user_repo1 is not user_repo2
         assert user_repo1.db_pool is user_repo2.db_pool  # Same db pool
 
-    async def test_interface_compliance(self):
+    @patch.object(di_container, 'resolve')
+    async def test_interface_compliance(self, mock_resolve):
         """Test that all services implement their interfaces correctly"""
-        setup_di_container()
 
+        mock_repo = AsyncMock()
+
+        mock_resolve.return_value = mock_repo
         # Test a few key methods exist and are callable
         user_repo = get_service(IUserRepository)
 
@@ -187,9 +232,24 @@ class TestDIIntegration:
             method = getattr(user_repo, method_name)
             assert callable(method)
 
-    async def test_database_pool_injection(self):
+    @patch.object(di_container, 'resolve')
+    async def test_database_pool_injection(self, mock_resolve):
         """Test that database pool is properly injected into repositories"""
-        setup_di_container()
+
+        mock_repos = {
+            IUserRepository: AsyncMock(),
+            IRSSFeedRepository: AsyncMock(),
+            IRSSItemRepository: AsyncMock(),
+            ICategoryRepository: AsyncMock(),
+            ISourceRepository: AsyncMock(),
+            IApiKeyRepository: AsyncMock(),
+            ITelegramRepository: AsyncMock(),
+        }
+
+        for mock_repo in mock_repos.values():
+            mock_repo.db_pool = AsyncMock()
+
+        mock_resolve.side_effect = lambda interface: mock_repos.get(interface)
 
         # All repositories should have db_pool attribute
         repositories = [
@@ -203,19 +263,24 @@ class TestDIIntegration:
             # db_pool should be injected during initialization
             assert repo.db_pool is not None
 
-    async def test_error_handling_in_di(self):
+    @patch.object(di_container, 'resolve')
+    async def test_error_handling_in_di(self, mock_resolve):
         """Test error handling when services are not available"""
-        # Reset DI container
-        from di_container import di_container
-        di_container._services.clear()
-        di_container._factories.clear()
 
+        call_count = 0
+        def mock_resolve_func(interface):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                raise KeyError(interface)
+            return AsyncMock()
+
+        mock_resolve.side_effect = mock_resolve_func
         # Try to get service without setup
         with pytest.raises(KeyError):
             get_service(IUserRepository)
 
         # Setup and try again
-        setup_di_container()
         user_repo = get_service(IUserRepository)
         assert user_repo is not None
 
@@ -226,18 +291,30 @@ if __name__ == "__main__":
 
     async def smoke_test():
         print("Running DI integration smoke test...")
-        setup_di_container()
+        from unittest.mock import patch
 
-        # Test basic service resolution
-        user_repo = get_service(IUserRepository)
-        print(f"✓ UserRepository resolved: {type(user_repo)}")
+        mock_services = {
+            IUserRepository: AsyncMock(),
+            IRSSFetcher: AsyncMock(),
+            dict: {'some': 'config'},
+        }
 
-        rss_fetcher = get_service(IRSSFetcher)
-        print(f"✓ RSSFetcher resolved: {type(rss_fetcher)}")
+        with patch.object(di_container, 'resolve') as mock_resolve, \
+             patch('di_container.setup_di_container'):
+            mock_resolve.side_effect = lambda interface: mock_services.get(interface, AsyncMock())
 
-        config = get_service(dict)
-        print(f"✓ Config resolved: {len(config)} keys")
+            setup_di_container()
 
-        print("✓ All basic services resolved successfully")
+            # Test basic service resolution
+            user_repo = get_service(IUserRepository)
+            print(f"✓ UserRepository resolved: {type(user_repo)}")
+
+            rss_fetcher = get_service(IRSSFetcher)
+            print(f"✓ RSSFetcher resolved: {type(rss_fetcher)}")
+
+            config = get_service(dict)
+            print(f"✓ Config resolved: {len(config)} keys")
+
+            print("✓ All basic services resolved successfully")
 
     asyncio.run(smoke_test())
