@@ -124,7 +124,8 @@ jobs:
             --exclude ".venv" \
             --exclude "*.pyc" \
             --exclude ".DS_Store" \
-            -e "ssh -vvv -i $HOME/.ssh/id_rsa_ci -o StrictHostKeyChecking=yes -o PreferredAuthentications=publickey -o PubkeyAuthentication=yes -o IdentitiesOnly=yes" \
+            --exclude ".env" \
+            -e "ssh -i $HOME/.ssh/id_rsa_ci -o StrictHostKeyChecking=yes -o PreferredAuthentications=publickey -o PubkeyAuthentication=yes -o IdentitiesOnly=yes" \
             ./ ${{ secrets.DEPLOY_SSH_USER }}@${{ secrets.DEPLOY_SSH_HOST }}:${{ secrets.DEPLOY_PATH }}/
 
       - name: Post-deploy commands on remote host
@@ -132,6 +133,6 @@ jobs:
           PY_BIN: ${{ secrets.PYTHON_BIN }}
           POST_CMD: ${{ secrets.OPTIONAL_POST_DEPLOY_CMD }}
         run: |
-          ssh -vvv -i $HOME/.ssh/id_rsa_ci -o StrictHostKeyChecking=yes -o PreferredAuthentications=publickey -o PubkeyAuthentication=yes -o IdentitiesOnly=yes \
+          ssh -i $HOME/.ssh/id_rsa_ci -o StrictHostKeyChecking=yes -o PreferredAuthentications=publickey -o PubkeyAuthentication=yes -o IdentitiesOnly=yes \
             ${{ secrets.DEPLOY_SSH_USER }}@${{ secrets.DEPLOY_SSH_HOST }} \
             "cd ${{ secrets.DEPLOY_PATH }} && if [ -n \"$POST_CMD\" ]; then bash -lc \"$POST_CMD\"; else echo 'No post-deploy commands configured'; fi"
