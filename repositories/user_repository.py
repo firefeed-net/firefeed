@@ -1,7 +1,7 @@
 # repositories/user_repository.py - User repository implementation
 import logging
 from typing import List, Dict, Any, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 from interfaces import IUserRepository
 from exceptions import DatabaseException
 

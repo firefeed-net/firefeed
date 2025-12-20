@@ -1,7 +1,7 @@
 # repositories/rss_item_repository.py - RSS item repository implementation
 import logging
 from typing import List, Dict, Any, Optional, Tuple
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from interfaces import IRSSItemRepository
 from exceptions import DatabaseException
 

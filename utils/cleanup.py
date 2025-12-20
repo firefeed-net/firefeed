@@ -7,7 +7,7 @@ Includes functions for deleting unverified and deleted users.
 
 import asyncio
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 
 from di_container import get_service
 from interfaces import IUserRepository

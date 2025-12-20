@@ -3,3 +3,4 @@ venv
 /.qodo
 .env
 .vscode
+.pytest_cache
