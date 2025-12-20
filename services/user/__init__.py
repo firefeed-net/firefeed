@@ -1,4 +1,3 @@
-from services.user.telegram_user_service import TelegramUserService
-from services.user.web_user_service import WebUserService
+from services.user.user_service import UserService
 
-__all__ = ['TelegramUserService', 'WebUserService']
+__all__ = ['UserService']

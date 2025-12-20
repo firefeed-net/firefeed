@@ -30,7 +30,7 @@ class RSSFeedRepository(IRSSFeedRepository):
 
                     # Insert new feed
                     await cur.execute(
-                        "INSERT INTO user_rss_feeds (user_id, url, name, category_id, language) VALUES (%s, %s, %s, %s, %s) RETURNING id, url, name, category_id, language, is_active, created_at",
+                        "INSERT INTO user_rss_feeds (user_id, url, name, category_id, language) VALUES (%s, %s, %s, %s, %s) RETURNING id, url, name, category_id, language, is_active, created_at, updated_at",
                         (user_id, url, name, category_id, language)
                     )
                     row = await cur.fetchone()
@@ -39,9 +39,9 @@ class RSSFeedRepository(IRSSFeedRepository):
 
                     if row:
                         return {
-                            "id": str(row[0]), "url": row[1], "name": row[2],
+                            "id": row[0], "url": row[1], "name": row[2],
                             "category_id": row[3], "language": row[4],
-                            "is_active": row[5], "created_at": row[6]
+                            "is_active": row[5], "created_at": row[6], "updated_at": row[7]
                         }
 
                 except Exception as e:
@@ -55,16 +55,16 @@ class RSSFeedRepository(IRSSFeedRepository):
             async with conn.cursor() as cur:
                 try:
                     await cur.execute(
-                        "SELECT id, url, name, category_id, language, is_active, created_at FROM user_rss_feeds WHERE user_id = %s ORDER BY created_at DESC LIMIT %s OFFSET %s",
+                        "SELECT id, url, name, category_id, language, is_active, created_at, updated_at FROM user_rss_feeds WHERE user_id = %s ORDER BY created_at DESC LIMIT %s OFFSET %s",
                         (user_id, limit, offset)
                     )
 
                     feeds = []
                     async for row in cur:
                         feeds.append({
-                            "id": str(row[0]), "url": row[1], "name": row[2],
+                            "id": row[0], "url": row[1], "name": row[2],
                             "category_id": row[3], "language": row[4],
-                            "is_active": row[5], "created_at": row[6]
+                            "is_active": row[5], "created_at": row[6], "updated_at": row[7]
                         })
 
                     return feeds
@@ -76,15 +76,15 @@ class RSSFeedRepository(IRSSFeedRepository):
             async with conn.cursor() as cur:
                 try:
                     await cur.execute(
-                        "SELECT id, url, name, category_id, language, is_active, created_at FROM user_rss_feeds WHERE user_id = %s AND id = %s",
+                        "SELECT id, url, name, category_id, language, is_active, created_at, updated_at FROM user_rss_feeds WHERE user_id = %s AND id = %s",
                         (user_id, feed_id)
                     )
                     row = await cur.fetchone()
                     if row:
                         return {
-                            "id": str(row[0]), "url": row[1], "name": row[2],
+                            "id": row[0], "url": row[1], "name": row[2],
                             "category_id": row[3], "language": row[4],
-                            "is_active": row[5], "created_at": row[6]
+                            "is_active": row[5], "created_at": row[6], "updated_at": row[7]
                         }
                     return None
                 except Exception as e:
@@ -97,7 +97,7 @@ class RSSFeedRepository(IRSSFeedRepository):
             set_parts.append(f"{key} = %s")
             values.append(value)
 
-        query = f"UPDATE user_rss_feeds SET {', '.join(set_parts)}, updated_at = NOW() WHERE user_id = %s AND id = %s RETURNING id, url, name, category_id, language, is_active, updated_at"
+        query = f"UPDATE user_rss_feeds SET {', '.join(set_parts)}, updated_at = NOW() WHERE user_id = %s AND id = %s RETURNING id, url, name, category_id, language, is_active, created_at, updated_at"
         values.extend([user_id, feed_id])
 
         async with self.db_pool.acquire() as conn:
@@ -107,9 +107,9 @@ class RSSFeedRepository(IRSSFeedRepository):
                     row = await cur.fetchone()
                     if row:
                         return {
-                            "id": str(row[0]), "url": row[1], "name": row[2],
+                            "id": row[0], "url": row[1], "name": row[2],
                             "category_id": row[3], "language": row[4],
-                            "is_active": row[5], "updated_at": row[6]
+                            "is_active": row[5], "created_at": row[6], "updated_at": row[7]
                         }
                     return None
                 except Exception as e:

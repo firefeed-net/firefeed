@@ -436,3 +436,134 @@ class UserRepository(IUserRepository):
                     (user_id,)
                 )
                 return cur.rowcount > 0
+
+    async def get_telegram_link_status(self, user_id: int) -> Optional[Dict[str, Any]]:
+        """Get Telegram link status for user"""
+        async with self.db_pool.acquire() as conn:
+            async with conn.cursor() as cur:
+                try:
+                    await cur.execute(
+                        """
+                        SELECT telegram_id, linked_at
+                        FROM user_telegram_links
+                        WHERE user_id = %s
+                        """,
+                        (user_id,)
+                    )
+                    result = await cur.fetchone()
+                    if result:
+                        columns = [desc[0] for desc in cur.description]
+                        return dict(zip(columns, result))
+                    return None
+                except Exception as e:
+                    raise DatabaseException(f"Failed to get Telegram link status for user {user_id}: {str(e)}")
+
+    # Verification codes methods (using user_verification_codes table)
+    async def verify_user_email(self, email: str, verification_code: str) -> Optional[int]:
+        """Verify verification code and return user_id if valid"""
+        async with self.db_pool.acquire() as conn:
+            async with conn.cursor() as cur:
+                try:
+                    await cur.execute(
+                        """
+                        SELECT uvc.user_id
+                        FROM user_verification_codes uvc
+                        JOIN users u ON uvc.user_id = u.id
+                        WHERE u.email = %s
+                          AND uvc.verification_code = %s
+                          AND uvc.used_at IS NULL
+                          AND uvc.expires_at > %s
+                        """,
+                        (email, verification_code, datetime.now(timezone.utc))
+                    )
+                    result = await cur.fetchone()
+                    return result[0] if result else None
+                except Exception as e:
+                    raise DatabaseException(f"Failed to verify user email {email}: {str(e)}")
+
+    async def get_active_verification_code(self, user_id: int, verification_code: str) -> Optional[dict]:
+        """Get active verification code for user"""
+        async with self.db_pool.acquire() as conn:
+            async with conn.cursor() as cur:
+                try:
+                    await cur.execute(
+                        """
+                        SELECT id, user_id, verification_code, created_at, expires_at, used_at
+                        FROM user_verification_codes
+                        WHERE user_id = %s AND verification_code = %s AND used_at IS NULL AND expires_at > NOW()
+                        FOR UPDATE
+                        """,
+                        (user_id, verification_code),
+                    )
+                    row = await cur.fetchone()
+                    if row:
+                        cols = [d[0] for d in cur.description]
+                        return dict(zip(cols, row))
+                    return None
+                except Exception as e:
+                    raise DatabaseException(f"Failed to get active verification code for user {user_id}: {str(e)}")
+
+    async def mark_verification_code_used(self, code_id: int) -> bool:
+        """Mark verification code as used"""
+        async with self.db_pool.acquire() as conn:
+            async with conn.cursor() as cur:
+                try:
+                    await cur.execute("UPDATE user_verification_codes SET used_at = NOW() WHERE id = %s", (code_id,))
+                    return cur.rowcount > 0
+                except Exception as e:
+                    raise DatabaseException(f"Failed to mark verification code {code_id} as used: {str(e)}")
+
+    async def get_password_reset_token(self, token: str) -> Optional[Dict[str, Any]]:
+        """Get password reset token data if valid"""
+        async with self.db_pool.acquire() as conn:
+            async with conn.cursor() as cur:
+                try:
+                    await cur.execute(
+                        """
+                        SELECT user_id, expires_at FROM password_reset_tokens
+                        WHERE token = %s AND expires_at > %s
+                        """,
+                        (token, datetime.now(timezone.utc))
+                    )
+                    result = await cur.fetchone()
+                    if result:
+                        return {"user_id": result[0], "expires_at": result[1]}
+                    return None
+                except Exception as e:
+                    raise DatabaseException(f"Failed to get password reset token {token}: {str(e)}")
+
+    async def activate_user_and_use_verification_code(self, user_id: int, verification_code: str) -> bool:
+        """In one transaction activates user and marks verification code as used"""
+        async with self.db_pool.acquire() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute("BEGIN")
+                try:
+                    # Check if verification code exists and is valid
+                    await cur.execute(
+                        "SELECT id FROM user_verification_codes WHERE user_id = %s AND verification_code = %s AND used_at IS NULL AND expires_at > NOW() FOR UPDATE",
+                        (user_id, verification_code)
+                    )
+                    verification_row = await cur.fetchone()
+
+                    if not verification_row:
+                        await cur.execute("ROLLBACK")
+                        return False
+
+                    # Mark verification code as used
+                    await cur.execute(
+                        "UPDATE user_verification_codes SET used_at = NOW() WHERE id = %s",
+                        (verification_row[0],)
+                    )
+
+                    # Activate user
+                    await cur.execute(
+                        "UPDATE users SET is_active = TRUE, is_verified = TRUE WHERE id = %s",
+                        (user_id,)
+                    )
+
+                    await cur.execute("COMMIT")
+                    return True
+
+                except Exception as e:
+                    await cur.execute("ROLLBACK")
+                    raise DatabaseException(f"Failed to activate user and use verification code: {str(e)}")

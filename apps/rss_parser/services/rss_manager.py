@@ -201,9 +201,6 @@ class RSSManager:
         """Extract video - delegate to media extractor"""
         return self.media_extractor.extract_video(item)
 
-    async def fetch_unprocessed_rss_items(self) -> List[Dict[str, Any]]:
-        """Fetch unprocessed RSS items"""
-        return await self.rss_storage.fetch_unprocessed_rss_items()
 
     async def cleanup_duplicates(self) -> None:
         """Cleanup duplicates"""

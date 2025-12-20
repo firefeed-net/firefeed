@@ -5,4 +5,3 @@ from repositories.rss_item_repository import RSSItemRepository
 from repositories.category_repository import CategoryRepository
 from repositories.source_repository import SourceRepository
 from repositories.api_key_repository import ApiKeyRepository
-from repositories.telegram_repository import TelegramRepository

@@ -339,15 +339,6 @@ class TestRSSManager:
         result = await extract_video_from_rss_item(item)
         assert result is None
 
-    @pytest.mark.asyncio
-    async def test_fetch_unprocessed_rss_items_success(self, rss_manager, mock_pool, mock_conn, mock_cur):
-        rss_manager.rss_storage.fetch_unprocessed_rss_items.return_value = [
-            {"news_id": "news_id", "original_title": "Title", "original_content": "Content", "original_language": "en", "image_filename": "image.jpg", "category_id": 1, "rss_feed_id": 1, "telegram_published_at": None, "created_at": datetime.now(timezone.utc), "updated_at": datetime.now(timezone.utc), "category_name": "Tech", "source_name": "BBC", "source_url": "http://example.com"}
-        ]
-
-        result = await rss_manager.fetch_unprocessed_rss_items()
-        assert len(result) == 1
-        assert result[0]['news_id'] == 'news_id'
 
     @pytest.mark.asyncio
     async def test_cleanup_duplicates_success(self, rss_manager, mock_pool, mock_conn, mock_cur):

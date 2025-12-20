@@ -19,7 +19,7 @@ class SourceRepository(ISourceRepository):
                 row = await cur.fetchone()
                 return row[0] if row else None
 
-    async def get_all_sources_list(self, limit: int, offset: int, category_ids: List[int]) -> Tuple[int, List[Dict[str, Any]]]:
+    async def get_all_sources_list(self, limit: int, offset: int, category_ids: Optional[List[int]] = None) -> Tuple[int, List[Dict[str, Any]]]:
         async with self.db_pool.acquire() as conn:
             async with conn.cursor() as cur:
                 # Build query

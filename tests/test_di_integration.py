@@ -4,10 +4,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from di_container import setup_di_container, get_service, di_container
 from interfaces import (
     IUserRepository, IRSSFeedRepository, IRSSItemRepository,
-    ICategoryRepository, ISourceRepository, IApiKeyRepository, ITelegramRepository,
+    ICategoryRepository, ISourceRepository, IApiKeyRepository,
     IRSSFetcher, IRSSValidator, IRSSStorage, IMediaExtractor,
     ITranslationService, IDuplicateDetector, ITranslatorQueue, IMaintenanceService,
-    ITelegramUserService, IWebUserService
+    IUserService
 )
 
 
@@ -56,10 +56,6 @@ class TestDIIntegration:
             assert api_key_repo is not None
             assert hasattr(api_key_repo, 'create_user_api_key')
 
-            telegram_repo = get_service(ITelegramRepository)
-            assert telegram_repo is not None
-            assert hasattr(telegram_repo, 'get_telegram_link_status')
-
     async def test_service_interfaces_registration(self):
         """Test that all service interfaces are properly registered"""
         from unittest.mock import patch
@@ -104,20 +100,15 @@ class TestDIIntegration:
         """Test that user service interfaces are properly registered"""
         from unittest.mock import patch
 
-        mock_telegram = AsyncMock()
         mock_web = AsyncMock()
 
         with patch.object(di_container, 'resolve') as mock_resolve:
-            mock_resolve.side_effect = lambda interface: mock_telegram if interface == ITelegramUserService else mock_web if interface == IWebUserService else AsyncMock()
+            mock_resolve.side_effect = lambda interface: mock_web if interface == IUserService else AsyncMock()
 
             # Test user service interfaces
-            telegram_user_service = get_service(ITelegramUserService)
-            assert telegram_user_service is not None
-            assert hasattr(telegram_user_service, 'get_user_settings')
-
-            web_user_service = get_service(IWebUserService)
-            assert web_user_service is not None
-            assert hasattr(web_user_service, 'generate_telegram_link_code')
+            user_service = get_service(IUserService)
+            assert user_service is not None
+            assert hasattr(user_service, 'generate_telegram_link_code')
 
     @patch.object(di_container, 'resolve')
     async def test_repository_dependencies_injection(self, mock_resolve):
@@ -243,7 +234,6 @@ class TestDIIntegration:
             ICategoryRepository: AsyncMock(),
             ISourceRepository: AsyncMock(),
             IApiKeyRepository: AsyncMock(),
-            ITelegramRepository: AsyncMock(),
         }
 
         for mock_repo in mock_repos.values():
@@ -254,7 +244,7 @@ class TestDIIntegration:
         # All repositories should have db_pool attribute
         repositories = [
             IUserRepository, IRSSFeedRepository, IRSSItemRepository,
-            ICategoryRepository, ISourceRepository, IApiKeyRepository, ITelegramRepository
+            ICategoryRepository, ISourceRepository, IApiKeyRepository
         ]
 
         for repo_interface in repositories:

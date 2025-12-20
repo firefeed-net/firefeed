@@ -1,12 +1,12 @@
-# services/user/web_user_service.py
+# services/user/user_service.py
 import logging
 from typing import Optional, Dict, Any
-from interfaces import IWebUserService, IUserRepository
+from interfaces import IUserService, IUserRepository
 
 logger = logging.getLogger(__name__)
 
 
-class WebUserService(IWebUserService):
+class UserService(IUserService):
     """Service for managing web users and Telegram linking"""
 
     def __init__(self, user_repository: IUserRepository):
@@ -27,3 +27,7 @@ class WebUserService(IWebUserService):
     async def unlink_telegram(self, user_id: int) -> bool:
         """Unlink Telegram account from web user"""
         return await self.user_repository.unlink_telegram(user_id)
+
+    async def get_telegram_link_status(self, user_id: int) -> Optional[Dict[str, Any]]:
+        """Get Telegram link status"""
+        return await self.user_repository.get_telegram_link_status(user_id)

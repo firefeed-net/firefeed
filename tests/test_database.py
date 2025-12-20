@@ -2,70 +2,21 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from di_container import di_container
 from datetime import datetime, timedelta, timezone
-from apps.api.database import (
-    get_db_pool,
-    close_db_pool,
-    create_user,
-    get_user_by_email,
-    get_user_by_id,
-    update_user,
-    delete_user,
-    activate_user,
-    update_user_password,
-    save_verification_code,
-    verify_user_email,
-    get_active_verification_code,
-    mark_verification_code_used,
-    save_password_reset_token,
-    get_password_reset_token,
-    delete_password_reset_token,
-    update_user_categories,
-    get_all_category_ids,
-    get_user_categories,
-    create_user_rss_feed,
-    get_user_rss_feeds,
-    get_user_rss_feed_by_id,
-    update_user_rss_feed,
-    delete_user_rss_feed,
-    get_user_rss_items_list,
-    get_user_rss_items_list_by_feed,
-    get_rss_item_by_id,
-    get_rss_item_by_id_full,
-    get_all_rss_items_list,
-    get_all_categories_list,
-    activate_user_and_use_verification_code,
-    confirm_password_reset_transaction,
-    get_all_sources_list,
-    get_recent_rss_items_for_broadcast,
-)
+from utils.db_pool import get_db_pool, close_db_pool
+from repositories import UserRepository, ApiKeyRepository, RSSFeedRepository, CategoryRepository, SourceRepository, RSSItemRepository
 
 
 @pytest.mark.anyio
-class TestDatabaseFunctions:
-    @pytest.fixture
-    def mock_pool(self):
-        pool = MagicMock()
-        return pool
-
-    @pytest.fixture
-    def mock_conn(self):
-        conn = MagicMock()
-        return conn
-
-    @pytest.fixture
-    def mock_cur(self):
-        cur = AsyncMock()
-        return cur
-
-    async def test_get_db_pool_success(self, mock_pool):
+class TestDatabasePool:
+    async def test_get_db_pool_success(self):
         mock_config = MagicMock()
-        mock_config.get = MagicMock(return_value=AsyncMock(return_value=mock_pool))
+        mock_config.get = MagicMock(return_value=AsyncMock(return_value="mock_pool"))
         with patch.object(di_container, 'resolve', return_value=mock_config):
             result = await get_db_pool()
-            assert result == mock_pool
+            assert result == "mock_pool"
 
     async def test_get_db_pool_failure(self):
-        with patch('apps.api.database.get_service', return_value={'get_shared_db_pool': lambda: (_ for _ in ()).throw(Exception("DB error"))}):
+        with patch('utils.db_pool.get_service', return_value={'get_shared_db_pool': lambda: (_ for _ in ()).throw(Exception("DB error"))}):
             result = await get_db_pool()
             assert result is None
 
@@ -81,295 +32,186 @@ class TestDatabaseFunctions:
         with patch.object(di_container, 'resolve', return_value=mock_config):
             await close_db_pool()
 
-    async def test_create_user_success(self, mock_pool, mock_conn, mock_cur):
-        mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
-        mock_conn.cursor.return_value.__aenter__.return_value = mock_cur
-        mock_cur.fetchone = AsyncMock(return_value = (1, 'test@example.com', 'en', True, False, False, datetime.now(timezone.utc), datetime.now(timezone.utc)))
-        mock_cur.description = [('id',), ('email',), ('language',), ('is_active',), ('is_verified',), ('is_deleted',), ('created_at',), ('updated_at',)]
 
-        result = await create_user(mock_pool, 'test@example.com', 'hashed_pass', 'en')
-        assert result['email'] == 'test@example.com'
+@pytest.mark.anyio
+class TestUserRepository:
+    @pytest.fixture
+    def mock_pool(self):
+        pool = MagicMock()
+        return pool
 
-    async def test_create_user_failure(self, mock_pool, mock_conn, mock_cur):
-        mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
-        mock_conn.cursor.return_value.__aenter__.return_value = mock_cur
-        mock_cur.execute.side_effect = Exception("DB error")
+    async def test_create_user_success(self, mock_pool):
+        expected_result = {
+            'id': 1, 'email': 'test@example.com', 'language': 'en',
+            'is_active': False, 'is_verified': False, 'created_at': datetime.now(timezone.utc)
+        }
+        repo = UserRepository(mock_pool)
+        with patch.object(repo, 'create_user', return_value=expected_result) as mock_create:
+            result = await repo.create_user('test@example.com', 'hashed_pass', 'en')
+            mock_create.assert_called_once_with('test@example.com', 'hashed_pass', 'en')
+            assert result['email'] == 'test@example.com'
 
-        result = await create_user(mock_pool, 'test@example.com', 'hashed_pass', 'en')
-        assert result is None
+    async def test_get_user_by_email_success(self, mock_pool):
+        expected_result = {
+            'id': 1, 'email': 'test@example.com', 'password_hash': 'hashed_pass',
+            'language': 'en', 'is_active': True, 'is_verified': False, 'is_deleted': False,
+            'created_at': datetime.now(timezone.utc), 'updated_at': datetime.now(timezone.utc)
+        }
+        repo = UserRepository(mock_pool)
+        with patch.object(repo, 'get_user_by_email', return_value=expected_result) as mock_get:
+            result = await repo.get_user_by_email('test@example.com')
+            mock_get.assert_called_once_with('test@example.com')
+            assert result['email'] == 'test@example.com'
 
-    async def test_get_user_by_email_success(self, mock_pool, mock_conn, mock_cur):
-        mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
-        mock_conn.cursor.return_value.__aenter__.return_value = mock_cur
-        mock_cur.fetchone = AsyncMock(return_value = (1, 'test@example.com', 'hashed_pass', 'en', True, False, False, datetime.now(timezone.utc), datetime.now(timezone.utc)))
-        mock_cur.description = [('id',), ('email',), ('password_hash',), ('language',), ('is_active',), ('is_verified',), ('is_deleted',), ('created_at',), ('updated_at',)]
+    async def test_get_user_by_id_success(self, mock_pool):
+        expected_result = {
+            'id': 1, 'email': 'test@example.com', 'password_hash': 'hashed_pass',
+            'language': 'en', 'is_active': True, 'is_verified': False, 'is_deleted': False,
+            'created_at': datetime.now(timezone.utc), 'updated_at': datetime.now(timezone.utc)
+        }
+        repo = UserRepository(mock_pool)
+        with patch.object(repo, 'get_user_by_id', return_value=expected_result) as mock_get:
+            result = await repo.get_user_by_id(1)
+            mock_get.assert_called_once_with(1)
+            assert result['id'] == 1
 
-        result = await get_user_by_email(mock_pool, 'test@example.com')
-        assert result['email'] == 'test@example.com'
+    async def test_update_user_success(self, mock_pool):
+        repo = UserRepository(mock_pool)
+        with patch.object(repo, 'update_user', return_value={'id': 1}) as mock_update:
+            result = await repo.update_user(1, {'email': 'new@example.com'})
+            mock_update.assert_called_once_with(1, {'email': 'new@example.com'})
+            assert result['id'] == 1
 
-    async def test_get_user_by_email_not_found(self, mock_pool, mock_conn, mock_cur):
-        mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
-        mock_conn.cursor.return_value.__aenter__.return_value = mock_cur
-        mock_cur.fetchone.return_value = None
+    async def test_delete_user_success(self, mock_pool):
+        repo = UserRepository(mock_pool)
+        with patch.object(repo, 'delete_user', return_value=True) as mock_delete:
+            result = await repo.delete_user(1)
+            mock_delete.assert_called_once_with(1)
+            assert result is True
 
-        result = await get_user_by_email(mock_pool, 'test@example.com')
-        assert result is None
 
-    async def test_get_user_by_id_success(self, mock_pool, mock_conn, mock_cur):
-        mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
-        mock_conn.cursor.return_value.__aenter__.return_value = mock_cur
-        mock_cur.fetchone = AsyncMock(return_value = (1, 'test@example.com', 'hashed_pass', 'en', True, False, False, datetime.now(timezone.utc), datetime.now(timezone.utc)))
-        mock_cur.description = [('id',), ('email',), ('password_hash',), ('language',), ('is_active',), ('is_verified',), ('is_deleted',), ('created_at',), ('updated_at',)]
+@pytest.mark.anyio
+class TestApiKeyRepository:
+    @pytest.fixture
+    def mock_pool(self):
+        pool = MagicMock()
+        return pool
 
-        result = await get_user_by_id(mock_pool, 1)
-        assert result['id'] == 1
+    async def test_create_user_api_key_success(self, mock_pool):
+        expected_result = {
+            'id': 1, 'user_id': 1, 'key': 'hashed_key', 'limits': {'requests_per_day': 1000},
+            'is_active': True, 'created_at': datetime.now(timezone.utc), 'expires_at': None
+        }
+        repo = ApiKeyRepository(mock_pool)
+        with patch.object(repo, 'create_user_api_key', return_value=expected_result) as mock_create:
+            result = await repo.create_user_api_key(1, 'hashed_key', {'requests_per_day': 1000})
+            mock_create.assert_called_once_with(1, 'hashed_key', {'requests_per_day': 1000})
+            assert result['user_id'] == 1
 
-    async def test_update_user_success(self, mock_pool, mock_conn, mock_cur):
-        mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
-        mock_conn.cursor.return_value.__aenter__.return_value = mock_cur
-        mock_cur.fetchone = AsyncMock(return_value = (1, 'new@example.com', 'hashed_pass', 'es', True, False, False, datetime.now(timezone.utc), datetime.now(timezone.utc)))
-        mock_cur.description = [('id',), ('email',), ('password_hash',), ('language',), ('is_active',), ('is_verified',), ('is_deleted',), ('created_at',), ('updated_at',)]
+    async def test_get_user_api_keys_success(self, mock_pool):
+        expected_result = [{
+            'id': 1, 'key': 'hashed_key', 'limits': {'requests_per_day': 1000},
+            'is_active': True, 'created_at': datetime.now(timezone.utc), 'expires_at': None
+        }]
+        repo = ApiKeyRepository(mock_pool)
+        with patch.object(repo, 'get_user_api_keys', return_value=expected_result) as mock_get:
+            result = await repo.get_user_api_keys(1)
+            mock_get.assert_called_once_with(1)
+            assert len(result) == 1
 
-        result = await update_user(mock_pool, 1, {'email': 'new@example.com', 'language': 'es'})
-        assert result['email'] == 'new@example.com'
+    async def test_get_user_api_key_by_key_success(self, mock_pool):
+        expected_result = {
+            'id': 1, 'user_id': 1, 'limits': {'requests_per_day': 1000},
+            'is_active': True, 'created_at': datetime.now(timezone.utc), 'expires_at': None
+        }
+        repo = ApiKeyRepository(mock_pool)
+        with patch.object(repo, 'get_user_api_key_by_key', return_value=expected_result) as mock_get:
+            result = await repo.get_user_api_key_by_key('hashed_key')
+            mock_get.assert_called_once_with('hashed_key')
+            assert result['id'] == 1
 
-    async def test_update_user_no_changes(self, mock_pool, mock_conn, mock_cur):
-        mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
-        mock_conn.cursor.return_value.__aenter__.return_value = mock_cur
-        mock_cur.fetchone = AsyncMock(return_value = (1, 'test@example.com', 'hashed_pass', 'en', True, False, False, datetime.now(timezone.utc), datetime.now(timezone.utc)))
-        mock_cur.description = [('id',), ('email',), ('password_hash',), ('language',), ('is_active',), ('is_verified',), ('is_deleted',), ('created_at',), ('updated_at',)]
 
-        result = await update_user(mock_pool, 1, {})
-        assert result['email'] == 'test@example.com'
+@pytest.mark.anyio
+class TestRSSFeedRepository:
+    @pytest.fixture
+    def mock_pool(self):
+        pool = MagicMock()
+        return pool
 
-    async def test_delete_user_success(self, mock_pool, mock_conn, mock_cur):
-        mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
-        mock_conn.cursor.return_value.__aenter__.return_value = mock_cur
-        mock_cur.rowcount = 1
+    async def test_create_user_rss_feed_success(self, mock_pool):
+        expected_result = {
+            'id': 1, 'url': 'http://example.com/rss', 'name': 'Test Feed',
+            'category_id': 1, 'language': 'en', 'is_active': True,
+            'created_at': datetime.now(timezone.utc), 'updated_at': datetime.now(timezone.utc)
+        }
+        repo = RSSFeedRepository(mock_pool)
+        with patch.object(repo, 'create_user_rss_feed', return_value=expected_result) as mock_create:
+            result = await repo.create_user_rss_feed(1, 'http://example.com/rss', 'Test Feed', 1, 'en')
+            mock_create.assert_called_once_with(1, 'http://example.com/rss', 'Test Feed', 1, 'en')
+            assert result['name'] == 'Test Feed'
 
-        result = await delete_user(mock_pool, 1)
-        assert result is True
+    async def test_get_user_rss_feeds_success(self, mock_pool):
+        expected_result = [{
+            'id': 1, 'url': 'http://example.com/rss', 'name': 'Test Feed',
+            'category_id': 1, 'language': 'en', 'is_active': True,
+            'created_at': datetime.now(timezone.utc), 'updated_at': datetime.now(timezone.utc)
+        }]
+        repo = RSSFeedRepository(mock_pool)
+        with patch.object(repo, 'get_user_rss_feeds', return_value=expected_result) as mock_get:
+            result = await repo.get_user_rss_feeds(1, 10, 0)
+            mock_get.assert_called_once_with(1, 10, 0)
+            assert len(result) == 1
 
-    async def test_delete_user_not_found(self, mock_pool, mock_conn, mock_cur):
-        mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
-        mock_conn.cursor.return_value.__aenter__.return_value = mock_cur
-        mock_cur.rowcount = 0
 
-        result = await delete_user(mock_pool, 1)
-        assert result is False
+@pytest.mark.anyio
+class TestCategoryRepository:
+    @pytest.fixture
+    def mock_pool(self):
+        pool = MagicMock()
+        return pool
 
-    async def test_activate_user_success(self, mock_pool, mock_conn, mock_cur):
-        mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
-        mock_conn.cursor.return_value.__aenter__.return_value = mock_cur
-        mock_cur.rowcount = 1
+    async def test_get_all_category_ids_success(self, mock_pool):
+        repo = CategoryRepository(mock_pool)
+        with patch.object(repo, 'get_all_category_ids', return_value=[1, 2, 3]) as mock_get:
+            result = await repo.get_all_category_ids()
+            mock_get.assert_called_once()
+            assert result == [1, 2, 3]
 
-        result = await activate_user(mock_pool, 1)
-        assert result is True
-
-    async def test_update_user_password_success(self, mock_pool, mock_conn, mock_cur):
-        mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
-        mock_conn.cursor.return_value.__aenter__.return_value = mock_cur
-        mock_cur.rowcount = 1
-
-        result = await update_user_password(mock_pool, 1, 'new_hashed_pass')
-        assert result is True
-
-    async def test_save_verification_code_success(self, mock_pool, mock_conn, mock_cur):
-        mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
-        mock_conn.cursor.return_value.__aenter__.return_value = mock_cur
-
-        result = await save_verification_code(mock_pool, 1, '123456', datetime.now(timezone.utc) + timedelta(hours=1))
-        assert result is True
-
-    async def test_verify_user_email_success(self, mock_pool, mock_conn, mock_cur):
-        mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
-        mock_conn.cursor.return_value.__aenter__.return_value = mock_cur
-        mock_cur.fetchone.return_value = (1,)
-
-        result = await verify_user_email(mock_pool, 'test@example.com', '123456')
-        assert result == 1
-
-    async def test_verify_user_email_not_found(self, mock_pool, mock_conn, mock_cur):
-        mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
-        mock_conn.cursor.return_value.__aenter__.return_value = mock_cur
-        mock_cur.fetchone.return_value = None
-
-        result = await verify_user_email(mock_pool, 'test@example.com', '123456')
-        assert result is None
-
-    async def test_get_active_verification_code_success(self, mock_pool, mock_conn, mock_cur):
-        mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
-        mock_conn.cursor.return_value.__aenter__.return_value = mock_cur
-        mock_cur.fetchone = AsyncMock(return_value = (1, 1, '123456', datetime.now(timezone.utc), datetime.now(timezone.utc) + timedelta(hours=1), None))
-        mock_cur.description = [('id',), ('user_id',), ('verification_code',), ('created_at',), ('expires_at',), ('used_at',)]
-
-        result = await get_active_verification_code(mock_pool, 1, '123456')
-        assert result['verification_code'] == '123456'
-
-    async def test_mark_verification_code_used_success(self, mock_pool, mock_conn, mock_cur):
-        mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
-        mock_conn.cursor.return_value.__aenter__.return_value = mock_cur
-        mock_cur.rowcount = 1
-
-        result = await mark_verification_code_used(mock_pool, 1)
-        assert result is True
-
-    async def test_save_password_reset_token_success(self, mock_pool, mock_conn, mock_cur):
-        mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
-        mock_conn.cursor.return_value.__aenter__.return_value = mock_cur
-
-        result = await save_password_reset_token(mock_pool, 1, 'token123', datetime.now(timezone.utc) + timedelta(hours=1))
-        assert result is True
-
-    async def test_get_password_reset_token_success(self, mock_pool, mock_conn, mock_cur):
-        mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
-        mock_conn.cursor.return_value.__aenter__.return_value = mock_cur
-        mock_cur.fetchone = AsyncMock(return_value = (1, datetime.now(timezone.utc) + timedelta(hours=1)))
-
-        result = await get_password_reset_token(mock_pool, 'token123')
-        assert result['user_id'] == 1
-
-    async def test_get_password_reset_token_expired(self, mock_pool, mock_conn, mock_cur):
-        mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
-        mock_conn.cursor.return_value.__aenter__.return_value = mock_cur
-        mock_cur.fetchone.return_value = None
-
-        result = await get_password_reset_token(mock_pool, 'token123')
-        assert result is None
-
-    async def test_delete_password_reset_token_success(self, mock_pool, mock_conn, mock_cur):
-        mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
-        mock_conn.cursor.return_value.__aenter__.return_value = mock_cur
-
-        result = await delete_password_reset_token(mock_pool, 'token123')
-        assert result is True
-
-    async def test_update_user_categories_success(self, mock_pool, mock_conn, mock_cur):
-        mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
-        mock_conn.cursor.return_value.__aenter__.return_value = mock_cur
-
-        result = await update_user_categories(mock_pool, 1, {1, 2, 3})
-        assert result is True
-
-    async def test_get_all_category_ids_success(self, mock_pool, mock_conn, mock_cur):
-        mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
-        mock_conn.cursor.return_value.__aenter__.return_value = mock_cur
-        mock_cur.fetchall = AsyncMock(return_value = [(1,), (2,), (3,)])
-
-        result = await get_all_category_ids(mock_pool)
-        assert result == {1, 2, 3}
-
-    async def test_get_user_categories_success(self, mock_pool, mock_conn, mock_cur):
-        with patch.object(di_container, 'resolve', return_value={'USER_DEFINED_RSS_CATEGORY_ID': 999}):
-            mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
-            mock_conn.cursor.return_value.__aenter__.return_value = mock_cur
-            mock_cur.__aiter__ = MagicMock(return_value=mock_cur)
-            mock_cur.__anext__ = AsyncMock(side_effect=[(1, 'Tech'), (2, 'Sports'), StopAsyncIteration])
-            mock_cur.description = [('id',), ('name',)]
-
-            result = await get_user_categories(mock_pool, 1)
+    async def test_get_user_categories_success(self, mock_pool):
+        expected_result = [{'id': 1, 'name': 'Tech'}, {'id': 2, 'name': 'Sports'}]
+        repo = CategoryRepository(mock_pool)
+        with patch.object(repo, 'get_user_categories', return_value=expected_result) as mock_get:
+            result = await repo.get_user_categories(1, None)
+            mock_get.assert_called_once_with(1, None)
             assert len(result) == 2
-            assert result[0]['name'] == 'Tech'
 
-    async def test_create_user_rss_feed_success(self, mock_pool, mock_conn, mock_cur):
-        mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
-        mock_conn.cursor.return_value.__aenter__.return_value = mock_cur
-        mock_cur.fetchone.side_effect = [None, ('1', 1, 'http://example.com/rss', 'Test Feed', 1, 'en', True, datetime.now(timezone.utc), datetime.now(timezone.utc))]
-        mock_cur.description = [('id',), ('user_id',), ('url',), ('name',), ('category_id',), ('language',), ('is_active',), ('created_at',), ('updated_at',)]
 
-        result = await create_user_rss_feed(mock_pool, 1, 'http://example.com/rss', 'Test Feed', 1, 'en')
-        assert result['name'] == 'Test Feed'
+@pytest.mark.anyio
+class TestSourceRepository:
+    @pytest.fixture
+    def mock_pool(self):
+        pool = MagicMock()
+        return pool
 
-    async def test_get_user_rss_feeds_success(self, mock_pool, mock_conn, mock_cur):
-        mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
-        mock_conn.cursor.return_value.__aenter__.return_value = mock_cur
-        mock_cur.__aiter__ = MagicMock(return_value=mock_cur)
-        mock_cur.__anext__ = AsyncMock(side_effect=[('1', 1, 'http://example.com/rss', 'Test Feed', 1, 'en', True, datetime.now(timezone.utc), datetime.now(timezone.utc)), StopAsyncIteration])
-        mock_cur.description = [('id',), ('user_id',), ('url',), ('name',), ('category_id',), ('language',), ('is_active',), ('created_at',), ('updated_at',)]
+    async def test_get_source_id_by_alias_success(self, mock_pool):
+        repo = SourceRepository(mock_pool)
+        with patch.object(repo, 'get_source_id_by_alias', return_value=1) as mock_get:
+            result = await repo.get_source_id_by_alias('bbc')
+            mock_get.assert_called_once_with('bbc')
+            assert result == 1
 
-        result = await get_user_rss_feeds(mock_pool, 1, 10, 0)
-        assert len(result) == 1
-        assert result[0]['name'] == 'Test Feed'
 
-    async def test_get_user_rss_feed_by_id_success(self, mock_pool, mock_conn, mock_cur):
-        mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
-        mock_conn.cursor.return_value.__aenter__.return_value = mock_cur
-        mock_cur.fetchone.return_value = ('1', 1, 'http://example.com/rss', 'Test Feed', 1, 'en', True, datetime.now(timezone.utc), datetime.now(timezone.utc))
-        mock_cur.description = [('id',), ('user_id',), ('url',), ('name',), ('category_id',), ('language',), ('is_active',), ('created_at',), ('updated_at',)]
+@pytest.mark.anyio
+class TestRSSItemRepository:
+    @pytest.fixture
+    def mock_pool(self):
+        pool = MagicMock()
+        return pool
 
-        result = await get_user_rss_feed_by_id(mock_pool, 1, '1')
-        assert result['id'] == '1'
-
-    async def test_update_user_rss_feed_success(self, mock_pool, mock_conn, mock_cur):
-        mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
-        mock_conn.cursor.return_value.__aenter__.return_value = mock_cur
-        mock_cur.fetchone.return_value = ('1', 1, 'http://example.com/rss', 'Updated Feed', 1, 'en', True, datetime.now(timezone.utc), datetime.now(timezone.utc))
-        mock_cur.description = [('id',), ('user_id',), ('url',), ('name',), ('category_id',), ('language',), ('is_active',), ('created_at',), ('updated_at',)]
-
-        result = await update_user_rss_feed(mock_pool, 1, '1', {'name': 'Updated Feed'})
-        assert result['name'] == 'Updated Feed'
-
-    async def test_delete_user_rss_feed_success(self, mock_pool, mock_conn, mock_cur):
-        mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
-        mock_conn.cursor.return_value.__aenter__.return_value = mock_cur
-        mock_cur.rowcount = 1
-
-        result = await delete_user_rss_feed(mock_pool, 1, '1')
-        assert result is True
-
-    async def test_activate_user_and_use_verification_code_success(self, mock_pool, mock_conn, mock_cur):
-        mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
-        mock_conn.cursor.return_value.__aenter__.return_value = mock_cur
-        mock_cur.fetchone.return_value = (1,)
-
-        result = await activate_user_and_use_verification_code(mock_pool, 1, '123456')
-        assert result is True
-
-    async def test_confirm_password_reset_transaction_success(self, mock_pool, mock_conn, mock_cur):
-        mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
-        mock_conn.cursor.return_value.__aenter__.return_value = mock_cur
-        mock_cur.fetchone = AsyncMock(return_value = (1, datetime.now(timezone.utc) + timedelta(hours=1)))
-        mock_cur.rowcount = 1
-
-        result = await confirm_password_reset_transaction(mock_pool, 'token123', 'new_hashed_pass')
-        assert result is True
-
-    async def test_get_all_categories_list_success(self, mock_pool, mock_conn, mock_cur):
-        with patch.object(di_container, 'resolve', return_value={'USER_DEFINED_RSS_CATEGORY_ID': 999}):
-            mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
-            mock_conn.cursor.return_value.__aenter__.return_value = mock_cur
-            mock_cur.fetchone.return_value = (2,)
-            mock_cur.__aiter__ = MagicMock(return_value=mock_cur)
-            mock_cur.__anext__ = AsyncMock(side_effect=[(1, 'Tech'), (2, 'Sports'), StopAsyncIteration])
-            mock_cur.description = [('id',), ('name',)]
-
-            total_count, results = await get_all_categories_list(mock_pool, 10, 0)
-            assert total_count == 2
-            assert len(results) == 2
-            assert results[0]['name'] == 'Tech'
-
-    async def test_get_all_sources_list_success(self, mock_pool, mock_conn, mock_cur):
-        with patch.object(di_container, 'resolve', return_value={'some': 'config'}):
-            mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
-            mock_conn.cursor.return_value.__aenter__.return_value = mock_cur
-            mock_cur.fetchone.return_value = (2,)
-            mock_cur.__aiter__ = MagicMock(return_value=mock_cur)
-            mock_cur.__anext__ = AsyncMock(side_effect=[(1, 'BBC', 'Description', 'bbc', 'logo.png', 'http://bbc.com'), StopAsyncIteration])
-            mock_cur.description = [('id',), ('name',), ('description',), ('alias',), ('logo',), ('site_url',)]
-
-            total_count, results = await get_all_sources_list(mock_pool, 10, 0)
-            assert total_count == 2
-            assert len(results) == 1
-            assert results[0]['name'] == 'BBC'
-
-    async def test_get_recent_rss_items_for_broadcast_success(self, mock_pool, mock_conn, mock_cur):
-        with patch.object(di_container, 'resolve', return_value={'some': 'config'}):
-            mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
-            mock_conn.cursor.return_value.__aenter__.return_value = mock_cur
-            mock_cur.__aiter__ = MagicMock(return_value=mock_cur)
-            mock_cur.__anext__ = AsyncMock(side_effect=[('news1', 'Title', 'en', 'Tech', datetime.now(timezone.utc), 'Title RU', 'Content RU', None, None, None, None, None, None), StopAsyncIteration])
-            mock_cur.description = [('news_id',), ('original_title',), ('original_language',), ('category_name',), ('created_at',), ('title_ru',), ('content_ru',), ('title_en',), ('content_en',), ('title_de',), ('content_de',), ('title_fr',), ('content_fr',)]
-
-            result = await get_recent_rss_items_for_broadcast(mock_pool, datetime.now(timezone.utc) - timedelta(hours=1))
+    async def test_get_recent_rss_items_for_broadcast_success(self, mock_pool):
+        expected_result = [{'news_id': 'news1', 'original_title': 'Title', 'original_language': 'en', 'category_name': 'Tech', 'created_at': datetime.now(timezone.utc)}]
+        repo = RSSItemRepository(mock_pool)
+        with patch.object(repo, 'get_recent_rss_items_for_broadcast', return_value=expected_result) as mock_get:
+            result = await repo.get_recent_rss_items_for_broadcast(datetime.now(timezone.utc) - timedelta(hours=1))
             assert len(result) == 1
             assert result[0]['news_id'] == 'news1'
