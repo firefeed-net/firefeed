@@ -4,7 +4,7 @@ from typing import List, Dict, Any
 from pydantic import BaseModel
 from unittest.mock import patch, MagicMock, AsyncMock
 from utils.api import APIResponse, PaginatedResponse, make_request
-from tests.test_utils_async_mocks import create_httpx_client_mock
+from tests.utils.test_utils_async_mocks import create_httpx_client_mock
 
 
 class TestAPIResponse:

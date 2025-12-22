@@ -3,7 +3,7 @@ import asyncio
 from unittest.mock import patch, MagicMock, AsyncMock
 from datetime import datetime
 from apps.rss_parser.services.rss_storage import RSSStorage
-from tests.test_utils_async_mocks import create_database_pool_mock
+from tests.utils.test_utils_async_mocks import create_database_pool_mock
 
 
 def create_rss_storage_database_mock():

@@ -5,7 +5,7 @@ import os
 import shutil
 from unittest.mock import patch, MagicMock, AsyncMock
 from utils.video import VideoProcessor
-from tests.test_utils_async_mocks import create_aiohttp_session_mock
+from tests.utils.test_utils_async_mocks import create_aiohttp_session_mock
 
 
 class TestVideoProcessor:
