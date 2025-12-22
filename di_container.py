@@ -4,9 +4,9 @@ from typing import Dict, Any, Type, TypeVar, Optional
 from interfaces import (
     IRSSFetcher, IRSSValidator, IRSSStorage, IMediaExtractor, ITranslationService,
     ITranslationCache, IDuplicateDetector, ITranslatorQueue, IMaintenanceService,
-    ITelegramUserService, IWebUserService, IUserRepository, IRSSFeedRepository,
+    IUserService, IUserRepository, IRSSFeedRepository,
     IRSSItemRepository, ICategoryRepository, ISourceRepository, IApiKeyRepository,
-    ITelegramRepository, IDatabasePool, IModelManager
+    IDatabasePool, IModelManager
 )
 
 logger = logging.getLogger(__name__)
@@ -125,7 +125,7 @@ async def setup_di_container() -> DIContainer:
     from services.text_analysis.duplicate_detector import FireFeedDuplicateDetector
     from services.database_pool_adapter import DatabasePoolAdapter
     from services.maintenance_service import MaintenanceService
-    from services.user import TelegramUserService, WebUserService
+    from services.user import UserService
 
     # Register database pool adapter
     # For testing/development, create a mock pool if database is not available
@@ -200,11 +200,11 @@ async def setup_di_container() -> DIContainer:
     # Register repositories
     from repositories import (
         UserRepository, RSSFeedRepository, RSSItemRepository,
-        CategoryRepository, SourceRepository, ApiKeyRepository, TelegramRepository
+        CategoryRepository, SourceRepository, ApiKeyRepository
     )
     from interfaces import (
         IUserRepository, IRSSFeedRepository, IRSSItemRepository,
-        ICategoryRepository, ISourceRepository, IApiKeyRepository, ITelegramRepository
+        ICategoryRepository, ISourceRepository, IApiKeyRepository
     )
 
     di_container.register_factory(IUserRepository, lambda: UserRepository(db_pool_adapter))
@@ -213,7 +213,6 @@ async def setup_di_container() -> DIContainer:
     di_container.register_factory(ICategoryRepository, lambda: CategoryRepository(db_pool_adapter))
     di_container.register_factory(ISourceRepository, lambda: SourceRepository(db_pool_adapter))
     di_container.register_factory(IApiKeyRepository, lambda: ApiKeyRepository(db_pool_adapter))
-    di_container.register_factory(ITelegramRepository, lambda: TelegramRepository(db_pool_adapter))
 
     # Register simple services first
     di_container.register(IRSSStorage, RSSStorage)
@@ -259,8 +258,9 @@ async def setup_di_container() -> DIContainer:
     translator_queue.set_translator(translation_service)
 
     di_container.register_factory(ITranslationCache, lambda: TranslationCache(
-        default_ttl=getattr(config.cache, 'default_ttl', 3600),
-        max_size=getattr(config.cache, 'max_cache_size', 10000)
+        cache_ttl=getattr(config.cache, 'default_ttl', 3600),
+        max_cache_size=getattr(config.cache, 'max_cache_size', 10000),
+        enable_cleanup=True
     ))
 
     di_container.register_factory(IDuplicateDetector, lambda: FireFeedDuplicateDetector(di_container.resolve(IRSSItemRepository)))
@@ -269,8 +269,7 @@ async def setup_di_container() -> DIContainer:
     di_container.register_factory(IMaintenanceService, lambda: MaintenanceService(db_pool))
 
     # Register user services
-    di_container.register_factory(ITelegramUserService, lambda: TelegramUserService(di_container.resolve(IUserRepository)))
-    di_container.register_factory(IWebUserService, lambda: WebUserService(di_container.resolve(IUserRepository)))
+    di_container.register_factory(IUserService, lambda: UserService(di_container.resolve(IUserRepository)))
 
     logger.info("DI container setup completed with configuration")
     return di_container

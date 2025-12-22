@@ -3,6 +3,7 @@ import logging
 from typing import Dict, Any, Optional, List
 from datetime import datetime, timezone, timedelta
 from interfaces import IRSSStorage, IDatabasePool
+from repositories import CategoryRepository, SourceRepository
 
 logger = logging.getLogger(__name__)
 
@@ -35,12 +36,11 @@ class RSSStorage(IRSSStorage):
                     source_url = rss_item["link"]
 
                     # Get category_id
-                    await cur.execute("SELECT id FROM categories WHERE name = %s", (category_name,))
-                    cat_result = await cur.fetchone()
-                    if not cat_result:
+                    category_repo = CategoryRepository(self.db_pool)
+                    category_id = await category_repo.get_category_id_by_name(category_name)
+                    if category_id is None:
                         logger.warning(f"[STORAGE] Category '{category_name}' not found")
                         return None
-                    category_id = cat_result[0]
 
                     # Insert RSS item
                     query = """
@@ -317,25 +317,18 @@ class RSSStorage(IRSSStorage):
             async with self.db_pool.acquire() as conn:
                 async with conn.cursor() as cur:
                     # Get category_id
-                    await cur.execute("SELECT id FROM categories WHERE name = %s", (category_name,))
-                    cat_result = await cur.fetchone()
-                    if not cat_result:
+                    category_repo = CategoryRepository(self.db_pool)
+                    category_id = await category_repo.get_category_id_by_name(category_name)
+                    if category_id is None:
                         logger.error(f"[STORAGE] Category '{category_name}' not found")
                         return False
-                    category_id = cat_result[0]
 
-                    # Get or create source
-                    await cur.execute("SELECT id FROM sources WHERE name = %s", (source_name,))
-                    source_result = await cur.fetchone()
-                    if source_result:
-                        source_id = source_result[0]
-                    else:
-                        # Create new source
-                        await cur.execute(
-                            "INSERT INTO sources (name, created_at) VALUES (%s, NOW()) RETURNING id",
-                            (source_name,)
-                        )
-                        source_id = (await cur.fetchone())[0]
+                    # Get source_id
+                    source_repo = SourceRepository(self.db_pool)
+                    source_id = await source_repo.get_source_id_by_alias(source_name)
+                    if source_id is None:
+                        logger.error(f"[STORAGE] Source '{source_name}' not found")
+                        return False
 
                     # Insert RSS feed
                     query = """
@@ -412,101 +405,3 @@ class RSSStorage(IRSSStorage):
             logger.error(f"[STORAGE] Error deleting RSS feed {feed_id}: {e}")
             return False
 
-    async def fetch_unprocessed_rss_items(self) -> List[Dict[str, Any]]:
-        """Fetch unprocessed RSS items (not published to Telegram channels)"""
-        try:
-            async with self.db_pool.acquire() as conn:
-                async with conn.cursor() as cur:
-                    query = """
-                    SELECT
-                        p.news_id,
-                        p.original_title,
-                        p.original_content,
-                        p.original_language,
-                        p.category_id,
-                        p.image_filename,
-                        p.video_filename,
-                        p.source_url,
-                        c.name as category_name,
-                        rf.name as feed_name,
-                        rf.id as feed_id
-                    FROM published_news_data p
-                    LEFT JOIN rss_feeds rf ON p.rss_feed_id = rf.id
-                    LEFT JOIN categories c ON p.category_id = c.id
-                    LEFT JOIN (
-                        SELECT DISTINCT news_id
-                        FROM rss_items_telegram_bot_published
-                        WHERE recipient_type = 'channel'
-                    ) pub_chan ON p.news_id = pub_chan.news_id
-                    WHERE pub_chan.news_id IS NULL
-                    ORDER BY p.created_at DESC
-                    LIMIT 100
-                    """
-                    await cur.execute(query)
-                    items = []
-                    async for row in cur:
-                        items.append({
-                            "news_id": row[0],
-                            "title": row[1],
-                            "content": row[2],
-                            "language": row[3],
-                            "category_id": row[4],
-                            "image_filename": row[5],
-                            "video_filename": row[6],
-                            "source_url": row[7],
-                            "category": row[8],
-                            "feed_name": row[9],
-                            "feed_id": row[10]
-                        })
-                    logger.info(f"Found {len(items)} unprocessed RSS items")
-                    return items
-        except Exception as e:
-            logger.error(f"[STORAGE] Error fetching unprocessed RSS items: {e}")
-            return []
-
-    async def get_last_telegram_publication_time(self, feed_id: int) -> Optional[datetime]:
-        """Get last Telegram publication time for feed from unified table"""
-        try:
-            async with self.db_pool.acquire() as conn:
-                async with conn.cursor() as cur:
-                    # Get latest publication time from unified table
-                    query = """
-                    SELECT MAX(sent_at)
-                    FROM rss_items_telegram_bot_published rbp
-                    JOIN published_news_data pnd ON (
-                        (rbp.translation_id IS NOT NULL AND rbp.news_id = pnd.news_id) OR
-                        (rbp.translation_id IS NULL AND rbp.news_id = pnd.news_id)
-                    )
-                    WHERE pnd.rss_feed_id = %s AND rbp.recipient_type = 'channel'
-                    """
-                    await cur.execute(query, (feed_id,))
-                    row = await cur.fetchone()
-                    if row and row[0] and row[0] > datetime(1970, 1, 1, tzinfo=timezone.utc):
-                        return row[0]
-                    return None
-        except Exception as e:
-            logger.error(f"[STORAGE] Error getting last Telegram publication time for feed {feed_id}: {e}")
-            return None
-
-    async def get_recent_telegram_publications_count(self, feed_id: int, minutes: int) -> int:
-        """Get count of recent Telegram publications for feed from unified table"""
-        try:
-            async with self.db_pool.acquire() as conn:
-                async with conn.cursor() as cur:
-                    time_threshold = datetime.now(timezone.utc) - timedelta(minutes=minutes)
-                    # Count publications from unified table (only channels)
-                    query = """
-                    SELECT COUNT(*)
-                    FROM rss_items_telegram_bot_published rbp
-                    JOIN published_news_data pnd ON (
-                        (rbp.translation_id IS NOT NULL AND rbp.news_id = pnd.news_id) OR
-                        (rbp.translation_id IS NULL AND rbp.news_id = pnd.news_id)
-                    )
-                    WHERE pnd.rss_feed_id = %s AND rbp.sent_at >= %s AND rbp.recipient_type = 'channel'
-                    """
-                    await cur.execute(query, (feed_id, time_threshold))
-                    row = await cur.fetchone()
-                    return row[0] if row else 0
-        except Exception as e:
-            logger.error(f"[STORAGE] Error getting recent Telegram publications count for feed {feed_id}: {e}")
-            return 0

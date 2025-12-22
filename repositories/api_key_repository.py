@@ -1,5 +1,6 @@
 # repositories/api_key_repository.py - API key repository implementation
 import logging
+from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional
 from interfaces import IApiKeyRepository
 from exceptions import DatabaseException
@@ -13,19 +14,19 @@ class ApiKeyRepository(IApiKeyRepository):
     def __init__(self, db_pool):
         self.db_pool = db_pool
 
-    async def create_user_api_key(self, user_id: int, key: str, limits: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    async def create_user_api_key(self, user_id: int, key: str, limits: Dict[str, Any], expires_at: Optional[datetime] = None) -> Optional[Dict[str, Any]]:
         async with self.db_pool.acquire() as conn:
             async with conn.cursor() as cur:
                 try:
                     await cur.execute(
-                        "INSERT INTO user_api_keys (user_id, key_hash, limits) VALUES (%s, %s, %s) RETURNING id, key_hash, limits, is_active, created_at",
-                        (user_id, key, limits)
+                        "INSERT INTO user_api_keys (user_id, key_hash, limits, expires_at) VALUES (%s, %s, %s, %s) RETURNING id, user_id, limits, is_active, created_at, expires_at",
+                        (user_id, key, limits, expires_at)
                     )
                     row = await cur.fetchone()
                     if row:
                         return {
-                            "id": row[0], "key": row[1], "limits": row[2],
-                            "is_active": row[3], "created_at": row[4]
+                            "id": row[0], "user_id": row[1], "limits": row[2],
+                            "is_active": row[3], "created_at": row[4], "expires_at": row[5]
                         }
                     return None
                 except Exception as e:
@@ -36,15 +37,16 @@ class ApiKeyRepository(IApiKeyRepository):
             async with conn.cursor() as cur:
                 try:
                     await cur.execute(
-                        "SELECT id, key_hash, limits, is_active, created_at FROM user_api_keys WHERE user_id = %s ORDER BY created_at DESC",
+                        "SELECT id, key_hash, limits, is_active, created_at, expires_at FROM user_api_keys WHERE user_id = %s ORDER BY created_at DESC",
                         (user_id,)
                     )
 
                     keys = []
-                    async for row in cur:
+                    rows = await cur.fetchall()
+                    for row in rows:
                         keys.append({
                             "id": row[0], "key": row[1], "limits": row[2],
-                            "is_active": row[3], "created_at": row[4]
+                            "is_active": row[3], "created_at": row[4], "expires_at": row[5]
                         })
 
                     return keys
@@ -56,14 +58,14 @@ class ApiKeyRepository(IApiKeyRepository):
             async with conn.cursor() as cur:
                 try:
                     await cur.execute(
-                        "SELECT id, key_hash, limits, is_active, created_at FROM user_api_keys WHERE user_id = %s AND id = %s",
+                        "SELECT id, user_id, limits, is_active, created_at, expires_at FROM user_api_keys WHERE user_id = %s AND id = %s",
                         (user_id, key_id)
                     )
                     row = await cur.fetchone()
                     if row:
                         return {
-                            "id": row[0], "key": row[1], "limits": row[2],
-                            "is_active": row[3], "created_at": row[4]
+                            "id": row[0], "user_id": row[1], "limits": row[2],
+                            "is_active": row[3], "created_at": row[4], "expires_at": row[5]
                         }
                     return None
                 except Exception as e:
@@ -76,7 +78,7 @@ class ApiKeyRepository(IApiKeyRepository):
             set_parts.append(f"{key} = %s")
             values.append(value)
 
-        query = f"UPDATE user_api_keys SET {', '.join(set_parts)}, updated_at = NOW() WHERE user_id = %s AND id = %s RETURNING id, key_hash, limits, is_active, updated_at"
+        query = f"UPDATE user_api_keys SET {', '.join(set_parts)}, updated_at = NOW() WHERE user_id = %s AND id = %s RETURNING id, user_id, limits, is_active, updated_at, expires_at"
         values.extend([user_id, key_id])
 
         async with self.db_pool.acquire() as conn:
@@ -86,8 +88,8 @@ class ApiKeyRepository(IApiKeyRepository):
                     row = await cur.fetchone()
                     if row:
                         return {
-                            "id": row[0], "key": row[1], "limits": row[2],
-                            "is_active": row[3], "updated_at": row[4]
+                            "id": row[0], "user_id": row[1], "limits": row[2],
+                            "is_active": row[3], "updated_at": row[4], "expires_at": row[5]
                         }
                     return None
                 except Exception as e:
@@ -107,14 +109,14 @@ class ApiKeyRepository(IApiKeyRepository):
             async with conn.cursor() as cur:
                 try:
                     await cur.execute(
-                        "SELECT u.id as user_id, u.email, u.language, u.is_verified, u.is_deleted, k.limits FROM user_api_keys k JOIN users u ON k.user_id = u.id WHERE k.key_hash = %s AND k.is_active = TRUE",
-                        (api_key,)
+                        "SELECT id, user_id, limits, is_active, created_at, expires_at FROM user_api_keys WHERE key_hash = %s AND is_active = TRUE AND (expires_at IS NULL OR expires_at > %s)",
+                        (api_key, datetime.now(timezone.utc))
                     )
                     row = await cur.fetchone()
                     if row:
                         return {
-                            "user_id": row[0], "email": row[1], "language": row[2],
-                            "is_verified": row[3], "is_deleted": row[4], "limits": row[5]
+                            "id": row[0], "user_id": row[1], "limits": row[2],
+                            "is_active": row[3], "created_at": row[4], "expires_at": row[5]
                         }
                     return None
                 except Exception as e:

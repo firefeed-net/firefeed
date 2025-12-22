@@ -10,6 +10,7 @@ from interfaces import (
     IRSSFetcher, IRSSValidator, IRSSStorage, IMediaExtractor,
     ITranslationService, IDuplicateDetector, ITranslatorQueue, IMaintenanceService
 )
+from repositories import RSSFeedRepository, RSSItemRepository
 
 logger = logging.getLogger(__name__)
 
@@ -42,59 +43,38 @@ class RSSManager:
     async def get_all_active_feeds(self) -> List[Dict[str, Any]]:
         """Get all active feeds"""
         try:
-            # Use rss_storage to get database connection
-            async with self.rss_storage.db_pool.acquire() as conn:
-                async with conn.cursor() as cur:
-                    # Explicitly list fields from rss_feeds
-                    query = """
-                    SELECT
-                        rf.id,
-                        rf.url,
-                        rf.name,
-                        rf.language,
-                        rf.source_id,
-                        rf.category_id,
-                        s.name as source_name, -- Get source name
-                        c.name as category_name, -- Get category name
-                        rf.cooldown_minutes, -- Can add if needed
-                        rf.max_news_per_hour  -- Can add if needed
-                    FROM rss_feeds rf
-                    JOIN categories c ON rf.category_id = c.id
-                    JOIN sources s ON rf.source_id = s.id
-                    WHERE rf.is_active = TRUE
-                    """
-                    await cur.execute(query)
-                    feeds = []
-                    async for row in cur:
-                        feeds.append(
-                            {
-                                "id": row[0],
-                                "url": row[1].strip(),
-                                "name": row[2],
-                                "lang": row[3],
-                                "source_id": row[4],
-                                "category_id": row[5],
-                                "source": row[6],  # s.name
-                                "category": row[7] if row[7] else "uncategorized"
-                            }
-                        )
-                    logger.info(f"Found {len(feeds)} active feeds")
-                    return feeds
+            repo = RSSFeedRepository(self.rss_storage.db_pool)
+            return await repo.get_all_active_feeds()
         except Exception as e:
             logger.error(f"[RSS_MANAGER] Error getting active feeds: {e}")
             return []
 
     async def get_feeds_by_category(self, category_name: str) -> List[Dict[str, Any]]:
         """Get feeds by category"""
-        return await self.rss_storage.get_feeds_by_category(category_name)
+        try:
+            repo = RSSFeedRepository(self.rss_storage.db_pool)
+            return await repo.get_feeds_by_category(category_name)
+        except Exception as e:
+            logger.error(f"[RSS_MANAGER] Error getting feeds by category '{category_name}': {e}")
+            return []
 
     async def get_feeds_by_language(self, lang: str) -> List[Dict[str, Any]]:
         """Get feeds by language"""
-        return await self.rss_storage.get_feeds_by_language(lang)
+        try:
+            repo = RSSFeedRepository(self.rss_storage.db_pool)
+            return await repo.get_feeds_by_language(lang)
+        except Exception as e:
+            logger.error(f"[RSS_MANAGER] Error getting feeds by language '{lang}': {e}")
+            return []
 
     async def get_feeds_by_source(self, source_name: str) -> List[Dict[str, Any]]:
         """Get feeds by source"""
-        return await self.rss_storage.get_feeds_by_source(source_name)
+        try:
+            repo = RSSFeedRepository(self.rss_storage.db_pool)
+            return await repo.get_feeds_by_source(source_name)
+        except Exception as e:
+            logger.error(f"[RSS_MANAGER] Error getting feeds by source '{source_name}': {e}")
+            return []
 
     async def add_feed(self, url: str, category_name: str, source_name: str, language: str, is_active: bool = True) -> bool:
         """Add feed"""
@@ -146,7 +126,12 @@ class RSSManager:
 
     async def save_rss_item_to_db(self, rss_item: Dict[str, Any], rss_feed_id: int) -> Optional[str]:
         """Save RSS item to database"""
-        return await self.rss_storage.save_rss_item(rss_item, rss_feed_id)
+        try:
+            repo = RSSItemRepository(self.rss_storage.db_pool)
+            return await repo.save_rss_item(rss_item, rss_feed_id)
+        except Exception as e:
+            logger.error(f"[RSS_MANAGER] Error saving RSS item: {e}")
+            return None
 
     async def save_translations_to_db(self, news_id: str, translations: Dict[str, Dict[str, str]]) -> bool:
         """Save translations to database"""
@@ -201,9 +186,6 @@ class RSSManager:
         """Extract video - delegate to media extractor"""
         return self.media_extractor.extract_video(item)
 
-    async def fetch_unprocessed_rss_items(self) -> List[Dict[str, Any]]:
-        """Fetch unprocessed RSS items"""
-        return await self.rss_storage.fetch_unprocessed_rss_items()
 
     async def cleanup_duplicates(self) -> None:
         """Cleanup duplicates"""

@@ -32,9 +32,34 @@ class IRSSFeedRepository(ABC):
         """Delete user RSS feed"""
         pass
 
+    @abstractmethod
+    async def get_all_active_feeds(self) -> List[Dict[str, Any]]:
+        """Get all active system RSS feeds"""
+        pass
+
+    @abstractmethod
+    async def get_feeds_by_category(self, category_name: str) -> List[Dict[str, Any]]:
+        """Get feeds by category name"""
+        pass
+
+    @abstractmethod
+    async def get_feeds_by_language(self, lang: str) -> List[Dict[str, Any]]:
+        """Get feeds by language"""
+        pass
+
+    @abstractmethod
+    async def get_feeds_by_source(self, source_name: str) -> List[Dict[str, Any]]:
+        """Get feeds by source name"""
+        pass
+
 
 class IRSSItemRepository(ABC):
     """Interface for RSS item repository"""
+
+    @abstractmethod
+    async def save_rss_item(self, rss_item: Dict[str, Any], feed_id: int) -> Optional[str]:
+        """Save RSS item to database"""
+        pass
 
     @abstractmethod
     async def get_all_rss_items_list(self, limit: int, offset: int, category_id: Optional[List[int]] = None,
@@ -164,49 +189,3 @@ class IApiKeyRepository(ABC):
         """Get user API key by key value"""
         pass
 
-
-class ITelegramRepository(ABC):
-    """Interface for Telegram repository"""
-
-    @abstractmethod
-    async def get_telegram_link_status(self, user_id: int) -> Optional[Dict[str, Any]]:
-        """Get Telegram link status"""
-        pass
-
-    @abstractmethod
-    async def mark_bot_published(self, news_id: str = None, translation_id: int = None,
-                                recipient_type: str = 'channel', recipient_id: int = None,
-                                message_id: int = None, language: str = None) -> bool:
-        """Mark bot publication"""
-        pass
-
-    @abstractmethod
-    async def check_bot_published(self, news_id: str = None, translation_id: int = None,
-                                 recipient_type: str = 'channel', recipient_id: int = None) -> bool:
-        """Check if bot published"""
-        pass
-
-    @abstractmethod
-    async def get_news_id_from_translation(self, translation_id: int) -> Optional[str]:
-        """Get news ID from translation"""
-        pass
-
-    @abstractmethod
-    async def get_translation_id(self, news_id: str, language: str) -> Optional[int]:
-        """Get translation ID"""
-        pass
-
-    @abstractmethod
-    async def get_feed_cooldown_and_max_news(self, feed_id: int) -> Tuple[int, int]:
-        """Get feed cooldown and max news"""
-        pass
-
-    @abstractmethod
-    async def get_last_telegram_publication_time(self, feed_id: int) -> Optional[datetime]:
-        """Get last Telegram publication time"""
-        pass
-
-    @abstractmethod
-    async def get_recent_telegram_publications_count(self, feed_id: int, minutes: int) -> int:
-        """Get recent Telegram publications count"""
-        pass

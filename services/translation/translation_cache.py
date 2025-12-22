@@ -13,14 +13,16 @@ logger = logging.getLogger(__name__)
 class TranslationCache(ITranslationCache):
     """Service for caching translation results"""
 
-    def __init__(self, cache_ttl: int = 3600, max_cache_size: int = 10000):
+    def __init__(self, cache_ttl: int = 3600, max_cache_size: int = 10000, enable_cleanup: bool = True):
         self.cache_ttl = cache_ttl  # Default 1 hour
         self.max_cache_size = max_cache_size
         self.cache: Dict[str, Dict[str, Any]] = {}
         self._cleanup_task = None
+        self._enable_cleanup = enable_cleanup
 
-        # Start cleanup task
-        self._start_cleanup_task()
+        # Start cleanup task only if enabled
+        if self._enable_cleanup:
+            self._start_cleanup_task()
 
     def _start_cleanup_task(self) -> None:
         """Start background cleanup task"""

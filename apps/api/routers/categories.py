@@ -7,6 +7,7 @@ from apps.api import models
 from di_container import get_service
 from interfaces import ICategoryRepository
 from apps.api.deps import get_current_user
+from exceptions import DatabaseException
 
 logger = logging.getLogger(__name__)
 
@@ -55,8 +56,12 @@ async def get_user_categories(
     source_ids: Optional[List[int]] = Query(None, description="Filter by associated source IDs"),
 ):
     category_repo = get_service(ICategoryRepository)
-    categories = await category_repo.get_user_categories(current_user["id"], source_ids)
-    return models.UserCategoriesResponse(category_ids=[cat["id"] for cat in categories])
+    try:
+        categories = await category_repo.get_user_categories(current_user["id"], source_ids)
+        return models.UserCategoriesResponse(category_ids=[cat["id"] for cat in categories])
+    except DatabaseException as e:
+        logger.error(f"Database error in get_user_categories: {e}")
+        raise HTTPException(status_code=500, detail="Database error")
 
 
 @router.put(
@@ -97,13 +102,17 @@ async def update_user_categories(
     category_ids: Set[int] = category_update.category_ids
     category_repo = get_service(ICategoryRepository)
 
-    existing_categories = await category_repo.get_all_category_ids()
-    invalid_ids = category_ids - set(existing_categories)
-    if invalid_ids:
-        raise HTTPException(status_code=400, detail=f"Invalid category IDs: {list(invalid_ids)}")
+    try:
+        existing_categories = await category_repo.get_all_category_ids()
+        invalid_ids = category_ids - set(existing_categories)
+        if invalid_ids:
+            raise HTTPException(status_code=400, detail=f"Invalid category IDs: {list(invalid_ids)}")
 
-    success = await category_repo.update_user_categories(current_user["id"], list(category_ids))
-    if not success:
-        raise HTTPException(status_code=500, detail="Failed to update user categories")
+        success = await category_repo.update_user_categories(current_user["id"], list(category_ids))
+        if not success:
+            raise HTTPException(status_code=500, detail="Failed to update user categories")
 
-    return models.SuccessResponse(message="User categories successfully updated")
+        return models.SuccessResponse(message="User categories successfully updated")
+    except DatabaseException as e:
+        logger.error(f"Database error in update_user_categories: {e}")
+        raise HTTPException(status_code=500, detail="Database error")

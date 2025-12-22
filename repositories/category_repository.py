@@ -12,16 +12,21 @@ class CategoryRepository(ICategoryRepository):
     def __init__(self, db_pool):
         self.db_pool = db_pool
 
-    async def get_user_categories(self, user_id: int, source_ids: List[int]) -> List[Dict[str, Any]]:
+    async def get_user_categories(self, user_id: int, source_ids: Optional[List[int]] = None) -> List[Dict[str, Any]]:
         async with self.db_pool.acquire() as conn:
             async with conn.cursor() as cur:
-                await cur.execute(
-                    "SELECT c.id, c.name FROM user_categories uc JOIN categories c ON uc.category_id = c.id WHERE uc.user_id = %s",
-                    (user_id,)
-                )
+                query = "SELECT c.id, c.name FROM user_categories uc JOIN categories c ON uc.category_id = c.id WHERE uc.user_id = %s"
+                params = [user_id]
+
+                if source_ids:
+                    query += " AND c.id IN (SELECT category_id FROM source_categories WHERE source_id = ANY(%s))"
+                    params.append(source_ids)
+
+                await cur.execute(query, params)
 
                 categories = []
-                async for row in cur:
+                rows = await cur.fetchall()
+                for row in rows:
                     categories.append({"id": row[0], "name": row[1]})
 
                 return categories
@@ -29,9 +34,9 @@ class CategoryRepository(ICategoryRepository):
     async def update_user_categories(self, user_id: int, category_ids: List[int]) -> bool:
         async with self.db_pool.acquire() as conn:
             async with conn.cursor() as cur:
-                await cur.execute("BEGIN")
-
                 try:
+                    await cur.execute("BEGIN")
+
                     # Delete existing categories
                     await cur.execute("DELETE FROM user_categories WHERE user_id = %s", (user_id,))
 
@@ -59,7 +64,8 @@ class CategoryRepository(ICategoryRepository):
                 await cur.execute("SELECT id FROM categories")
 
                 ids = []
-                async for row in cur:
+                rows = await cur.fetchall()
+                for row in rows:
                     ids.append(row[0])
 
                 return ids
@@ -71,7 +77,7 @@ class CategoryRepository(ICategoryRepository):
                 row = await cur.fetchone()
                 return row[0] if row else None
 
-    async def get_all_categories_list(self, limit: int, offset: int, source_ids: List[int]) -> Tuple[int, List[Dict[str, Any]]]:
+    async def get_all_categories_list(self, limit: int, offset: int, source_ids: Optional[List[int]] = None) -> Tuple[int, List[Dict[str, Any]]]:
         async with self.db_pool.acquire() as conn:
             async with conn.cursor() as cur:
                 # Build query

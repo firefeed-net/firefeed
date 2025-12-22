@@ -90,20 +90,7 @@ class IRSSStorage(ABC):
         """Delete RSS feed"""
         pass
 
-    @abstractmethod
-    async def fetch_unprocessed_rss_items(self) -> List[Dict[str, Any]]:
-        """Fetch unprocessed RSS items"""
-        pass
 
-    @abstractmethod
-    async def get_last_telegram_publication_time(self, feed_id: int) -> Optional[datetime]:
-        """Get last Telegram publication time for feed"""
-        pass
-
-    @abstractmethod
-    async def get_recent_telegram_publications_count(self, feed_id: int, minutes: int) -> int:
-        """Get count of recent Telegram publications for feed"""
-        pass
 
 
 class IMediaExtractor(ABC):

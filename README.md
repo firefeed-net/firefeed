@@ -36,7 +36,6 @@ FireFeed is a high-performance parsing system for automatic collection, processi
 
 ### Multilingual Support
 
-- Fully localized Telegram bot with support for 4 languages
 - REST API with multilingual interface
 - Adaptive translation system with terminology consideration
 
@@ -69,17 +68,13 @@ FireFeed is a high-performance parsing system for automatic collection, processi
 - PostgreSQL with pgvector for semantic search
 - Redis for storing API key usage data
 - aiopg for asynchronous database queries
+- SMTP for email notifications
 
 ### AI/ML
 - Transformers (Hugging Face)
 - Sentence Transformers for embeddings
 - SpaCy for text processing
 - Torch for computations
-
-### Integrations
-- Telegram Bot API
-- SMTP for email notifications
-- Webhook support
 
 ### Infrastructure
 - Docker containerization
@@ -90,64 +85,11 @@ FireFeed is a high-performance parsing system for automatic collection, processi
 
 The project consists of several key components:
 
-1. **Telegram Bot** (`apps/telegram_bot/`) - main user interaction interface
-2. **RSS Parser Service** (`apps/rss_parser/`) - background service for RSS feed parsing
-3. **REST API** (`apps/api/`) - web API for external integrations
-4. **Translation Services** (`services/translation/`) - translation system with caching
-5. **Test analysis** (`services/text_analysis/`) - ML-based duplicate detection and text analysis
-6. **User Management** (`services/user/`) - user and subscription management service
-
-### Telegram Bot
-
-The Telegram bot serves as the primary interface for users to interact with the FireFeed system. It provides personalized news delivery, subscription management, and multilingual support.
-
-#### Key Features
-
-- **Personalized News Delivery**: Users receive news based on their category subscriptions in their preferred language
-- **Multilingual Interface**: Full localization support for English, Russian, German, and French
-- **Subscription Management**: Easy category-based subscription configuration through inline keyboards
-- **Automatic Publishing**: News items are automatically published to configured Telegram channels
-
-#### Publication Rate Limiting
-
-To prevent spam and ensure fair usage, the bot implements sophisticated rate limiting for news publications:
-
-##### Feed-Level Limits
-Each RSS feed has configurable limits:
-- `cooldown_minutes`: Minimum time between publications from this feed (default: 60 minutes)
-- `max_news_per_hour`: Maximum number of news items per hour from this feed (default: 10)
-
-##### Telegram Publication Checks
-Before publishing any news item to Telegram channels, the system performs two types of checks:
-
-1. **Count-based Limiting**:
-   - Counts publications from the same feed within the last 60 minutes
-   - If count >= `max_news_per_hour`, skips publication
-   - Uses data from `rss_items_telegram_bot_published` table
-
-2. **Time-based Limiting**:
-   - Checks time since last publication from the same feed
-   - If elapsed time < `cooldown_minutes`, skips publication
-
-##### How It Works
-```python
-# Example: feed with cooldown_minutes=120, max_news_per_hour=1
-# - Maximum 1 publication per 120 minutes
-# - Minimum 120 minutes between publications
-
-# Before each publication attempt:
-recent_count = get_recent_telegram_publications_count(feed_id, 60)
-if recent_count >= 1:
-    skip_publication()
-
-last_time = get_last_telegram_publication_time(feed_id)
-if last_time:
-    elapsed = now - last_time
-    if elapsed < timedelta(minutes=120):
-        skip_publication()
-```
-
-This ensures that even if multiple news items are processed simultaneously from the same feed, only the allowed number will be published to Telegram, preventing rate limit violations and maintaining quality user experience.
+1. **RSS Parser Service** (`apps/rss_parser/`) - background service for RSS feed parsing
+2. **REST API** (`apps/api/`) - web API for external integrations
+3. **Translation Services** (`services/translation/`) - translation system with caching
+4. **Test analysis** (`services/text_analysis/`) - ML-based duplicate detection and text analysis
+5. **User Management** (`services/user/`) - user and subscription management service
 
 ### Scalability and Reliability
 
@@ -255,37 +197,16 @@ CACHE_MAX_SIZE=10000
 
 ### User Services
 
-#### TelegramUserService (`services/user/telegram_user_service.py`)
-Service for managing Telegram bot users and their preferences.
-
-**Key Features:**
-- User settings management (subscriptions, language)
-- Category-based subscriber retrieval
-- User language preferences
-- Database operations for Telegram bot users
-
-**Interface:** `ITelegramUserService`
-
 #### WebUserService (`services/user/web_user_service.py`)
-Service for managing web users and Telegram account linking.
+Service for managing web users
 
 **Key Features:**
+- Database operations for web user management
 - Telegram link code generation and validation
 - Web user to Telegram user association
 - Secure linking process with expiration
-- Database operations for web user management
 
 **Interface:** `IWebUserService`
-
-#### UserManager (`services/user/user_manager.py`)
-Backward compatibility wrapper that delegates to specialized services.
-
-**Key Features:**
-- Unified interface for both Telegram and web users
-- Automatic delegation to appropriate service
-- Maintains existing API compatibility
-
-**Interface:** `IUserManager`
 
 ### Dependency Injection System
 
@@ -319,7 +240,6 @@ Hierarchy of custom exceptions for different error types:
 
 - Python 3.11 or higher
 - PostgreSQL 12+ with pgvector extension
-- Telegram Bot API token
 
 ### Installing Dependencies
 
@@ -336,21 +256,14 @@ pip install -r requirements.txt
 # Create virtual environment
 python -m venv venv
 source venv/bin/activate  # for Windows: venv\Scripts\activate
-
-# Run Telegram bot
-python bot.py
 ```
 
 ### Running via Scripts
 
 ```bash
 # Make scripts executable
-chmod +x ./scripts/run_telegram_bot.sh
 chmod +x ./scripts/run_rss_parser.sh
 chmod +x ./scripts/run_api.sh
-
-# Run Telegram bot
-./scripts/run_telegram_bot.sh
 
 # Run RSS parser
 ./scripts/run_rss_parser.sh
@@ -395,7 +308,7 @@ FireFeed provides optional AI-powered features that can be enabled or disabled b
 
 #### RSS_PARSER_CLEANUP_INTERVAL_HOURS
 - **Default**: `0`
-- **Description**: Controls how long news items, translations, telegram publications and associated media files are kept
+- **Description**: Controls how long news items, translations and associated media files are kept
 - **Impact**: When set to 0, automatic cleanup is disabled and data is stored indefinitely. When set to a positive number (e.g., 24), old data is automatically cleaned up after the specified number of hours
 - **Use case**: Enable periodic cleanup to manage storage space and database size, or disable for permanent data retention
 
@@ -425,7 +338,7 @@ FireFeed allows customization of the AI models used for translation, embeddings,
 
 For production environments, systemd services are recommended.
 
-**RSS Parser Service** (`/var/www/firefeed/data/.config/systemd/user/firefeed-telegram-bot.service`):
+**RSS Parser Service** (`/var/www/firefeed/data/.config/systemd/user/firefeed-rss-parser.service`):
 
 ```ini
 [Unit]
@@ -449,7 +362,7 @@ NoNewPrivileges=no
 WantedBy=default.target
 ```
 
-**API Service** (`/var/www/firefeed/data/.config/systemd/user/firefeed-telegram-bot.service`):
+**API Service** (`/var/www/firefeed/data/.config/systemd/user/firefeed-api.service`):
 
 ```ini
 [Unit]
@@ -471,29 +384,6 @@ NoNewPrivileges=no
 WantedBy=default.target
 ```
 
-**Telegram Bot Service** (`/var/www/firefeed/data/.config/systemd/user/firefeed-telegram-bot.service`):
-
-```ini
-[Unit]
-Description=FireFeed Telegram Bot Service
-After=network.target
-
-[Service]
-Type=simple
-WorkingDirectory=/var/www/firefeed/data/firefeed
-Environment=HOME=/var/www/firefeed/data
-ExecStart=/var/www/firefeed/data/firefeed/scripts/run_telegram_bot.sh
-Restart=on-failure
-RestartSec=10
-TimeoutStopSec=30
-KillMode=mixed
-KillSignal=SIGTERM
-SendSIGKILL=yes
-NoNewPrivileges=no
-
-[Install]
-WantedBy=default.target
-```
 
 ### Nginx Configuration
 
@@ -507,13 +397,6 @@ upstream fastapi_app {
 server {
     listen 80;
     server_name your_domain.com;
-
-    location /webhook {
-        proxy_pass http://127.0.0.1:5000/webhook;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    }
 
     location /api/ {
         proxy_pass http://fastapi_app;

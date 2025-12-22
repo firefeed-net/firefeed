@@ -6,36 +6,6 @@ firefeed/
 │   ├── __init__.py
 │   ├── rss_parser/             # RSS parser application
 │   │   └── __main__.py         # RSS parser entry point
-│   ├── telegram_bot/           # Telegram bot application
-│   │   ├── __init__.py
-│   │   ├── __main__.py         # Telegram bot entry point
-│   │   ├── bot.py              # Main bot logic
-│   │   ├── config.py           # Bot configuration
-│   │   ├── translations.py     # Bot translations
-│   │   ├── handlers/           # Telegram bot handlers
-│   │   │   ├── __init__.py
-│   │   │   ├── callback_handlers.py # Callback query handlers
-│   │   │   ├── command_handlers.py # Command handlers
-│   │   │   ├── error_handlers.py   # Error handlers
-│   │   │   └── message_handlers.py # Message handlers
-│   │   ├── models/             # Telegram bot models
-│   │   │   ├── __init__.py
-│   │   │   ├── rss_item.py     # RSS item models
-│   │   │   ├── telegram_models.py # Telegram models
-│   │   │   └── user_state.py   # User state models
-│   │   ├── services/           # Telegram bot services
-│   │   │   ├── __init__.py
-│   │   │   ├── api_service.py      # API communication service
-│   │   │   ├── database_service.py # Database service
-│   │   │   ├── rss_service.py      # RSS service
-│   │   │   ├── telegram_service.py # Telegram messaging service
-│   │   │   └── user_state_service.py # User state service
-│   │   └── utils/              # Telegram bot utilities
-│   │       ├── __init__.py
-│   │       ├── cleanup_utils.py    # Cleanup utilities
-│   │       ├── formatting_utils.py # Message formatting
-│   │       ├── keyboard_utils.py   # Keyboard utilities
-│   │       └── validation_utils.py # Validation utilities
 │   └── api/                    # FastAPI REST API application
 │       ├── __init__.py
 │       ├── __main__.py         # FastAPI entry point
@@ -128,7 +98,6 @@ firefeed/
 ├── tests/                      # Unit and integration tests
 │   ├── __init__.py
 │   ├── test_api_keys.py        # API key tests
-│   ├── test_bot.py             # Telegram bot tests
 │   ├── test_database.py        # Database tests
 │   ├── test_di_integration.py  # Dependency injection tests
 │   ├── test_email.py           # Email service tests
@@ -153,7 +122,6 @@ firefeed/
 ├── scripts/                    # Startup scripts
 │   ├── run_api.sh              # API startup script
 │   ├── run_rss_parser.sh       # RSS parser startup script
-│   └── run_telegram_bot.sh     # Telegram bot startup script
 ├── di_container.py             # Dependency injection container
 ├── requirements.txt            # Python dependencies
 ├── .dockerignore               # Docker ignore file

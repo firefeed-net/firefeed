@@ -2,12 +2,15 @@
 """
 Module for periodic database cleanup.
 
-Includes functions for deleting unverified and deleted users.
+Includes functions for deleting unverified and deleted users, and file cleanup.
 """
 
 import asyncio
 import logging
-from datetime import datetime, timedelta
+import os
+import shutil
+import time
+from datetime import datetime, timezone, timedelta
 
 from di_container import get_service
 from interfaces import IUserRepository
@@ -55,3 +58,23 @@ async def periodic_cleanup_users():
             await cleanup_users()
         except Exception as e:
             logger.error(f"Error in periodic user cleanup: {e}")
+
+
+def cleanup_temp_files(path: str):
+    """Remove temporary directory if it exists."""
+    if os.path.exists(path):
+        shutil.rmtree(path)
+
+
+def cleanup_old_files(directory: str, days: int = 7):
+    """Remove files older than specified days from directory recursively."""
+    cutoff_time = time.time() - (days * 24 * 60 * 60)
+    for root, dirs, files in os.walk(directory, topdown=False):
+        for file in files:
+            file_path = os.path.join(root, file)
+            if os.path.getmtime(file_path) < cutoff_time:
+                os.remove(file_path)
+        for dir_name in dirs:
+            dir_path = os.path.join(root, dir_name)
+            if not os.listdir(dir_path):
+                os.rmdir(dir_path)

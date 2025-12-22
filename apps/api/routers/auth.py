@@ -11,7 +11,7 @@ from di_container import get_service
 from interfaces import IUserRepository
 from apps.api.deps import create_access_token, verify_password, get_password_hash, ACCESS_TOKEN_EXPIRE_MINUTES
 from exceptions import DatabaseException
-from apps.api.email_service.sender import send_verification_email, send_registration_success_email, send_password_reset_email
+from services.email_service.sender import send_verification_email, send_registration_success_email, send_password_reset_email
 
 logger = logging.getLogger(__name__)
 

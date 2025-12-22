@@ -4,7 +4,6 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from apps.api.middleware import limiter
 from apps.api import models
 from di_container import get_service
-from interfaces import ITelegramRepository
 from apps.api.deps import get_current_user
 
 logger = logging.getLogger(__name__)
@@ -54,10 +53,10 @@ router = APIRouter(
 @limiter.limit("300/minute")
 async def generate_telegram_link_code(request: Request, current_user: dict = Depends(get_current_user)):
     from di_container import get_service
-    from interfaces import IWebUserService
+    from interfaces import IUserService
 
-    web_user_service = get_service(IWebUserService)
-    link_code = await web_user_service.generate_telegram_link_code(current_user["id"])
+    user_service = get_service(IUserService)
+    link_code = await user_service.generate_telegram_link_code(current_user["id"])
     if not link_code:
         raise HTTPException(status_code=500, detail="Failed to generate link code")
 
@@ -93,10 +92,10 @@ async def generate_telegram_link_code(request: Request, current_user: dict = Dep
 @limiter.limit("300/minute")
 async def unlink_telegram_account(request: Request, current_user: dict = Depends(get_current_user)):
     from di_container import get_service
-    from interfaces import IWebUserService
+    from interfaces import IUserService
 
-    web_user_service = get_service(IWebUserService)
-    success = await web_user_service.unlink_telegram(current_user["id"])
+    user_service = get_service(IUserService)
+    success = await user_service.unlink_telegram(current_user["id"])
     if not success:
         raise HTTPException(status_code=500, detail="Failed to unlink Telegram account")
 
@@ -132,8 +131,11 @@ async def unlink_telegram_account(request: Request, current_user: dict = Depends
 )
 @limiter.limit("300/minute")
 async def get_telegram_link_status(request: Request, current_user: dict = Depends(get_current_user)):
-    telegram_repo = get_service(ITelegramRepository)
-    link = await telegram_repo.get_telegram_link_status(current_user["id"])
+    from di_container import get_service
+    from interfaces import IUserService
+
+    user_service = get_service(IUserService)
+    link = await user_service.get_telegram_link_status(current_user["id"])
     if link:
         return models.TelegramLinkStatusResponse(
             is_linked=True, telegram_id=link.get("telegram_id"), linked_at=link.get("linked_at")
