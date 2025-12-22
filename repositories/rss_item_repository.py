@@ -14,6 +14,64 @@ class RSSItemRepository(IRSSItemRepository):
     def __init__(self, db_pool):
         self.db_pool = db_pool
 
+    async def save_rss_item(self, rss_item: Dict[str, Any], feed_id: int) -> Optional[str]:
+        """Save RSS item to database"""
+        try:
+            if feed_id is None:
+                logger.error(f"[REPO] Feed ID is None for rss_item {rss_item.get('id', 'unknown')}")
+                return None
+
+            async with self.db_pool.acquire() as conn:
+                async with conn.cursor() as cur:
+                    news_id = rss_item["id"]
+                    short_id = news_id[:20]
+
+                    title = rss_item["title"][:255]
+                    content = rss_item["content"]
+                    original_language = rss_item["lang"]
+                    image_filename = rss_item.get("image_filename")
+                    video_filename = rss_item.get("video_filename")
+                    category_name = rss_item["category"]
+                    source_name = rss_item["source"]
+                    source_url = rss_item["link"]
+
+                    # Get category_id
+                    await cur.execute("SELECT id FROM categories WHERE name = %s", (category_name,))
+                    cat_result = await cur.fetchone()
+                    if not cat_result:
+                        logger.warning(f"[REPO] Category '{category_name}' not found")
+                        return None
+                    category_id = cat_result[0]
+
+                    # Insert RSS item
+                    query = """
+                    INSERT INTO published_news_data
+                    (news_id, original_title, original_content, original_language, category_id,
+                     image_filename, video_filename, rss_feed_id, source_url, created_at, updated_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), NOW())
+                    ON CONFLICT (news_id) DO UPDATE SET
+                    original_title = EXCLUDED.original_title,
+                    original_content = EXCLUDED.original_content,
+                    original_language = EXCLUDED.original_language,
+                    category_id = EXCLUDED.category_id,
+                    image_filename = EXCLUDED.image_filename,
+                    video_filename = EXCLUDED.video_filename,
+                    rss_feed_id = EXCLUDED.rss_feed_id,
+                    source_url = EXCLUDED.source_url,
+                    updated_at = NOW()
+                    """
+                    await cur.execute(query, (
+                        news_id, title, content, original_language, category_id,
+                        image_filename, video_filename, feed_id, source_url
+                    ))
+
+                    logger.info(f"[REPO] RSS item saved: {short_id}")
+                    return news_id
+
+        except Exception as e:
+            logger.error(f"[REPO] Error saving RSS item: {e}")
+            raise DatabaseException(f"Failed to save RSS item: {str(e)}")
+
 
     async def get_all_rss_items_list(self, limit: int, offset: int, category_id: Optional[List[int]] = None,
                                      source_id: Optional[List[int]] = None, from_date: Optional[datetime] = None,
@@ -221,7 +279,8 @@ class RSSItemRepository(IRSSItemRepository):
 
                     await cur.execute(query, query_params)
                     results = []
-                    async for row in cur:
+                    rows = await cur.fetchall()
+                    for row in rows:
                         results.append(row)
 
                     # Get column names
@@ -315,7 +374,8 @@ class RSSItemRepository(IRSSItemRepository):
 
                     await cur.execute(query, query_params)
                     results = []
-                    async for row in cur:
+                    rows = await cur.fetchall()
+                    for row in rows:
                         results.append(row)
 
                     # Get column names
@@ -335,7 +395,8 @@ class RSSItemRepository(IRSSItemRepository):
                     (user_id,)
                 )
                 categories = []
-                async for row in cur:
+                rows = await cur.fetchall()
+                for row in rows:
                     categories.append({"id": row[0]})
                 return categories
 

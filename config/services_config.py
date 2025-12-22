@@ -193,30 +193,6 @@ class RedisConfig:
 
 
 @dataclass
-class TelegramBotConfig:
-    """Configuration for Telegram bot job queue"""
-    rss_monitor_interval: int = 180  # 3 minutes
-    rss_monitor_first_delay: int = 10  # 10 seconds
-    rss_monitor_misfire_grace_time: int = 600  # 10 minutes
-    user_cleanup_interval: int = 3600  # 1 hour
-    user_cleanup_first_delay: int = 60  # 1 minute
-    send_locks_cleanup_interval: int = 3600  # 1 hour
-    send_locks_cleanup_first_delay: int = 120  # 2 minutes
-
-    @classmethod
-    def from_env(cls) -> 'TelegramBotConfig':
-        return cls(
-            rss_monitor_interval=int(os.getenv('BOT_RSS_MONITOR_INTERVAL', '180')),
-            rss_monitor_first_delay=int(os.getenv('BOT_RSS_MONITOR_FIRST_DELAY', '10')),
-            rss_monitor_misfire_grace_time=int(os.getenv('BOT_RSS_MONITOR_MISFIRE_GRACE_TIME', '600')),
-            user_cleanup_interval=int(os.getenv('BOT_USER_CLEANUP_INTERVAL', '3600')),
-            user_cleanup_first_delay=int(os.getenv('BOT_USER_CLEANUP_FIRST_DELAY', '60')),
-            send_locks_cleanup_interval=int(os.getenv('BOT_SEND_LOCKS_CLEANUP_INTERVAL', '3600')),
-            send_locks_cleanup_first_delay=int(os.getenv('BOT_SEND_LOCKS_CLEANUP_FIRST_DELAY', '120'))
-        )
-
-
-@dataclass
 class ServiceConfig:
     """Main service configuration"""
     database: DatabaseConfig
@@ -226,7 +202,6 @@ class ServiceConfig:
     cache: CacheConfig
     queue: QueueConfig
     deduplication: DeduplicationConfig
-    telegram_bot: TelegramBotConfig
     # Additional config keys
     jwt_secret_key: str = "your-secret-key"
     jwt_algorithm: str = "HS256"
@@ -237,16 +212,7 @@ class ServiceConfig:
     http_videos_root_dir: str = ""
     redis_config: Dict[str, Any] = None
     site_api_key: Optional[str] = None
-    bot_api_key: Optional[str] = None
-    bot_token: Optional[str] = None
     api_base_url: str = "http://127.0.0.1:8000/api/v1"
-    webhook_listen: str = "127.0.0.1"
-    webhook_port: int = 5000
-    webhook_url_path: str = "webhook"
-    webhook_url: str = ""
-    channel_ids: Dict[str, str] = None
-    webhook_config: Dict[str, Any] = None
-    channel_categories: list = None
     user_data_ttl_seconds: int = 86400
     rss_parser_media_type_priority: str = "image"
     rss_parser_cleanup_interval_hours: int = 0  # 0 = disabled, >0 = cleanup interval in hours
@@ -261,23 +227,9 @@ class ServiceConfig:
                 'password': self.redis.password,
                 'db': self.redis.db
             }
-        if self.webhook_config is None:
-            self.webhook_config = {
-                'listen': self.webhook_listen,
-                'port': self.webhook_port,
-                'webhook_url': self.webhook_url,
-                'url_path': self.webhook_url_path
-            }
 
     @classmethod
     def from_env(cls) -> 'ServiceConfig':
-        # Parse CHANNEL_IDS as JSON, with default values if not provided
-        channel_ids_str = os.getenv('CHANNEL_IDS', '{"ru": "-1002584789230", "de": "-1002959373215", "fr": "-1002910849909", "en": "-1003035894895"}')
-        channel_ids = json.loads(channel_ids_str)
-
-        # Parse CHANNEL_CATEGORIES as JSON, with default values if not provided
-        channel_categories_str = os.getenv('CHANNEL_CATEGORIES', '["world", "technology", "lifestyle", "politics", "economy", "autos", "sports"]')
-        channel_categories = json.loads(channel_categories_str)
 
         return cls(
             database=DatabaseConfig.from_env(),
@@ -287,7 +239,6 @@ class ServiceConfig:
             cache=CacheConfig.from_env(),
             queue=QueueConfig.from_env(),
             deduplication=DeduplicationConfig.from_env(),
-            telegram_bot=TelegramBotConfig.from_env(),
             jwt_secret_key=os.getenv('JWT_SECRET_KEY', 'your-secret-key'),
             jwt_algorithm=os.getenv('JWT_ALGORITHM', 'HS256'),
             jwt_access_token_expire_minutes=int(os.getenv('JWT_ACCESS_TOKEN_EXPIRE_MINUTES', '30')),
@@ -296,15 +247,7 @@ class ServiceConfig:
             videos_root_dir=os.getenv('VIDEOS_ROOT_DIR', ''),
             http_videos_root_dir=os.getenv('HTTP_VIDEOS_ROOT_DIR', ''),
             site_api_key=os.getenv('SITE_API_KEY'),
-            bot_api_key=os.getenv('BOT_API_KEY'),
-            bot_token=os.getenv('BOT_TOKEN'),
             api_base_url=os.getenv('API_BASE_URL', 'http://127.0.0.1:8000/api/v1'),
-            webhook_listen=os.getenv('WEBHOOK_LISTEN', '127.0.0.1'),
-            webhook_port=int(os.getenv('WEBHOOK_PORT', '5000')),
-            webhook_url_path=os.getenv('WEBHOOK_URL_PATH', 'webhook'),
-            webhook_url=os.getenv('WEBHOOK_URL', ''),
-            channel_ids=channel_ids,
-            channel_categories=channel_categories,
             user_data_ttl_seconds=int(os.getenv('USER_DATA_TTL_SECONDS', '86400')),
             rss_parser_media_type_priority=os.getenv('RSS_PARSER_MEDIA_TYPE_PRIORITY', 'image'),
             default_user_agent=os.getenv('DEFAULT_USER_AGENT', 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 FireFeed/1.0')

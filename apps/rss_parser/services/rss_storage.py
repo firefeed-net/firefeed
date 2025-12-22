@@ -3,6 +3,7 @@ import logging
 from typing import Dict, Any, Optional, List
 from datetime import datetime, timezone, timedelta
 from interfaces import IRSSStorage, IDatabasePool
+from repositories import CategoryRepository, SourceRepository
 
 logger = logging.getLogger(__name__)
 
@@ -35,12 +36,11 @@ class RSSStorage(IRSSStorage):
                     source_url = rss_item["link"]
 
                     # Get category_id
-                    await cur.execute("SELECT id FROM categories WHERE name = %s", (category_name,))
-                    cat_result = await cur.fetchone()
-                    if not cat_result:
+                    category_repo = CategoryRepository(self.db_pool)
+                    category_id = await category_repo.get_category_id_by_name(category_name)
+                    if category_id is None:
                         logger.warning(f"[STORAGE] Category '{category_name}' not found")
                         return None
-                    category_id = cat_result[0]
 
                     # Insert RSS item
                     query = """
@@ -317,25 +317,18 @@ class RSSStorage(IRSSStorage):
             async with self.db_pool.acquire() as conn:
                 async with conn.cursor() as cur:
                     # Get category_id
-                    await cur.execute("SELECT id FROM categories WHERE name = %s", (category_name,))
-                    cat_result = await cur.fetchone()
-                    if not cat_result:
+                    category_repo = CategoryRepository(self.db_pool)
+                    category_id = await category_repo.get_category_id_by_name(category_name)
+                    if category_id is None:
                         logger.error(f"[STORAGE] Category '{category_name}' not found")
                         return False
-                    category_id = cat_result[0]
 
-                    # Get or create source
-                    await cur.execute("SELECT id FROM sources WHERE name = %s", (source_name,))
-                    source_result = await cur.fetchone()
-                    if source_result:
-                        source_id = source_result[0]
-                    else:
-                        # Create new source
-                        await cur.execute(
-                            "INSERT INTO sources (name, created_at) VALUES (%s, NOW()) RETURNING id",
-                            (source_name,)
-                        )
-                        source_id = (await cur.fetchone())[0]
+                    # Get source_id
+                    source_repo = SourceRepository(self.db_pool)
+                    source_id = await source_repo.get_source_id_by_alias(source_name)
+                    if source_id is None:
+                        logger.error(f"[STORAGE] Source '{source_name}' not found")
+                        return False
 
                     # Insert RSS feed
                     query = """

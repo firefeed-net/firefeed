@@ -98,7 +98,6 @@ firefeed/
 ├── tests/                      # Unit and integration tests
 │   ├── __init__.py
 │   ├── test_api_keys.py        # API key tests
-│   ├── test_bot.py             # Telegram bot tests
 │   ├── test_database.py        # Database tests
 │   ├── test_di_integration.py  # Dependency injection tests
 │   ├── test_email.py           # Email service tests
@@ -123,7 +122,6 @@ firefeed/
 ├── scripts/                    # Startup scripts
 │   ├── run_api.sh              # API startup script
 │   ├── run_rss_parser.sh       # RSS parser startup script
-│   └── run_telegram_bot.sh     # Telegram bot startup script
 ├── di_container.py             # Dependency injection container
 ├── requirements.txt            # Python dependencies
 ├── .dockerignore               # Docker ignore file

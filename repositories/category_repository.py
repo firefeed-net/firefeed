@@ -25,7 +25,8 @@ class CategoryRepository(ICategoryRepository):
                 await cur.execute(query, params)
 
                 categories = []
-                async for row in cur:
+                rows = await cur.fetchall()
+                for row in rows:
                     categories.append({"id": row[0], "name": row[1]})
 
                 return categories
@@ -33,9 +34,9 @@ class CategoryRepository(ICategoryRepository):
     async def update_user_categories(self, user_id: int, category_ids: List[int]) -> bool:
         async with self.db_pool.acquire() as conn:
             async with conn.cursor() as cur:
-                await cur.execute("BEGIN")
-
                 try:
+                    await cur.execute("BEGIN")
+
                     # Delete existing categories
                     await cur.execute("DELETE FROM user_categories WHERE user_id = %s", (user_id,))
 
@@ -63,7 +64,8 @@ class CategoryRepository(ICategoryRepository):
                 await cur.execute("SELECT id FROM categories")
 
                 ids = []
-                async for row in cur:
+                rows = await cur.fetchall()
+                for row in rows:
                     ids.append(row[0])
 
                 return ids

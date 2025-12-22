@@ -19,8 +19,12 @@ class TestDIIntegration:
         """Test that DI container initializes without errors"""
         # This should not raise any exceptions
         from unittest.mock import patch
-        with patch('di_container.setup_di_container'):
-            setup_di_container()
+        
+        def mock_setup_di_container():
+            return None
+        
+        with patch('di_container.setup_di_container', return_value=mock_setup_di_container()):
+            await setup_di_container()
 
     async def test_repository_interfaces_registration(self):
         """Test that all repository interfaces are properly registered"""

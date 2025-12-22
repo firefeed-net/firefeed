@@ -1,8 +1,10 @@
 # services/maintenance_service.py
 import logging
+import os
 from typing import Dict, Any
 from interfaces import IMaintenanceService
 from exceptions import DatabaseException, ServiceUnavailableException
+from config.services_config import get_service_config
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +50,6 @@ class MaintenanceService(IMaintenanceService):
         """Atomic full cleanup of old data by age: news, translations, publications, files"""
         try:
             from repositories.rss_item_repository import RSSItemRepository
-            import os
 
             # Get repository via DI or create instance
             rss_repo = RSSItemRepository(self.db_pool)
@@ -103,5 +104,8 @@ class MaintenanceService(IMaintenanceService):
             logger.info(f"[CLEANUP] Atomic full cleanup completed successfully: {result}")
             return result
 
+        except DatabaseException:
+            # Re-raise DatabaseException as-is since it's an expected business logic error
+            raise
         except Exception as e:
             raise ServiceUnavailableException("maintenance", f"Critical error during atomic cleanup: {str(e)}")

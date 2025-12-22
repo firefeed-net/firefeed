@@ -254,6 +254,9 @@ async def get_rss_item_by_id(request: Request, rss_item_id: str, current_user: d
             "created_at": format_datetime(row_dict.get("created_at")),
             "translations": translations,
         }
+    except HTTPException:
+        # Re-raise HTTPException without wrapping it
+        raise
     except Exception as e:
         logger.error(f"[API] Error executing query in get_rss_item_by_id: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")

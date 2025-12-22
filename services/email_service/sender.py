@@ -83,7 +83,7 @@ class EmailSender:
                 timeout=10,
             )
 
-            duration = (datetime.utcnow() - start_ts).total_seconds()
+            duration = (datetime.now(timezone.utc) - start_ts).total_seconds()
             if duration > 10:
                 logger.warning(f"[EmailSender] Password reset email slow ({duration:.3f}s) to {to_email}")
             else:

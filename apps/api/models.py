@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, ConfigDict
 from typing import List, Optional, Generic, TypeVar, Dict, Set
 from datetime import datetime
 
@@ -28,8 +28,7 @@ class RSSItem(BaseModel):
     feed_id: Optional[int] = None  # RSS feed ID for grouping and processing
     translations: Optional[Dict[str, LanguageTranslation]] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class CategoryItem(BaseModel):
@@ -87,8 +86,7 @@ class UserResponse(UserBase):
     created_at: datetime
     updated_at: Optional[datetime] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class Token(BaseModel):
@@ -159,8 +157,7 @@ class UserRSSFeedResponse(UserRSSFeedBase):
     created_at: datetime
     updated_at: Optional[datetime] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class UserCategoriesUpdate(BaseModel):
@@ -208,8 +205,7 @@ class UserApiKeyResponse(UserApiKeyBase):
     created_at: datetime
     expires_at: Optional[datetime] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class UserApiKeyGenerateResponse(BaseModel):
@@ -219,3 +215,30 @@ class UserApiKeyGenerateResponse(BaseModel):
     limits: Dict[str, int]
     created_at: datetime
     expires_at: Optional[datetime] = None
+
+class APIKeyCreate(BaseModel):
+    name: str
+    user_id: int
+
+class APIKeyResponse(BaseModel):
+    id: int
+    name: str
+    key: str
+    user_id: int
+    created_at: str
+
+class RSSFeedCreate(BaseModel):
+    url: str
+    name: str
+    user_id: int
+
+class RSSFeedResponse(BaseModel):
+    id: int
+    url: str
+    name: str
+    user_id: int
+    created_at: str
+
+class TelegramWebhook(BaseModel):
+    update_id: int
+    message: Optional[dict] = None

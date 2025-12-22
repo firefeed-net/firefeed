@@ -258,8 +258,9 @@ async def setup_di_container() -> DIContainer:
     translator_queue.set_translator(translation_service)
 
     di_container.register_factory(ITranslationCache, lambda: TranslationCache(
-        default_ttl=getattr(config.cache, 'default_ttl', 3600),
-        max_size=getattr(config.cache, 'max_cache_size', 10000)
+        cache_ttl=getattr(config.cache, 'default_ttl', 3600),
+        max_cache_size=getattr(config.cache, 'max_cache_size', 10000),
+        enable_cleanup=True
     ))
 
     di_container.register_factory(IDuplicateDetector, lambda: FireFeedDuplicateDetector(di_container.resolve(IRSSItemRepository)))

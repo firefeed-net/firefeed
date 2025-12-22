@@ -32,9 +32,34 @@ class IRSSFeedRepository(ABC):
         """Delete user RSS feed"""
         pass
 
+    @abstractmethod
+    async def get_all_active_feeds(self) -> List[Dict[str, Any]]:
+        """Get all active system RSS feeds"""
+        pass
+
+    @abstractmethod
+    async def get_feeds_by_category(self, category_name: str) -> List[Dict[str, Any]]:
+        """Get feeds by category name"""
+        pass
+
+    @abstractmethod
+    async def get_feeds_by_language(self, lang: str) -> List[Dict[str, Any]]:
+        """Get feeds by language"""
+        pass
+
+    @abstractmethod
+    async def get_feeds_by_source(self, source_name: str) -> List[Dict[str, Any]]:
+        """Get feeds by source name"""
+        pass
+
 
 class IRSSItemRepository(ABC):
     """Interface for RSS item repository"""
+
+    @abstractmethod
+    async def save_rss_item(self, rss_item: Dict[str, Any], feed_id: int) -> Optional[str]:
+        """Save RSS item to database"""
+        pass
 
     @abstractmethod
     async def get_all_rss_items_list(self, limit: int, offset: int, category_id: Optional[List[int]] = None,

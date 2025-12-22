@@ -42,7 +42,8 @@ class ApiKeyRepository(IApiKeyRepository):
                     )
 
                     keys = []
-                    async for row in cur:
+                    rows = await cur.fetchall()
+                    for row in rows:
                         keys.append({
                             "id": row[0], "key": row[1], "limits": row[2],
                             "is_active": row[3], "created_at": row[4], "expires_at": row[5]

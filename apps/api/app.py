@@ -4,6 +4,7 @@ import os
 import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from contextlib import asynccontextmanager
 
 from di_container import get_service, setup_di_container
 from interfaces import IUserRepository
@@ -23,6 +24,31 @@ from config.logging_config import setup_logging
 
 setup_logging()
 logger = logging.getLogger(__name__)
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    # Setup DI container
+    await setup_di_container()
+    
+    # Start background rss items checking task
+    asyncio.create_task(check_for_new_rss_items())
+    logger.info("[Startup] RSS items checking task started")
+    
+    # Start background user cleanup task
+    asyncio.create_task(periodic_cleanup_users())
+    logger.info("[Startup] User cleanup task started")
+    
+    yield
+    
+    # Shutdown
+    try:
+        user_repo = get_service(IUserRepository)
+        await user_repo.db_pool.close()
+        logger.info("[Shutdown] Database pool closed")
+    except Exception as e:
+        logger.error(f"[Shutdown] Error closing DB pool: {e}")
+
 
 app = FastAPI(
     title="FireFeed API",
@@ -79,6 +105,7 @@ app = FastAPI(
         "name": "MIT License",
         "url": "https://opensource.org/licenses/MIT",
     },
+    lifespan=lifespan
 )
 
 # Middleware & rate limiting
@@ -120,30 +147,6 @@ app.include_router(rss_items_router.router)
 app.include_router(rss_router.router)
 app.include_router(api_keys_router.router)
 app.include_router(ws_router)
-
-
-@app.on_event("startup")
-async def startup_event():
-    # Setup DI container
-    await setup_di_container()
-
-    # Start background rss items checking task
-    asyncio.create_task(check_for_new_rss_items())
-    logger.info("[Startup] RSS items checking task started")
-
-    # Start background user cleanup task
-    asyncio.create_task(periodic_cleanup_users())
-    logger.info("[Startup] User cleanup task started")
-
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    try:
-        user_repo = get_service(IUserRepository)
-        await user_repo.db_pool.close()
-        logger.info("[Shutdown] Database pool closed")
-    except Exception as e:
-        logger.error(f"[Shutdown] Error closing DB pool: {e}")
 
 
 if __name__ == "__main__":

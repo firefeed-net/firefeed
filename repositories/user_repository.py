@@ -306,7 +306,8 @@ class UserRepository(IUserRepository):
                 )
 
                 subscribers = []
-                async for row in cur:
+                rows = await cur.fetchall()
+                for row in rows:
                     user_id, subscriptions_json, language = row
 
                     try:
@@ -338,7 +339,8 @@ class UserRepository(IUserRepository):
             async with conn.cursor() as cur:
                 await cur.execute("SELECT user_id FROM user_preferences")
                 users = []
-                async for row in cur:
+                rows = await cur.fetchall()
+                for row in rows:
                     users.append(row[0])
                 return users
 

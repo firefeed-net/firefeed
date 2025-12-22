@@ -22,13 +22,17 @@ class TestDatabasePool:
 
     async def test_close_db_pool_success(self):
         mock_config = MagicMock()
-        mock_config.get = MagicMock(return_value=AsyncMock())
+        async def mock_close_db_pool():
+            pass
+        mock_config.get = MagicMock(return_value=mock_close_db_pool)
         with patch.object(di_container, 'resolve', return_value=mock_config):
             await close_db_pool()
 
     async def test_close_db_pool_failure(self):
         mock_config = MagicMock()
-        mock_config.get = AsyncMock(side_effect=Exception("DB error"))
+        async def mock_get_close_db_pool():
+            raise Exception("DB error")
+        mock_config.get = MagicMock(return_value=mock_get_close_db_pool)
         with patch.object(di_container, 'resolve', return_value=mock_config):
             await close_db_pool()
 
