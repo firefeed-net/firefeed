@@ -16,7 +16,7 @@ aiopg==1.4.0
 async-timeout==4.0.3
 pgvector==0.4.2
 scikit-learn==1.7.1
-scipy==1.16.1
+scipy==1.16.3
 sentence-transformers==5.1.0
 threadpoolctl==3.6.0
 nltk==3.9.1
