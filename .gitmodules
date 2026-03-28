@@ -1,0 +1,9 @@
+[submodule "firefeed-api"]
+	path = firefeed-api
+	url = https://github.com/firefeed-net/firefeed-api.git
+[submodule "firefeed-rss-parser"]
+	path = firefeed-rss-parser
+	url = https://github.com/firefeed-net/firefeed-rss-parser.git
+[submodule "firefeed-telegram-bot"]
+	path = firefeed-telegram-bot
+	url = https://github.com/firefeed-net/firefeed-telegram-bot.git

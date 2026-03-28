@@ -1,9 +1,9 @@
-# FireFeed - AI-powered RSS-parser and agregator
+# FireFeed - AI-powered RSS-parser and aggregator
 
 [![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://www.python.org/)
 [![Docker](https://img.shields.io/badge/Docker-Supported-blue.svg)](https://www.docker.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Tests](https://img.shields.io/badge/Tests-Passing-green.svg)](https://github.com/yuremweiland/firefeed/actions)
+[![Tests](https://img.shields.io/badge/Tests-Passing-green.svg)](https://github.com/firefeed-net/firefeed/actions)
 
 A modern RSS-parser with AI support for automatic collection, processing, and distribution of news in multiple languages.
 
@@ -15,11 +15,12 @@ A modern RSS-parser with AI support for automatic collection, processing, and di
 - [Key Features](#key-features)
 - [Technology Stack](#technology-stack)
 - [Architecture](#architecture)
+- [Microservices](#microservices)
 - [Installation and Setup](#installation-and-setup)
 - [Configuration](#configuration)
 - [API Documentation](#api-documentation)
 - [Development](#development)
-- [Project Structure](PROJECT_STRUCTURE.md)
+- [Project Structure](#project-structure)
 - [License](LICENSE)
 
 ## Project Overview
@@ -88,66 +89,35 @@ FireFeed is a high-performance parsing system for automatic collection, processi
 
 ## Architecture
 
-The project consists of several key components:
+FireFeed uses a **microservices architecture** with three independent services that communicate via HTTP APIs:
 
-1. **Telegram Bot** (`apps/telegram_bot/`) - main user interaction interface
-2. **RSS Parser Service** (`apps/rss_parser/`) - background service for RSS feed parsing
-3. **REST API** (`apps/api/`) - web API for external integrations
-4. **Translation Services** (`services/translation/`) - translation system with caching
-5. **Test analysis** (`services/text_analysis/`) - ML-based duplicate detection and text analysis
-6. **User Management** (`services/user/`) - user and subscription management service
-
-### Telegram Bot
-
-The Telegram bot serves as the primary interface for users to interact with the FireFeed system. It provides personalized news delivery, subscription management, and multilingual support.
-
-#### Key Features
-
-- **Personalized News Delivery**: Users receive news based on their category subscriptions in their preferred language
-- **Multilingual Interface**: Full localization support for English, Russian, German, and French
-- **Subscription Management**: Easy category-based subscription configuration through inline keyboards
-- **Automatic Publishing**: News items are automatically published to configured Telegram channels
-
-#### Publication Rate Limiting
-
-To prevent spam and ensure fair usage, the bot implements sophisticated rate limiting for news publications:
-
-##### Feed-Level Limits
-Each RSS feed has configurable limits:
-- `cooldown_minutes`: Minimum time between publications from this feed (default: 60 minutes)
-- `max_news_per_hour`: Maximum number of news items per hour from this feed (default: 10)
-
-##### Telegram Publication Checks
-Before publishing any news item to Telegram channels, the system performs two types of checks:
-
-1. **Count-based Limiting**:
-   - Counts publications from the same feed within the last 60 minutes
-   - If count >= `max_news_per_hour`, skips publication
-   - Uses data from `rss_items_telegram_bot_published` table
-
-2. **Time-based Limiting**:
-   - Checks time since last publication from the same feed
-   - If elapsed time < `cooldown_minutes`, skips publication
-
-##### How It Works
-```python
-# Example: feed with cooldown_minutes=120, max_news_per_hour=1
-# - Maximum 1 publication per 120 minutes
-# - Minimum 120 minutes between publications
-
-# Before each publication attempt:
-recent_count = get_recent_telegram_publications_count(feed_id, 60)
-if recent_count >= 1:
-    skip_publication()
-
-last_time = get_last_telegram_publication_time(feed_id)
-if last_time:
-    elapsed = now - last_time
-    if elapsed < timedelta(minutes=120):
-        skip_publication()
 ```
-
-This ensures that even if multiple news items are processed simultaneously from the same feed, only the allowed number will be published to Telegram, preventing rate limit violations and maintaining quality user experience.
+┌─────────────────────────────────────────────────────────────────┐
+│                        FireFeed Platform                        │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  ┌─────────────────┐  ┌──────────────────┐  ┌─────────────────┐ │
+│  │  Telegram Bot   │  │   RSS Parser     │  │   REST API      │ │
+│  │                 │  │                  │  │                 │ │
+│  │ • User Interface│  │ • Feed Parsing   │  │ • Public API    │ │
+│  │ • Notifications │  │ • Media Extract  │  │ • Internal API  │ │
+│  │ • Subscriptions │  │ • Duplicate Det  │  │ • Auth & Users  │ │
+│  │ • Multilingual  │  │ • API Integration│  │ • Categories    │ │
+│  └────────┬────────┘  └────────┬─────────┘  └────────┬────────┘ │
+│           │                    │                     │          │
+│           └────────────────────┼─────────────────────┘          │
+│                                │                                │
+│                    ┌───────────▼────────────┐                   │
+│                    │   Shared Services      │                   │
+│                    │                        │                   │
+│                    │ • PostgreSQL Database  │                   │
+│                    │ • Redis Cache          │                   │
+│                    │ • ML Models            │                   │
+│                    │ • Translation          │                   │
+│                    └────────────────────────┘                   │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
 
 ### Scalability and Reliability
 
@@ -156,162 +126,77 @@ This ensures that even if multiple news items are processed simultaneously from 
 - **Performance monitoring** with detailed telemetry
 - **Graceful shutdown** for proper service termination
 
-## Service Architecture
+## Microservices
 
-The project uses modern service-oriented architecture with dependency injection to ensure high testability and maintainability.
+### 1. FireFeed API ([firefeed-api](https://github.com/firefeed-net/firefeed-api.git))
 
-### RSS Services
-
-#### RSSFetcher (`apps/rss_parser/services/rss_fetcher.py`)
-Service for fetching and parsing RSS feeds.
+REST API service for external integrations and internal microservice communication.
 
 **Key Features:**
-- Asynchronous RSS feed fetching with semaphore support for concurrency control
-- XML structure parsing with extraction of titles, content, and metadata
-- Duplicate detection through built-in detector
+- Public REST API for external consumers
+- Internal API for microservice communication
+- JWT authentication and user management
+- RSS feed and item management
+- Category and source organization
+- Translation and media services
+- Health checks and Prometheus metrics
+
+**Tech Stack:** FastAPI, PostgreSQL, Redis, SQLAlchemy
+
+**Documentation:** [firefeed-api/README.md](https://github.com/firefeed-net/firefeed-api/blob/main/README.md)
+
+### 2. FireFeed RSS Parser ([firefeed-rss-parser](https://github.com/firefeed-net/firefeed-rss-parser.git))
+
+Background service for RSS feed parsing and processing.
+
+**Key Features:**
+- Asynchronous RSS/Atom feed parsing
 - Media content extraction (images, videos)
+- Duplicate detection using semantic analysis
+- Integration with FireFeed API
+- Concurrent feed processing
+- Health monitoring and metrics
 
-**Configuration:**
-```env
-RSS_MAX_CONCURRENT_FEEDS=10
-RSS_MAX_ENTRIES_PER_FEED=50
-RSS_PARSER_MIN_ITEM_TITLE_WORDS_LENGTH=0
-RSS_PARSER_MIN_ITEM_CONTENT_WORDS_LENGTH=0
+**Tech Stack:** Python asyncio, aiohttp, feedparser
+
+**Documentation:** [firefeed-rss-parser/README.md](https://github.com/firefeed-net/firefeed-rss-parser/blob/main/README.md)
+
+### 3. FireFeed Telegram Bot ([firefeed-telegram-bot](https://github.com/firefeed-net/firefeed-telegram-bot.git))
+
+Telegram bot for user interaction and news notifications.
+
+**Key Features:**
+- Personalized news delivery
+- Category-based subscriptions
+- Multilingual interface (EN, RU, DE, FR)
+- Automatic news publishing to channels
+- Rate limiting and spam prevention
+- User management and preferences
+
+**Tech Stack:** aiogram, Redis, PostgreSQL
+
+**Documentation:** [firefeed-telegram-bot/README.md](https://github.com/firefeed-net/firefeed-telegram-bot/blob/main/README.md)
+
+### Service Communication
+
+Services communicate via HTTP REST APIs:
+
+```
+Telegram Bot ──► FireFeed API ◄── RSS Parser
+     │                │                │
+     │                │                │
+     └────────────────┴────────────────┘
+                      │
+              ┌───────▼───────┐
+              │   Database    │
+              │   & Cache     │
+              └───────────────┘
 ```
 
-#### RSSValidator (`apps/rss_parser/services/rss_validator.py`)
-Service for RSS feed validation.
-
-**Key Features:**
-- URL availability checking with timeouts
-- Validation result caching
-- RSS structure correctness determination
-
-**Configuration:**
-```env
-RSS_VALIDATION_CACHE_TTL=300
-RSS_REQUEST_TIMEOUT=15
-```
-
-#### RSSStorage (`apps/rss_parser/services/rss_storage.py`)
-Service for RSS data database operations.
-
-**Key Features:**
-- Saving RSS items to database
-- News translation management
-- RSS feed settings retrieval (cooldowns, limits)
-
-#### MediaExtractor (`apps/rss_parser/services/media_extractor.py`)
-Service for extracting media content from RSS items.
-
-**Key Features:**
-- Image URL extraction from various RSS formats (media:thumbnail, enclosure)
-- Video URL extraction with size checking
-- Atom and RSS format support
-
-### Translation Services
-
-#### ModelManager (`services/translation/model_manager.py`)
-ML model manager for translations.
-
-**Key Features:**
-- Lazy loading of translation models
-- In-memory model caching with automatic cleanup
-- GPU/CPU memory management
-
-**Configuration:**
-```env
-TRANSLATION_MAX_CACHED_MODELS=15
-TRANSLATION_MODEL_CLEANUP_INTERVAL=1800
-TRANSLATION_DEVICE=cpu
-```
-
-#### TranslationService (`services/translation/translation_service.py`)
-Main service for performing translations.
-
-**Key Features:**
-- Batch translation processing for performance optimization
-- Text preprocessing and postprocessing
-- Translation concurrency management
-
-**Configuration:**
-```env
-TRANSLATION_MAX_CONCURRENT=3
-```
-
-#### TranslationCache (`services/translation/translation_cache.py`)
-Translation result caching.
-
-**Key Features:**
-- Translation caching with TTL
-- Cache size limitation
-- Automatic cleanup of expired entries
-
-**Configuration:**
-```env
-CACHE_DEFAULT_TTL=3600
-CACHE_MAX_SIZE=10000
-```
-
-### User Services
-
-#### TelegramUserService (`services/user/telegram_user_service.py`)
-Service for managing Telegram bot users and their preferences.
-
-**Key Features:**
-- User settings management (subscriptions, language)
-- Category-based subscriber retrieval
-- User language preferences
-- Database operations for Telegram bot users
-
-**Interface:** `ITelegramUserService`
-
-#### WebUserService (`services/user/web_user_service.py`)
-Service for managing web users and Telegram account linking.
-
-**Key Features:**
-- Telegram link code generation and validation
-- Web user to Telegram user association
-- Secure linking process with expiration
-- Database operations for web user management
-
-**Interface:** `IWebUserService`
-
-#### UserManager (`services/user/user_manager.py`)
-Backward compatibility wrapper that delegates to specialized services.
-
-**Key Features:**
-- Unified interface for both Telegram and web users
-- Automatic delegation to appropriate service
-- Maintains existing API compatibility
-
-**Interface:** `IUserManager`
-
-### Dependency Injection System
-
-#### DI Container (`di_container.py`)
-Dependency injection container for service management.
-
-**Key Features:**
-- Service and factory registration
-- Automatic dependency resolution
-- Service lifecycle management
-
-#### Service Configuration (`config/services_config.py`)
-Centralized configuration of all services through environment variables.
-
-### Interfaces (`interfaces/`)
-Abstract interfaces for all services, providing:
-- **Dependency Inversion Principle**
-- **Easy testing** through mock objects
-- **Implementation replacement flexibility**
-
-### Error Handling (`exceptions/`)
-Hierarchy of custom exceptions for different error types:
-- `RSSException` - RSS processing errors
-- `TranslationException` - translation errors
-- `DatabaseException` - database errors
-- `CacheException` - caching errors
+- **Telegram Bot** → **FireFeed API**: User data, subscriptions, RSS items
+- **RSS Parser** → **FireFeed API**: Feed management, item storage
+- **FireFeed API** → **Database**: Persistent storage
+- **All Services** → **Redis**: Caching and session management
 
 ## Installation and Setup
 
@@ -319,204 +204,252 @@ Hierarchy of custom exceptions for different error types:
 
 - Python 3.11 or higher
 - PostgreSQL 12+ with pgvector extension
+- Redis 6+
+- Docker & Docker Compose (recommended)
 - Telegram Bot API token
 
-### Installing Dependencies
+### Quick Start with Docker Compose
+
+The easiest way to run all services:
 
 ```bash
-pip install -r requirements.txt
+# Clone the repository with submodules
+git clone --recurse-submodules https://github.com/firefeed-net/firefeed.git
+cd firefeed
+
+# Copy environment files
+cp firefeed-api/.env.example firefeed-api/.env
+cp firefeed-rss-parser/.env.example firefeed-rss-parser/.env
+cp firefeed-telegram-bot/.env.example firefeed-telegram-bot/.env
+
+# Edit .env files with your configuration
+# Then start all services
+docker-compose up -d
 ```
 
-### Basic Setup
+### Manual Installation
 
-1. Copy [.env.example](.env.example) to .env
-2. Configure real values for variables in .env file
+#### 1. FireFeed API
 
 ```bash
+# Clone the API repository
+git clone https://github.com/firefeed-net/firefeed-api.git
+cd firefeed-api
+
 # Create virtual environment
 python -m venv venv
-source venv/bin/activate  # for Windows: venv\Scripts\activate
+source venv/bin/activate
 
-# Run Telegram bot
-python bot.py
+# Install dependencies
+pip install -r requirements.txt
+
+# Configure environment
+cp .env.example .env
+# Edit .env with your configuration
+
+# Run migrations
+python -m firefeed-api.cli migrate
+
+# Start the server
+python -m firefeed-api.main
 ```
 
-### Running via Scripts
+#### 2. FireFeed RSS Parser
 
 ```bash
-# Make scripts executable
-chmod +x ./scripts/run_telegram_bot.sh
-chmod +x ./scripts/run_rss_parser.sh
-chmod +x ./scripts/run_api.sh
+# Clone the RSS Parser repository
+git clone https://github.com/firefeed-net/firefeed-rss-parser.git
+cd firefeed-rss-parser
 
-# Run Telegram bot
-./scripts/run_telegram_bot.sh
+# Create virtual environment
+python -m venv venv
+source venv/bin/activate
 
-# Run RSS parser
-./scripts/run_rss_parser.sh
+# Install dependencies
+pip install -r requirements.txt
 
-# Run API
-./scripts/run_api.sh
+# Configure environment
+cp .env.example .env
+# Edit .env with your configuration
+
+# Start the parser
+python -m firefeed_rss_parser
+```
+
+#### 3. FireFeed Telegram Bot
+
+```bash
+# Clone the Telegram Bot repository
+git clone https://github.com/firefeed-net/firefeed-telegram-bot.git
+cd firefeed-telegram-bot
+
+# Create virtual environment
+python -m venv venv
+source venv/bin/activate
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Configure environment
+cp .env.example .env
+# Edit .env with your configuration
+
+# Start the bot
+python -m firefeed_telegram_bot
 ```
 
 ## Configuration
 
 ### Environment Variables
 
-Create a `.env` file in the project root directory by copying the provided [.env.example](.env.example) file and configuring the values as needed. The `.env.example` file contains all available environment variables with their default values and descriptions.
+Each service has its own `.env.example` file with all available configuration options:
+
+- [firefeed-api/.env.example](https://github.com/firefeed-net/firefeed-api/blob/main/.env.example) - API service configuration
+- [firefeed-rss-parser/.env.example](https://github.com/firefeed-net/firefeed-rss-parser/blob/main/.env.example) - RSS parser configuration
+- [firefeed-telegram-bot/.env.example](https://github.com/firefeed-net/firefeed-telegram-bot/blob/main/.env.example) - Telegram bot configuration
+
+### Common Configuration
+
+#### Database Configuration
+```env
+DATABASE_HOST=localhost
+DATABASE_PORT=5432
+DATABASE_NAME=firefeed
+DATABASE_USER=postgres
+DATABASE_PASSWORD=your_password
+```
+
+#### Redis Configuration
+```env
+REDIS_HOST=localhost
+REDIS_PORT=6379
+REDIS_PASSWORD=your_password
+```
+
+#### FireFeed API Configuration
+```env
+# For RSS Parser and Telegram Bot
+FIREFEED_API_BASE_URL=http://localhost:8000
+FIREFEED_API_KEY=your_api_key
+```
 
 ### Optional AI Features Configuration
 
-FireFeed provides optional AI-powered features that can be enabled or disabled based on your needs:
+FireFeed provides optional AI-powered features that can be enabled or disabled:
 
 #### TRANSLATION_ENABLED
 - **Default**: `true`
 - **Description**: Controls automatic translation of news articles to multiple languages
 - **Impact**: When disabled, news items will only be available in their original language
-- **Use case**: Disable to reduce computational load or when translations are not needed
 
 #### DUPLICATE_DETECTOR_ENABLED
 - **Default**: `true`
 - **Description**: Controls ML-based duplicate detection using semantic analysis
 - **Impact**: When disabled, all news items will be processed without duplicate checking
-- **Use case**: Disable for faster processing or when duplicate detection is handled externally
-
-#### RSS_PARSER_MIN_ITEM_TITLE_WORDS_LENGTH
-- **Default**: `0`
-- **Description**: Minimum number of words required in RSS item title
-- **Impact**: RSS items with titles containing fewer words than this threshold will be skipped
-- **Use case**: Filter out low-quality or incomplete news items with very short titles
-
-#### RSS_PARSER_MIN_ITEM_CONTENT_WORDS_LENGTH
-- **Default**: `0`
-- **Description**: Minimum number of words required in RSS item content/description
-- **Impact**: RSS items with content containing fewer words than this threshold will be skipped
-- **Use case**: Filter out low-quality or incomplete news items with very short content
-
-#### RSS_PARSER_CLEANUP_INTERVAL_HOURS
-- **Default**: `0`
-- **Description**: Controls how long news items, translations, telegram publications and associated media files are kept
-- **Impact**: When set to 0, automatic cleanup is disabled and data is stored indefinitely. When set to a positive number (e.g., 24), old data is automatically cleaned up after the specified number of hours
-- **Use case**: Enable periodic cleanup to manage storage space and database size, or disable for permanent data retention
 
 ### AI Model Configuration
-
-FireFeed allows customization of the AI models used for translation, embeddings, and text processing:
 
 #### TRANSLATION_MODEL
 - **Default**: `facebook/m2m100_418M`
 - **Description**: Specifies the translation model from Hugging Face Transformers
 - **Supported models**: M2M100, Helsinki-NLP OPUS-MT, MarianMT, MBart, etc.
-- **Example**: `Helsinki-NLP/opus-mt-en-ru` for Helsinki-NLP models
 
 #### EMBEDDING_SENTENCE_TRANSFORMER_MODEL
 - **Default**: `paraphrase-multilingual-MiniLM-L12-v2`
 - **Description**: Sentence transformer model for generating text embeddings
-- **Supported models**: Any SentenceTransformer-compatible model from Hugging Face
-- **Example**: `all-MiniLM-L6-v2` for faster, smaller model
 
 #### SPACY_MODELS
 - **Default**: `{"en": "en_core_web_sm", "ru": "ru_core_news_sm", "de": "de_core_news_sm", "fr": "fr_core_news_sm"}`
-- **Description**: Unified configuration for spaCy language models used for text processing and linguistic analysis
-- **Supported models**: Any spaCy model compatible with the language
-- **Example**: `{"en": "en_core_web_trf", "ru": "ru_core_news_sm", "de": "de_core_news_sm", "fr": "fr_core_news_sm"}` for transformer-based English model
+- **Description**: spaCy language models for text processing
 
 ### Systemd Services
 
 For production environments, systemd services are recommended.
 
-**RSS Parser Service** (`/var/www/firefeed/data/.config/systemd/user/firefeed-telegram-bot.service`):
+**FireFeed API Service** (`/etc/systemd/system/firefeed-api.service`):
 
 ```ini
 [Unit]
-Description=FireFeed RSS-parser Service
-After=network.target
+Description=FireFeed API Service
+After=network.target postgresql.service redis.service
 
 [Service]
 Type=simple
-WorkingDirectory=/var/www/firefeed/data/firefeed
-Environment=HOME=/var/www/firefeed/data
-ExecStart=/var/www/firefeed/data/firefeed/scripts/run_rss_parser.sh
-Restart=on-failure
-RestartSec=10
-TimeoutStopSec=30
-KillMode=mixed
-KillSignal=SIGTERM
-SendSIGKILL=yes
-NoNewPrivileges=no
-
-[Install]
-WantedBy=default.target
-```
-
-**API Service** (`/var/www/firefeed/data/.config/systemd/user/firefeed-telegram-bot.service`):
-
-```ini
-[Unit]
-Description=Firefeed News API (FastAPI)
-After=network.target
-
-[Service]
-Type=simple
-WorkingDirectory=/var/www/firefeed/firefeed
-Environment=HOME=/var/www/firefeed/data
-ExecStart=/var/www/firefeed/data/firefeed/scripts/run_api.sh
+User=firefeed
+WorkingDirectory=/opt/firefeed/firefeed-api
+Environment=PATH=/opt/firefeed/venv/bin
+ExecStart=/opt/firefeed/venv/bin/python -m firefeed-api.main
 Restart=always
 RestartSec=5
-StandardOutput=journal
-StandardError=journal
-NoNewPrivileges=no
 
 [Install]
-WantedBy=default.target
+WantedBy=multi-user.target
 ```
 
-**Telegram Bot Service** (`/var/www/firefeed/data/.config/systemd/user/firefeed-telegram-bot.service`):
+**FireFeed RSS Parser Service** (`/etc/systemd/system/firefeed-rss-parser.service`):
+
+```ini
+[Unit]
+Description=FireFeed RSS Parser Service
+After=network.target firefeed-api.service
+
+[Service]
+Type=simple
+User=firefeed
+WorkingDirectory=/opt/firefeed/firefeed-rss-parser
+Environment=PATH=/opt/firefeed/venv/bin
+ExecStart=/opt/firefeed/venv/bin/python -m firefeed_rss_parser
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+```
+
+**FireFeed Telegram Bot Service** (`/etc/systemd/system/firefeed-telegram-bot.service`):
 
 ```ini
 [Unit]
 Description=FireFeed Telegram Bot Service
-After=network.target
+After=network.target firefeed-api.service
 
 [Service]
 Type=simple
-WorkingDirectory=/var/www/firefeed/data/firefeed
-Environment=HOME=/var/www/firefeed/data
-ExecStart=/var/www/firefeed/data/firefeed/scripts/run_telegram_bot.sh
-Restart=on-failure
+User=firefeed
+WorkingDirectory=/opt/firefeed/firefeed-telegram-bot
+Environment=PATH=/opt/firefeed/venv/bin
+ExecStart=/opt/firefeed/venv/bin/python -m firefeed_telegram_bot
+Restart=always
 RestartSec=10
-TimeoutStopSec=30
-KillMode=mixed
-KillSignal=SIGTERM
-SendSIGKILL=yes
-NoNewPrivileges=no
 
 [Install]
-WantedBy=default.target
+WantedBy=multi-user.target
 ```
 
 ### Nginx Configuration
 
-Example configuration for webhook and FastAPI operation:
+Example configuration for proxying all services:
 
 ```nginx
-upstream fastapi_app {
+upstream firefeed_api {
     server 127.0.0.1:8000;
+}
+
+upstream firefeed_rss_parser {
+    server 127.0.0.1:8080;
+}
+
+upstream firefeed_telegram_bot {
+    server 127.0.0.1:8081;
 }
 
 server {
     listen 80;
     server_name your_domain.com;
 
-    location /webhook {
-        proxy_pass http://127.0.0.1:5000/webhook;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    }
-
+    # FireFeed API
     location /api/ {
-        proxy_pass http://fastapi_app;
+        proxy_pass http://firefeed_api;
         proxy_set_header Host $http_host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -530,6 +463,32 @@ server {
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";
     }
+
+    # Telegram Webhook
+    location /webhook {
+        proxy_pass http://firefeed_telegram_bot/webhook;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }
+
+    # RSS Parser Metrics (optional, for monitoring)
+    location /rss-parser/metrics {
+        proxy_pass http://firefeed_rss_parser/metrics;
+        allow 10.0.0.0/8;
+        allow 172.16.0.0/12;
+        allow 192.168.0.0/16;
+        deny all;
+    }
+
+    # Telegram Bot Metrics (optional, for monitoring)
+    location /telegram-bot/metrics {
+        proxy_pass http://firefeed_telegram_bot/metrics;
+        allow 10.0.0.0/8;
+        allow 172.16.0.0/12;
+        allow 192.168.0.0/16;
+        deny all;
+    }
 }
 ```
 
@@ -540,43 +499,143 @@ After starting the API server, documentation is available at:
 - **Swagger UI**: http://localhost:8000/docs
 - **ReDoc**: http://localhost:8000/redoc
 
+### API Endpoints
+
+#### Public API (firefeed-api)
+- `POST /api/v1/auth/register` - User registration
+- `POST /api/v1/auth/login` - User login
+- `GET /api/v1/rss-items/` - Get RSS items
+- `GET /api/v1/categories/` - Get categories
+- `GET /api/v1/sources/` - Get sources
+
+#### Internal API (firefeed-api)
+- Internal endpoints for microservice communication
+- Service-to-service authentication via API keys
+
 ## Development
 
 ### Development Setup
 
 ```bash
-# Clone repository from GitHub
-git clone https://github.com/firefeed-net/firefeed.git
-# or GitVerse
-git clone https://gitverse.ru/firefeed-net/firefeed.git
+# Clone repository with submodules
+git clone --recurse-submodules https://github.com/firefeed-net/firefeed.git
 cd firefeed
 
-# Install dependencies
+# Setup each service
+cd firefeed-api
+python -m venv venv
+source venv/bin/activate
 pip install -r requirements.txt
+cd ..
+
+cd firefeed-rss-parser
+python -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+cd ..
+
+cd firefeed-telegram-bot
+python -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+cd ..
 ```
 
 ### Running Tests
 
-All tests
+Each service has its own test suite:
 
 ```bash
+# FireFeed API tests
+cd firefeed-api
+pytest tests/
+
+# FireFeed RSS Parser tests
+cd firefeed-rss-parser
+pytest tests/
+
+# FireFeed Telegram Bot tests
+cd firefeed-telegram-bot
 pytest tests/
 ```
 
-Specific module
+### Code Style
+
+The project uses `ruff` for linting and formatting:
 
 ```bash
-pytest tests/test_models.py
+# Check code style
+ruff check .
+
+# Format code
+ruff format .
+
+# Type checking
+mypy .
 ```
 
-Stop on first failure
+## Project Structure
 
-```bash
-pytest tests/ -x
+```
+firefeed/
+├── firefeed-api/              # REST API service (submodule)
+│   ├── routers/              # API endpoints
+│   ├── services/             # Business logic
+│   ├── models/               # Data models
+│   ├── database/             # Database utilities
+│   ├── config/               # Configuration
+│   ├── monitoring/           # Health checks & metrics
+│   └── tests/                # Test suite
+│
+├── firefeed-rss-parser/       # RSS parsing service (submodule)
+│   ├── services/             # Parsing logic
+│   ├── models/               # Data models
+│   ├── config/               # Configuration
+│   ├── docs/                 # Documentation
+│   └── tests/                # Test suite
+│
+├── firefeed-telegram-bot/     # Telegram bot service (submodule)
+│   ├── handlers/             # Bot command handlers
+│   ├── services/             # Business logic
+│   ├── models/               # Data models
+│   ├── config/               # Configuration
+│   ├── monitoring/           # Health checks & metrics
+│   └── tests/                # Test suite
+│
+├── docker-compose.yml         # Docker orchestration
+├── CODE_OF_CONDUCT.md         # Code of conduct
+├── CONTRIBUTING.md            # Contributing guidelines
+├── LICENSE                    # MIT License
+└── README.md                  # This file
 ```
 
-Short output
+## Monitoring
 
-```bash
-pytest tests/ --tb=short
-```
+Each service provides health checks and Prometheus metrics:
+
+- **FireFeed API**: `http://localhost:8000/health`, `http://localhost:8000/metrics`
+- **RSS Parser**: `http://localhost:8081/health`, `http://localhost:8080/metrics`
+- **Telegram Bot**: `http://localhost:8081/health`, `http://localhost:8080/metrics`
+
+## Contributing
+
+We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
+
+### Quick Contributing Steps
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Add tests for your changes
+5. Run the test suite
+6. Submit a pull request
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## Support
+
+- **Website**: https://firefeed.net
+- **GitHub Issues**: https://github.com/firefeed-net/firefeed/issues
+- **Email**: mail@firefeed.net

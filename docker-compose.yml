@@ -1,56 +1,252 @@
-version: '3.8'
 
 services:
+  # PostgreSQL Database
+  postgres:
+    build:
+      context: ./firefeed-api
+      dockerfile: postgres-pgvector.Dockerfile
+    container_name: firefeed-postgres
+    restart: unless-stopped
+    env_file: ./firefeed-api/.env
+    environment:
+      POSTGRES_DB: firefeed
+      POSTGRES_USER: firefeed_api
+      POSTGRES_PASSWORD: firefeed_password
+      POSTGRES_INITDB_ARGS: "--encoding=UTF-8"
+      # Vars for init scripts in /docker-entrypoint-initdb.d
+      FIREFEED_DB: firefeed
+      FIREFEED_DB_USER: firefeed_api
+      FIREFEED_DB_PASSWORD: firefeed_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5436:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U firefeed_api -d firefeed"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    networks:
+      - firefeed-network
+
+  # Redis Cache
   redis:
     image: redis:7-alpine
-    ports:
-      - "6379:6379"
-    command: redis-server --requirepass ${REDIS_PASSWORD}
+    container_name: firefeed-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
     volumes:
       - redis_data:/data
-    restart: unless-stopped
-
-  firefeed-api:
-    build: .
     ports:
-      - "8000:8000"
-    environment:
-      - DB_HOST=host.docker.internal  # Or Host IP
-      - DB_USER=${DB_USER}
-      - DB_PASSWORD=${DB_PASSWORD}
-      - DB_NAME=${DB_NAME}
-      - DB_PORT=5432
-      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
-      - BOT_TOKEN=${BOT_TOKEN}
-      - SMTP_SERVER=${SMTP_SERVER}
-      - SMTP_PORT=465
-      - SMTP_EMAIL=${SMTP_EMAIL}
-      - SMTP_PASSWORD=${SMTP_PASSWORD}
-      - WEBHOOK_LISTEN=0.0.0.0
-      - WEBHOOK_PORT=5000
-      - LOG_LEVEL=INFO
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      - REDIS_PASSWORD=${REDIS_PASSWORD}
-    volumes:
-      - ./data:/app/data  # Mount images volume
-    depends_on:
-      - redis
-      - db  # If DB also in docker-compose
-    restart: unless-stopped
+      - "6380:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    networks:
+      - firefeed-network
 
-  # Example configuration of Postgres DB image, if you plan to use it inside a container
-  # db:
-  #   image: postgres:13
-  #   environment:
-  #     POSTGRES_DB: firefeed
-  #     POSTGRES_USER: user
-  #     POSTGRES_PASSWORD: password
-  #   ports:
-  #     - "5432:5432"
-  #   volumes:
-  #     - postgres_data:/var/lib/postgresql/data
+  # FireFeed API Service (Foundation - must start first)
+  firefeed-api:
+    build:
+      context: .
+      dockerfile: ./firefeed-api/Dockerfile
+    container_name: firefeed-api
+    restart: unless-stopped
+    env_file: ./firefeed-api/.env
+    environment:
+      # Database Configuration
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: firefeed
+      DB_USER: firefeed_api
+      DB_PASSWORD: firefeed_password
+
+      # Redis Configuration
+      REDIS_URL: redis://redis:6379/0
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_DB: 0
+
+      # Security Configuration
+      JWT_ALGORITHM: HS256
+      JWT_EXPIRATION_MINUTES: 30
+
+      # Service Configuration
+      SERVICE_ID: firefeed-api
+      SERVICE_NAME: firefeed-api
+      SERVICE_VERSION: 1.0.0
+      API_BASE_URL: http://localhost:8001
+
+      # Logging Configuration
+      LOG_LEVEL: INFO
+
+      # CORS Configuration
+      CORS_ALLOWED_ORIGINS: http://localhost:3000,http://localhost:8080
+      ALLOWED_HOSTS: localhost,127.0.0.1,0.0.0.0
+
+      # Rate Limiting
+      RATE_LIMIT_REQUESTS: 100
+      RATE_LIMIT_WINDOW: 60
+
+      # Feature Flags
+      TRANSLATION_ENABLED: true
+      DUPLICATE_DETECTION_ENABLED: true
+      CACHE_ENABLED: true
+
+    ports:
+      - "8001:8000"
+
+    volumes:
+      - ./firefeed-api/logs:/app/logs
+      - ./firefeed-api/data:/app/data
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+    networks:
+      - firefeed-network
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # FireFeed RSS Parser Service
+  firefeed-rss-parser:
+    build:
+      context: .
+      dockerfile: ./firefeed-rss-parser/Dockerfile
+      target: production
+    container_name: firefeed-rss-parser
+    restart: unless-stopped
+    env_file: ./firefeed-rss-parser/.env
+    environment:
+      # Service Configuration
+      FIREFEED_SERVICE_ID: rss-parser
+      SERVICE_NAME: firefeed-rss-parser
+      SERVICE_VERSION: 1.0.0
+
+      # API Configuration
+      FIREFEED_API_BASE_URL: http://firefeed-api:8000
+
+      # Redis Configuration
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_DB: 0
+
+      # Logging Configuration
+      LOG_LEVEL: INFO
+
+      # Feature Configuration
+      TRANSLATION_ENABLED: true
+      DUPLICATE_DETECTION_ENABLED: true
+      CACHE_ENABLED: true
+
+    ports:
+      - "8081:8081"  # Health check port
+
+    volumes:
+      - ./firefeed-rss-parser/logs:/app/logs
+      - ./firefeed-rss-parser/data:/app/data
+
+    depends_on:
+      firefeed-api:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+    networks:
+      - firefeed-network
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # FireFeed Telegram Bot Service
+  firefeed-telegram-bot:
+    build:
+      context: .
+      dockerfile: ./firefeed-telegram-bot/Dockerfile
+    container_name: firefeed-telegram-bot
+    restart: unless-stopped
+    env_file: ./firefeed-telegram-bot/.env
+    environment:
+      # Service Configuration
+      SERVICE_ID: telegram-bot
+      SERVICE_NAME: firefeed-telegram-bot
+      SERVICE_VERSION: 1.0.0
+
+      # Telegram Configuration
+      TELEGRAM_BOT_NAME: FireFeedBot
+      TELEGRAM_USE_WEBHOOK: false
+      TELEGRAM_POLLING_TIMEOUT: 20
+
+      # API Configuration
+      FIREFEED_API_BASE_URL: http://firefeed-api:8000
+
+      # Redis Configuration
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_DB: 1
+
+      # Logging Configuration
+      LOG_LEVEL: INFO
+
+      # Security Configuration
+
+      # Feature Configuration
+      TRANSLATION_ENABLED: true
+      CACHE_ENABLED: true
+      RATE_LIMIT_ENABLED: true
+
+      # Monitoring Configuration
+      MONITORING_ENABLED: true
+      HEALTH_CHECK_PORT: 8081
+
+    ports:
+      - "8082:8081"  # Health check port
+
+    volumes:
+      - ./firefeed-telegram-bot/logs:/app/logs
+      - ./firefeed-telegram-bot/data:/app/data
+
+    depends_on:
+      firefeed-api:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+    networks:
+      - firefeed-network
+
+    healthcheck:
+      test: ["CMD", "python", "-c", "import sys; sys.exit(0)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
 
 volumes:
   postgres_data:
+    driver: local
   redis_data:
+    driver: local
+
+networks:
+  firefeed-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.25.0.0/16
