@@ -247,9 +247,6 @@ pip install -r requirements.txt
 cp .env.example .env
 # Edit .env with your configuration
 
-# Run migrations
-python -m firefeed-api.cli migrate
-
 # Start the server
 python -m firefeed-api.main
 ```
