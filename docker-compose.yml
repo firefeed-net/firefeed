@@ -136,6 +136,7 @@ services:
     environment:
       # API Configuration (infra - internal service URL)
       FIREFEED_API_BASE_URL: http://firefeed-api:8000
+      RSS_PARSER_TOKEN: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzZXJ2aWNlX2lkIjoicnNzLXBhcnNlciIsInNjb3BlcyI6WyJoZWFsdGg6cmVhZCIsImludGVybmFsOmhlYWx0aCIsImludGVybmFsOnJzcyIsInJlYWQiXSwiaXNzIjoiZmlyZWZlZWQtYXBpIiwiaWF0IjoxNzc0OTY3NzMyLCJleHAiOjE4MDY1MDM3MzJ9.WLtekV77ybBtMZ-OdYI1IVVYXZSolVQUfTzUkLnw764
 
       # Redis Configuration (infra - Docker service refs)
       REDIS_HOST: redis
