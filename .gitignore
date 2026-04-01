@@ -1,5 +1,9 @@
 __pycache__
 venv
+.venv
 /.qodo
 .env
 .vscode
+
+# For local testing
+firefeed-core/
