@@ -7,3 +7,4 @@ venv
 
 # For local testing
 firefeed-core/
+.qwen

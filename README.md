@@ -218,12 +218,21 @@ git clone --recurse-submodules https://github.com/firefeed-net/firefeed.git
 cd firefeed
 
 # Copy environment files
+cp .env.example .env  # Root environment (required for JWT_SECRET_KEY)
 cp firefeed-api/.env.example firefeed-api/.env
 cp firefeed-rss-parser/.env.example firefeed-rss-parser/.env
 cp firefeed-telegram-bot/.env.example firefeed-telegram-bot/.env
 
-# Edit .env files with your configuration
-# Then start all services
+# Generate a secure JWT secret key (add to root .env)
+openssl rand -hex 32
+# Edit .env and set FIREFEED_JWT_SECRET_KEY to the generated value
+
+# Generate service tokens (requires FIREFEED_JWT_SECRET_KEY to be set)
+python tools/generate_service_token.py --service-id rss-parser --scopes "health:read internal:health rss read"
+python tools/generate_service_token.py --service-id telegram-bot --scopes "health:read internal:health read"
+# Add generated tokens to respective service .env files as SERVICE_API_TOKEN
+
+# Start all services
 docker-compose up -d
 ```
 
@@ -304,6 +313,40 @@ Each service has its own `.env.example` file with all available configuration op
 - [firefeed-api/.env.example](https://github.com/firefeed-net/firefeed-api/blob/main/.env.example) - API service configuration
 - [firefeed-rss-parser/.env.example](https://github.com/firefeed-net/firefeed-rss-parser/blob/main/.env.example) - RSS parser configuration
 - [firefeed-telegram-bot/.env.example](https://github.com/firefeed-net/firefeed-telegram-bot/blob/main/.env.example) - Telegram bot configuration
+
+### JWT Secret Key Configuration
+
+**IMPORTANT**: Before generating service tokens or running any services, you must set the `FIREFEED_JWT_SECRET_KEY` environment variable. This key is required by all microservices that use the firefeed-core APIClient.
+
+Generate a secure secret key:
+```bash
+openssl rand -hex 32
+```
+
+Set it in your environment (add to `.env` file in project root):
+```bash
+export FIREFEED_JWT_SECRET_KEY=your_generated_secret_key
+```
+
+### Service Token Generation
+
+Each microservice requires a JWT service token for authentication. Use the `tools/generate_service_token.py` script to generate tokens.
+
+**Prerequisite**: Ensure `FIREFEED_JWT_SECRET_KEY` is set in your environment before running the token generator.
+
+Generate tokens for each service:
+```bash
+# Generate token for RSS Parser
+python tools/generate_service_token.py --service-id rss-parser --scopes "health:read internal:health rss read"
+
+# Generate token for Telegram Bot
+python tools/generate_service_token.py --service-id telegram-bot --scopes "health:read internal:health read"
+
+# Generate token for FireFeed API (internal services)
+python tools/generate_service_token.py --service-id firefeed-api --scopes "health:read internal:health read internal:rss"
+```
+
+Each generated token must be added to the corresponding service's `.env` file as `SERVICE_API_TOKEN`.
 
 ### Common Configuration
 
