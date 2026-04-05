@@ -61,24 +61,44 @@ def main():
 
     token = generate_token(args.service_id, args.scopes, secret_key, args.days, args.issuer, args.algorithm)
 
-    print(f'Generated {args.service_id} token: {token}')
-    print(f'\n=== DETAILS ===')
-    print(f'Scopes: {args.scopes}')
-    print(f'Issuer: {args.issuer}')
-    print(f'Algorithm: {args.algorithm}')
+    # SECURITY WARNING: Don't print token to stdout which may be logged
+    print(f'\n=== TOKEN GENERATED ===', file=sys.stderr)
+    print(f'Service: {args.service_id}', file=sys.stderr)
+    print(f'Scopes: {args.scopes}', file=sys.stderr)
+    print(f'Issuer: {args.issuer}', file=sys.stderr)
+    print(f'Algorithm: {args.algorithm}', file=sys.stderr)
     try:
         decoded = jwt.decode(token, secret_key, algorithms=[args.algorithm])
-        print(f'Expires: {datetime.fromtimestamp(decoded["exp"], timezone.utc)}')
+        print(f'Expires: {datetime.fromtimestamp(decoded["exp"], timezone.utc)}', file=sys.stderr)
     except Exception:
         pass
-
+    
+    # Write token to file with restricted permissions (600)
+    token_file = f"{args.service_id.replace('-', '_')}_token.jwt"
+    try:
+        import stat
+        with open(token_file, 'w') as f:
+            f.write(token)
+        # Set file permissions to owner read/write only (600)
+        os.chmod(token_file, stat.S_IRUSR | stat.S_IWUSR)
+        print(f'\n✓ Token written to: {token_file}', file=sys.stderr)
+        print(f'⚠ SECURITY: Keep this file secure and delete after use!', file=sys.stderr)
+    except Exception as e:
+        print(f'\nERROR writing token to file: {e}', file=sys.stderr)
+        # Fallback: print token only if file write fails
+        print(f'\nTOKEN (save manually):', file=sys.stderr)
+        print(token)
+    
     # Copy to clipboard (macOS and Linux with xclip/xsel)
     try:
         import pyperclip
         pyperclip.copy(token)
-        print(f'\nCopied to clipboard!')
+        print(f'\n✓ Copied to clipboard!', file=sys.stderr)
     except ImportError:
-        print(f'\nTip: Install pyperclip for clipboard support: pip install pyperclip')
+        print(f'\nTip: Install pyperclip for clipboard support: pip install pyperclip', file=sys.stderr)
+    
+    print(f'\n⚠ SECURITY: This token provides long-term access ({args.days} days).', file=sys.stderr)
+    print(f'   Store it securely and rotate regularly.', file=sys.stderr)
 
 
 if __name__ == '__main__':

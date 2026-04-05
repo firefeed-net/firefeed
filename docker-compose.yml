@@ -11,12 +11,12 @@ services:
     environment:
       POSTGRES_DB: firefeed
       POSTGRES_USER: firefeed_api
-      POSTGRES_PASSWORD: firefeed_password
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-firefeed_password}
       POSTGRES_INITDB_ARGS: "--encoding=UTF-8"
       # Vars for init scripts in /docker-entrypoint-initdb.d
       FIREFEED_DB: firefeed
       FIREFEED_DB_USER: firefeed_api
-      FIREFEED_DB_PASSWORD: firefeed_password
+      FIREFEED_DB_PASSWORD: ${POSTGRES_PASSWORD:-firefeed_password}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
@@ -43,7 +43,7 @@ services:
     ports:
       - "6380:6379"
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-firefeed_redis_pass}", "--no-auth-warning", "ping"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -67,13 +67,14 @@ services:
       DB_PORT: 5432
       DB_NAME: firefeed
       DB_USER: firefeed_api
-      DB_PASSWORD: firefeed_password
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-firefeed_password}
 
       # Redis Configuration
-      REDIS_URL: redis://redis:6379/0
+      REDIS_URL: redis://:${REDIS_PASSWORD:-firefeed_redis_pass}@redis:6379/0
       REDIS_HOST: redis
       REDIS_PORT: 6379
       REDIS_DB: 0
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-firefeed_redis_pass}
 
       # Security Configuration
       JWT_ALGORITHM: HS256
