@@ -1,4 +1,3 @@
-
 services:
   # PostgreSQL Database
   postgres:
@@ -7,22 +6,19 @@ services:
       dockerfile: postgres-pgvector.Dockerfile
     container_name: firefeed-postgres
     restart: unless-stopped
-    env_file: ./firefeed-api/.env
+    env_file:
+      - .env
     environment:
-      POSTGRES_DB: firefeed
-      POSTGRES_USER: firefeed_api
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-firefeed_password}
+      POSTGRES_DB: ${DB_NAME}
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
       POSTGRES_INITDB_ARGS: "--encoding=UTF-8"
-      # Vars for init scripts in /docker-entrypoint-initdb.d
-      FIREFEED_DB: firefeed
-      FIREFEED_DB_USER: firefeed_api
-      FIREFEED_DB_PASSWORD: ${POSTGRES_PASSWORD:-firefeed_password}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
       - "5436:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U firefeed_api -d firefeed"]
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -37,13 +33,13 @@ services:
     restart: unless-stopped
     env_file:
       - .env
-    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-firefeed_redis_pass}
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD}
     volumes:
       - redis_data:/data
     ports:
       - "6380:6379"
     healthcheck:
-      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-firefeed_redis_pass}", "--no-auth-warning", "ping"]
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "--no-auth-warning", "ping"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -58,36 +54,14 @@ services:
       dockerfile: ./firefeed-api/Dockerfile
     container_name: firefeed-api
     restart: unless-stopped
-    env_file: 
-      - ./firefeed-api/.env
+    env_file:
       - .env
+      - ./firefeed-api/.env
     environment:
-      # Database Configuration
-      DB_HOST: postgres
-      DB_PORT: 5432
-      DB_NAME: firefeed
-      DB_USER: firefeed_api
-      DB_PASSWORD: ${POSTGRES_PASSWORD:-firefeed_password}
-
-      # Redis Configuration
-      REDIS_URL: redis://:${REDIS_PASSWORD:-firefeed_redis_pass}@redis:6379/0
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
-      REDIS_DB: 0
-      REDIS_PASSWORD: ${REDIS_PASSWORD:-firefeed_redis_pass}
-
-      # Security Configuration
-      JWT_ALGORITHM: HS256
-      JWT_EXPIRATION_MINUTES: 30
-      SECRET_KEY: ${FIREFEED_JWT_SECRET_KEY}
-
       # Service Configuration
       SERVICE_NAME: firefeed-api
       SERVICE_VERSION: 1.0.0
       API_BASE_URL: http://localhost:8001
-
-      # JWT Secret Key for APIClient (required)
-      FIREFEED_JWT_SECRET_KEY: ${FIREFEED_JWT_SECRET_KEY}
 
       # Internal Rate Limiting
       INTERNAL_RATE_LIMIT_MAX: 10000
@@ -104,11 +78,6 @@ services:
       # Rate Limiting
       RATE_LIMIT_REQUESTS: 100
       RATE_LIMIT_WINDOW: 60
-
-      # Feature Flags
-      TRANSLATION_ENABLED: true
-      DUPLICATE_DETECTION_ENABLED: true
-      CACHE_ENABLED: true
 
     ports:
       - "8001:8000"
@@ -142,17 +111,15 @@ services:
     container_name: firefeed-rss-parser
     restart: unless-stopped
     env_file:
-      - ./firefeed-rss-parser/.env
       - .env
+      - ./firefeed-rss-parser/.env
     environment:
-      # API Configuration (infra - internal service URL)
+      # API Configuration
       FIREFEED_API_BASE_URL: http://firefeed-api:8000
-
-      # Redis Configuration (infra - Docker service refs)
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
-      REDIS_DB: 0
-      REDIS_PASSWORD: ${REDIS_PASSWORD:-firefeed_redis_pass}
+      FIREFEED_API_TOKEN: ${RSS_PARSER_SERVICE_API_TOKEN}
+      SERVICE_API_TOKEN: ${RSS_PARSER_SERVICE_API_TOKEN}
+      FIREFEED_SERVICE_ID: ${RSS_PARSER_SERVICE_ID}
+      SERVICE_ID: ${RSS_PARSER_SERVICE_ID}
 
     ports:
       - "8081:8081"  # Health check port
@@ -185,14 +152,15 @@ services:
     container_name: firefeed-telegram-bot
     restart: unless-stopped
     env_file:
-      - ./firefeed-telegram-bot/.env
       - .env
+      - ./firefeed-telegram-bot/.env
     environment:
-      SERVICE_ID: telegram-bot
+      # API Configuration
       FIREFEED_API_BASE_URL: http://firefeed-api:8000
-      REDIS_HOST: redis
-      REDIS_DB: 1
-      REDIS_PASSWORD: ${REDIS_PASSWORD:-firefeed_redis_pass}
+      FIREFEED_API_TOKEN: ${TELEGRAM_BOT_SERVICE_API_TOKEN}
+      SERVICE_API_TOKEN: ${TELEGRAM_BOT_SERVICE_API_TOKEN}
+      FIREFEED_SERVICE_ID: ${TELEGRAM_BOT_SERVICE_ID}
+      SERVICE_ID: ${TELEGRAM_BOT_SERVICE_ID}
 
     ports:
       - "8082:8081"  # Health check port
