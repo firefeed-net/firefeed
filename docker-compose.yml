@@ -111,15 +111,28 @@ services:
     container_name: firefeed-rss-parser
     restart: unless-stopped
     env_file:
-      - .env
       - ./firefeed-rss-parser/.env
     environment:
+      # JWT Configuration (from root .env via variable substitution)
+      FIREFEED_JWT_SECRET_KEY: ${FIREFEED_JWT_SECRET_KEY}
+      FIREFEED_JWT_ISSUER: ${FIREFEED_JWT_ISSUER:-firefeed-api}
+
+      # Redis Configuration (for duplicate detection)
+      REDIS_HOST: ${REDIS_HOST}
+      REDIS_PORT: ${REDIS_PORT}
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      REDIS_DB: ${REDIS_DB:-0}
+
       # API Configuration
       FIREFEED_API_BASE_URL: http://firefeed-api:8000
-      FIREFEED_API_TOKEN: ${RSS_PARSER_SERVICE_API_TOKEN}
-      SERVICE_API_TOKEN: ${RSS_PARSER_SERVICE_API_TOKEN}
+      FIREFEED_API_SERVICE_TOKEN: ${RSS_PARSER_SERVICE_API_TOKEN}
       FIREFEED_SERVICE_ID: ${RSS_PARSER_SERVICE_ID}
-      SERVICE_ID: ${RSS_PARSER_SERVICE_ID}
+
+      # Logging
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+
+      # Feature Flags
+      DUPLICATE_DETECTION_ENABLED: ${DUPLICATE_DETECTION_ENABLED:-true}
 
     ports:
       - "8081:8081"  # Health check port
@@ -152,15 +165,25 @@ services:
     container_name: firefeed-telegram-bot
     restart: unless-stopped
     env_file:
-      - .env
       - ./firefeed-telegram-bot/.env
     environment:
+      # JWT Configuration (from root .env via variable substitution)
+      FIREFEED_JWT_SECRET_KEY: ${FIREFEED_JWT_SECRET_KEY}
+      FIREFEED_JWT_ISSUER: ${FIREFEED_JWT_ISSUER:-firefeed-api}
+
+      # Redis Configuration (for caching)
+      REDIS_HOST: ${REDIS_HOST}
+      REDIS_PORT: ${REDIS_PORT}
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      REDIS_DB: ${REDIS_DB:-0}
+
       # API Configuration
       FIREFEED_API_BASE_URL: http://firefeed-api:8000
-      FIREFEED_API_TOKEN: ${TELEGRAM_BOT_SERVICE_API_TOKEN}
-      SERVICE_API_TOKEN: ${TELEGRAM_BOT_SERVICE_API_TOKEN}
+      FIREFEED_API_SERVICE_TOKEN: ${TELEGRAM_BOT_SERVICE_API_TOKEN}
       FIREFEED_SERVICE_ID: ${TELEGRAM_BOT_SERVICE_ID}
-      SERVICE_ID: ${TELEGRAM_BOT_SERVICE_ID}
+
+      # Logging
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
 
     ports:
       - "8082:8081"  # Health check port

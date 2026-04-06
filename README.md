@@ -230,7 +230,7 @@ openssl rand -hex 32
 # Generate service tokens (requires FIREFEED_JWT_SECRET_KEY to be set)
 python tools/generate_service_token.py --service-id rss-parser --scopes "health:read internal:health rss read"
 python tools/generate_service_token.py --service-id telegram-bot --scopes "health:read internal:health read"
-# Add generated tokens to respective service .env files as SERVICE_API_TOKEN
+# Add generated tokens to respective service .env files as FIREFEED_API_SERVICE_TOKEN
 
 # Start all services
 docker-compose up -d
@@ -346,7 +346,7 @@ python tools/generate_service_token.py --service-id telegram-bot --scopes "healt
 python tools/generate_service_token.py --service-id firefeed-api --scopes "health:read internal:health read internal:rss"
 ```
 
-Each generated token must be added to the corresponding service's `.env` file as `SERVICE_API_TOKEN`.
+Each generated token must be added to the corresponding service's `.env` file as `FIREFEED_API_SERVICE_TOKEN`.
 
 ### Common Configuration
 
@@ -370,7 +370,7 @@ REDIS_PASSWORD=your_password
 ```env
 # For RSS Parser and Telegram Bot
 FIREFEED_API_BASE_URL=http://localhost:8000
-FIREFEED_API_KEY=your_api_key
+FIREFEED_API_SERVICE_TOKEN=your_api_key
 ```
 
 ### Optional AI Features Configuration
