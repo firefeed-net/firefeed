@@ -369,7 +369,7 @@ REDIS_PASSWORD=your_password
 #### FireFeed API Configuration
 ```env
 # For RSS Parser and Telegram Bot
-FIREFEED_API_BASE_URL=http://localhost:8000
+API_BASE_URL=http://localhost:8000
 FIREFEED_API_SERVICE_TOKEN=your_api_key
 ```
 

@@ -124,7 +124,7 @@ services:
       REDIS_DB: ${REDIS_DB:-0}
 
       # API Configuration
-      FIREFEED_API_BASE_URL: http://firefeed-api:8000
+      API_BASE_URL: http://firefeed-api:8000
       FIREFEED_API_SERVICE_TOKEN: ${RSS_PARSER_SERVICE_API_TOKEN}
       FIREFEED_SERVICE_ID: ${RSS_PARSER_SERVICE_ID}
 
@@ -178,7 +178,7 @@ services:
       REDIS_DB: ${REDIS_DB:-0}
 
       # API Configuration
-      FIREFEED_API_BASE_URL: http://firefeed-api:8000
+      API_BASE_URL: http://firefeed-api:8000
       FIREFEED_API_SERVICE_TOKEN: ${TELEGRAM_BOT_SERVICE_API_TOKEN}
       FIREFEED_SERVICE_ID: ${TELEGRAM_BOT_SERVICE_ID}
 
